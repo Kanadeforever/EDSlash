@@ -199,6 +199,56 @@ def validate_ini(ini_path: Path) -> list[str]:
     ]
 
 
+
+def validate_build_bat(build_bat: Path) -> list[str]:
+    """
+    检查 build.bat 自身是否仍符合当前仓库的硬约束。
+
+    这一步专门防止 v0.3-test8a 出现过的回归：递归扫描 Visual Studio 后，
+    首个 clang.exe 恰好落在 ARM64\\bin，x64 Windows 因而提示“映像文件无效”。
+    当前规则很简单：禁止递归 where /r，Visual Studio 只能显式使用 Llvm\\x64\\bin。
+    """
+
+    if not build_bat.is_file():
+        raise RuntimeError(f"缺少构建脚本：{build_bat}")
+
+    raw = build_bat.read_bytes()
+
+    # BAT 必须保持 UTF-8 BOM + CRLF，这是本项目统一的 Windows 脚本格式。
+    if not raw.startswith(b"\xEF\xBB\xBF"):
+        raise RuntimeError("build.bat 必须使用 UTF-8 BOM。")
+    if b"\r\n" not in raw or raw.replace(b"\r\n", b"").find(b"\n") != -1:
+        raise RuntimeError("build.bat 必须统一使用 CRLF 换行。")
+
+    text = raw.decode("utf-8-sig")
+    lower = text.lower()
+
+    if "where /r" in lower:
+        raise RuntimeError("build.bat 禁止使用 where /r 递归扫描编译器，避免误选 ARM64 LLVM。")
+    if "llvm\\arm64\\bin" in lower or "llvm\\arm64" in lower:
+        raise RuntimeError("build.bat 不得引用 Visual Studio 的 ARM64 LLVM 目录。")
+    if "vc\\tools\\llvm\\x64\\bin" not in lower:
+        raise RuntimeError("build.bat 必须显式保留 Visual Studio Llvm\\x64\\bin 回退路径。")
+
+    # 用户明确要求：所有有正文的 REM / echo 行末尾必须保留两个半角空格。
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        stripped = line.lstrip()
+        lowered = stripped.lower()
+        has_text_rem = lowered.startswith("rem ") and len(stripped) > 4
+        has_text_echo = lowered.startswith("echo ")
+
+        if (has_text_rem or has_text_echo) and not line.endswith("  "):
+            raise RuntimeError(
+                f"build.bat 第 {line_number} 行 REM/echo 正文末尾没有两个半角空格。"
+            )
+
+    return [
+        "build.bat UTF-8 BOM + CRLF",
+        "未使用 where /r 递归扫描 LLVM",
+        "Visual Studio 回退固定为 Llvm\\x64\\bin",
+        "所有有正文的 REM/echo 行末尾均有两个半角空格",
+    ]
+
 def main() -> int:
     """命令行入口。成功返回 0，失败返回 1。"""
 
@@ -221,10 +271,16 @@ def main() -> int:
 
         ini_lines = validate_ini(ini_path)
 
+        # build.bat 与本工具固定同属 source\\DisplayFix_DaoJian；这里顺便验证构建脚本自身。
+        build_bat = Path(__file__).resolve().parents[1] / "build.bat"
+        build_lines = validate_build_bat(build_bat)
+
         print(f"[验证目标] {asi_path}")
         for line in lines:
             print(f"[通过] {line}")
         for line in ini_lines:
+            print(f"[通过] {line}")
+        for line in build_lines:
             print(f"[通过] {line}")
         print(f"[通过] 配置文件：{ini_path.name}")
         return 0

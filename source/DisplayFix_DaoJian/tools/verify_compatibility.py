@@ -368,11 +368,13 @@ def verify_one(path: Path) -> list[str]:
     # ---------------------------------------------------------------------------------------------
     # 0x4087A0 风格 GUI/JMM 分辨率应用包装函数。
     #
-    # v0.3-test8 不是“看到一个 E8 就改”：
+    # v0.3-test10 继续把这条包装函数作为 Steam delayed JMM apply 的关键结构证据：
     #   1. 先要求整个包装函数签名唯一；
-    #   2. 包装函数 +21 必须是 E8；
-    #   3. 解码 rel32 后，目标必须落在 PE 中并匹配 0x4B35F0 已确认函数头。
-    # v0.3-test8 不主动改这条 CALL，但继续把它作为已确认 GUI/JMM 架构的一部分做兼容验证。
+    #   2. 包装函数 +16 必须仍能解析出 UI manager，+21 必须是 E8；
+    #   3. 解码 rel32 后，目标必须落在 PE 中并匹配 0x4B35F0 已确认函数头；
+    #   4. 0x4B35F0 +0x1E 还必须 call 到已确认的资源路径构造函数 0x4EB9E0 风格函数头，
+    #      因为 test10 要从其中解析游戏资源根目录缓冲区，避免过早重放 JMM。
+    # test10 仍然不改写 0x4087B5 这条 CALL；非 Steam 自然 JMM apply 保持原版。
     # ---------------------------------------------------------------------------------------------
     jmm_apply_va = image_base + text_rva + jmm_apply_off
     jmm_call_va = jmm_apply_va + 21
@@ -387,6 +389,30 @@ def verify_one(path: Path) -> list[str]:
         raise RuntimeError(
             "GUI/JMM 分辨率应用 CALL 没有指向已确认的 JMM/UI 广播函数头："
             f"target=0x{jmm_load_va:08X}。"
+        )
+
+    # test10 新增：0x4B35F0 +0x1E 必须是 E8，目标函数头应为
+    # `56 57 BF <root-buffer> 83 C9 FF 33 C0 ...`。BF 的 imm32 是游戏资源根目录缓冲区。
+    jmm_path_call_va = jmm_load_va + 0x1E
+    jmm_path_call_file = va_to_file_offset(jmm_path_call_va, image_base, sections)
+    if data[jmm_path_call_file] != 0xE8:
+        raise RuntimeError("JMM/UI 函数 +0x1E 不是资源路径构造 E8 CALL。")
+
+    jmm_path_builder_va = rel32_target(jmm_path_call_va, data, jmm_path_call_file)
+    jmm_path_builder_file = va_to_file_offset(jmm_path_builder_va, image_base, sections)
+    path_head = data[jmm_path_builder_file : jmm_path_builder_file + 12]
+    if len(path_head) < 12 or not (
+        path_head[0:3] == bytes.fromhex("56 57 BF")
+        and path_head[7:12] == bytes.fromhex("83 C9 FF 33 C0")
+    ):
+        raise RuntimeError(
+            f"JMM 资源路径构造函数 0x{jmm_path_builder_va:08X} 不符合已确认函数头。"
+        )
+
+    resource_root_va = int.from_bytes(path_head[3:7], "little")
+    if not (0x00400000 <= resource_root_va < 0x00600000):
+        raise RuntimeError(
+            f"解析出的 JMM 资源根目录缓冲区地址异常：0x{resource_root_va:08X}。"
         )
 
     # ---------------------------------------------------------------------------------------------
@@ -536,7 +562,8 @@ def verify_one(path: Path) -> list[str]:
         f"第一处分辨率映射 VA=0x{image_base + text_rva + map1_off:08X}",
         f"第二处分辨率映射 VA=0x{image_base + text_rva + map2_off:08X}",
         f"JMM 布局选择器 VA=0x{image_base + text_rva + jmm_off:08X}",
-        f"GUI/JMM 分辨率应用包装 VA=0x{jmm_apply_va:08X} -> JMM/UI 广播 0x{jmm_load_va:08X}",
+        f"GUI/JMM 分辨率应用包装 VA=0x{jmm_apply_va:08X} -> JMM/UI 广播 0x{jmm_load_va:08X}（test10 Steam delayed JMM 上下文）",
+        f"JMM 资源路径构造 VA=0x{jmm_path_builder_va:08X} -> 资源根缓冲区 0x{resource_root_va:08X}",
         f"世界鼠标按下 callsite VA=0x{world_press_va:08X} -> 0x{world_press_target_va:08X}（仅 0x0B/0x0E 点击穿透保护）",
         f"全局鼠标释放 callsite VA=0x{global_release_va:08X} -> 0x{global_release_target_va:08X}（顶部窗口 fallback）",
         f"主 HUD 根类构造 VA=0x{hud_va:08X}",

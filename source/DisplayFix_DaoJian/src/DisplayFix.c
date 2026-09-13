@@ -2,8 +2,23 @@
  * DisplayFix.c
  *
  * 《刀剑封魔录》ComeOn.exe 显示修复 ASI 插件。
- * 当前版本：v0.3-test8a
+ * 当前版本：v0.3-test10
  *
+ * v0.3-test10 针对 test9 的 Steam 实机反证继续收窄：test9 在 HUD 成熟后只调用顶层 UI 的
+ * vtable+0x14(0,W,H)，日志显示 visited=34 / applied=34，但 0x0B / 0x0E 的坐标完全不变，
+ * 证明“只广播宽高”并不是非 Steam 自然第二阶段布局的完整语义。重新反汇编 0x004B35F0 后确认：
+ * 原版在广播之前还会先通过 0x004EB9E0 取得当前资源根目录并拼出 mb\JMMDL*.txt，再调用
+ * 0x004D0500 真正加载对应 JMM 布局资源；随后才遍历顶层 UI 调 vtable+0x14。
+ * test10 因此不再伪造“广播后半段”，而是在 Steam 环境、HUD 和顶层 UI 均已成熟、并且资源根目录
+ * 已经非空后，只执行一次原版 0x004B35F0(mode=0,TargetWidth,TargetHeight)。这与非 Steam 自然调用
+ * 走的是同一个原版入口；in-progress 防递归，one-shot 防重复。非 Steam 路径仍然完全不额外调用。
+ * v0.3-test9 以 v0.3-test8b 为输入与分辨率基线，只新增 Steam/ComeOn.dll 专用的“延迟一次性 UI 布局同步”。
+ * 用户的 Steam / 非 Steam 对照日志已经证明：两边第一次主 HUD 布局完全一致，但非 Steam 后续还会自然
+ * 发生一轮 UI/JMM 尺寸应用，Steam 环境却缺少这一步，因此 Steam 最终停留在第一阶段 GUI 状态。
+ * test9 不重载 JMMDL 文件，也不碰非 Steam 已经稳定的 GUI 路径；它只在检测到 ComeOn.dll、主 HUD
+ * 子控件已经完整建立、UI manager 顶层链表已经非空后，调用各顶层 UI 自己的 vtable+0x14(0,W,H)
+ * 一次，把 Steam 补到与非 Steam 第二阶段布局相同的状态。整个同步有 in-progress 与 one-shot 双重保护，
+ * 即使广播过程中主 HUD 再次进入 +0x58 布局 hook，也不会递归重复广播。
  * v0.3-test8a 的核心变化：彻底撤销 v0.3-test7 的全局 mouse-press 包装 hook，
  * 恢复 v0.3-test6 的输入行为基线，并只在“真正准备调用世界鼠标输入”的最后一个 callsite 上
  * 做极窄拦截。test7 实机已经证明：即使日志显示普通地图 original_result=0 / consume=0，
@@ -1243,6 +1258,27 @@ static DWORD g_native_base_width = 640u;
 /* 是否启用主 HUD 居中；顶部按钮兜底在更上层的全局鼠标释放 hook 中，与此开关彼此独立。 */
 static BOOL g_center_main_hud = TRUE;
 
+/*
+ * Steam 版的 ComeOnSteam.exe 会额外 LoadLibraryA("ComeOn.dll")。
+ * 非 Steam 版没有这个模块，因此它可以作为“是否启用 Steam 专用兼容路径”的直接运行时条件。
+ *
+ * 这里故意不根据 EXE SHA-256 判断 Steam：
+ *   - 项目总原则是按真实结构/内容签名兼容不同 EXE；
+ *   - ComeOn.dll 是否真的已经装进当前进程，比“文件来自哪个发行渠道”更准确。
+ */
+static BOOL g_steam_environment = FALSE;
+
+/*
+ * Steam GUI 修复只允许成功执行一次。
+ * in_progress 用来防止我们广播顶层 UI 尺寸时，某个对象又反过来触发主 HUD +0x58，造成递归广播；
+ * done 则表示本次进程已经把缺失的第二阶段布局补完，不需要以后每次 HUD layout 都重复做。
+ */
+static BOOL g_steam_ui_sync_in_progress = FALSE;
+static BOOL g_steam_ui_sync_done = FALSE;
+static BOOL g_steam_ui_sync_wait_root_logged = FALSE;
+static DWORD g_steam_ui_sync_attempts = 0u;
+static DWORD g_steam_ui_sync_applied = 0u;
+
 /* 运行时日志严格限次数，避免老游戏频繁写磁盘。 */
 static DWORD g_hud_layout_log_count = 0u;
 static DWORD g_hud_event_log_count = 0u;
@@ -1366,7 +1402,7 @@ static void log_hud_candidate_children(LPVOID self)
 {
     LPVOID child;
 
-    if (!self || g_hud_candidate_log_count >= 3u) {
+    if (!self || g_hud_candidate_log_count >= 1u) {
         return;
     }
     ++g_hud_candidate_log_count;
@@ -1387,6 +1423,13 @@ static void log_hud_candidate_children(LPVOID self)
         child = *(LPVOID*)((BYTE*)child + UI_OBJECT_NEXT_OFFSET);
     }
 }
+
+/*
+ * 下面两个函数的实现位于本文件更后面，但主 HUD layout hook 需要先调用它们，
+ * 所以先写“函数声明”。函数声明可以理解成先告诉编译器：后面会有这样一个函数，参数和返回值如下。
+ */
+static LPVOID find_main_hud_child_by_id(LPVOID self, DWORD wanted_id);
+static void try_steam_delayed_ui_sync(LPVOID hud);
 
 /*
  * 主 HUD vtable +0x58 的视觉居中 hook。
@@ -1433,6 +1476,14 @@ static int __fastcall main_hud_layout_hook(LPVOID self, LPVOID unused_edx, LONG 
         centered_x = original_x + center_delta;
         result = g_original_main_hud_layout(self, centered_x, original_y);
     }
+
+    /*
+     * Steam/ComeOn.dll 环境缺少非 Steam 自然发生的“第二阶段 UI 尺寸应用”。
+     * 这里已经完成了一次真正的主 HUD 自动布局，而且 child 也已经建立，是比 DLL/ASI 初始化时刻
+     * 安全得多的同步触发点。try_steam_delayed_ui_sync() 内部还会再次确认 0x0B/0x0E child、
+     * UI manager 顶层链表以及 one-shot/in-progress 状态；非 Steam 环境会立即返回，完全不改行为。
+     */
+    try_steam_delayed_ui_sync(self);
 
     log_hud_candidate_children(self);
 
@@ -1687,7 +1738,11 @@ static void __fastcall world_mouse_press_hook(LPVOID self, LPVOID unused_edx,
         block_world = TRUE;
     }
 
-    if (g_world_press_log_count < 32u) {
+    /*
+     * test8b 为了调查曾记录大量普通地图 WORLD press；Steam 性能测试阶段这些磁盘 I/O 本身会成为干扰变量。
+     * test9 只在真正命中 0x0B/0x0E、也就是我们确实阻止了一次点击穿透时记录。
+     */
+    if (block_world && g_world_press_log_count < 8u) {
         char line[640];
         ++g_world_press_log_count;
         line[0] = '\0';
@@ -1797,7 +1852,12 @@ static int __fastcall ui_manager_mouse_release_hook(LPVOID self, LPVOID unused_e
                                                           active_before, active_after);
     }
 
-    if (g_global_release_log_count < 32u && event_type == 1) {
+    /*
+     * 普通地图/普通 HUD 的每次释放不再写盘；只有两个特殊按钮参与判断时才记录，
+     * 这样 Steam 版跑动和战斗时不会因为诊断日志持续 CreateFile/WriteFile 而增加额外抖动。
+     */
+    if (g_global_release_log_count < 8u && event_type == 1 &&
+        (hit_id == 0x0Bu || hit_id == 0x0Eu || fallback_used)) {
         char line[1024];
         ++g_global_release_log_count;
         line[0] = '\0';
@@ -2394,6 +2454,15 @@ static FnJmmLoad g_original_jmm_load = (FnJmmLoad)0;
  * v0.3-test8 不把这个地址硬编码，而是在验证 wrapper 签名后从机器码里读出来。
  */
 static LPVOID g_jmm_manager = (LPVOID)0;
+
+/*
+ * 0x004EB9E0 内部会从游戏全局字符缓冲区读取资源根目录，再追加 "mb\\"。
+ * test4 过早重放完整 0x4B35F0 时弹出 MB\JMMDL*.txt，说明资源根目录是否已经初始化
+ * 是一个必须验证的时序条件。这个地址不硬编码：resolve_jmm_context() 会从 0x4B35F0
+ * 内部 call 到的 0x4EB9E0 函数头里解析 `mov edi, imm32` 得到真实缓冲区。
+ */
+static char* g_jmm_resource_root = (char*)0;
+
 static DWORD g_jmm_runtime_log_count = 0u;
 
 /*
@@ -2441,15 +2510,31 @@ static int __fastcall jmm_load_hook(LPVOID self, LPVOID unused_edx, LONG mode, L
 }
 
 /*
- * 安装第一次 GUI/JMM 分辨率应用 hook。
- * 不是直接硬写 0x4087B5：先通过完整内容签名唯一定位 0x4087A0 包装函数，再解码 E8 目标并验证函数头。
+ * 只“解析” GUI/JMM 上下文，不修改任何游戏代码。
+ *
+ * 这一层是 v0.3-test9 新增的关键拆分：
+ *   - 旧的 install_jmm_first_load_hook() 一边找 UI manager，一边把 0x4087B5 的 CALL 改成 hook；
+ *   - Steam 专用延迟同步其实只需要知道 UI manager 地址，不需要改写这个 CALL；
+ *   - 非 Steam 已经实机稳定，因此更不能为了拿一个地址就顺手装额外 hook。
+ *
+ * 成功后会得到：
+ *   g_jmm_manager      = 原版 UI/JMM 管理器对象地址；
+ *   g_original_jmm_load = 0x4B35F0 原版函数地址（保留给历史/后续研究）；
+ *   out_call_instruction（可选）= 0x4087B5 那条 E8 CALL 的机器码地址。
  */
-static BOOL install_jmm_first_load_hook(const TextRegion* region)
+static BOOL resolve_jmm_context(const TextRegion* region, BYTE** out_call_instruction)
 {
     BYTE* wrapper;
     BYTE* call_instruction;
     BYTE* target;
+    BYTE* path_call;
+    BYTE* path_builder;
+    DWORD resource_root_address;
     DWORD index;
+
+    if (out_call_instruction) {
+        *out_call_instruction = (BYTE*)0;
+    }
 
     wrapper = find_unique_pattern(region,
                                   JMM_APPLY_CALLSITE_PATTERN,
@@ -2461,11 +2546,12 @@ static BOOL install_jmm_first_load_hook(const TextRegion* region)
 
     /*
      * 签名里 +16 是 B9（mov ecx,imm32），+17~+20 就是原版 UI 管理器地址。
-     * 当前原版是 0x0055AF98，但这里故意从内容里解析，避免把绝对地址当兼容条件。
+     * 当前原版是 0x0055AF98，但这里仍然从机器码解析，避免把一个绝对地址当作版本锁。
      */
     if (wrapper[16] != 0xB9) {
         return FALSE;
     }
+
     g_jmm_manager = (LPVOID)read_u32(wrapper + 17u);
     if ((DWORD)g_jmm_manager < 0x00400000u || (DWORD)g_jmm_manager >= 0x00600000u) {
         g_jmm_manager = (LPVOID)0;
@@ -2475,22 +2561,77 @@ static BOOL install_jmm_first_load_hook(const TextRegion* region)
     /* 签名里 E8 位于 +21。 */
     call_instruction = wrapper + 21u;
     if (call_instruction[0] != 0xE8) {
+        g_jmm_manager = (LPVOID)0;
         return FALSE;
     }
 
     target = decode_rel32_target(call_instruction);
-    if (!target || target < region->start || target + (DWORD)sizeof(JMM_LOAD_FUNCTION_HEAD) > region->start + region->size) {
+    if (!target || target < region->start ||
+        target + (DWORD)sizeof(JMM_LOAD_FUNCTION_HEAD) > region->start + region->size) {
+        g_jmm_manager = (LPVOID)0;
         return FALSE;
     }
 
     /* 验证 call 的真正目标确实具有 0x4B35F0 已确认函数头。 */
     for (index = 0; index < (DWORD)sizeof(JMM_LOAD_FUNCTION_HEAD); ++index) {
         if (target[index] != JMM_LOAD_FUNCTION_HEAD[index]) {
+            g_jmm_manager = (LPVOID)0;
             return FALSE;
         }
     }
 
+    /*
+     * 0x4B35F0 + 0x1E 是 `call 0x4EB9E0`，原版用它取得“资源根目录 + mb\”路径。
+     * 0x4EB9E0 的稳定函数头为 `56 57 BF <root-buffer> 83 C9 FF 33 C0 ...`，
+     * BF 后面的 imm32 就是资源根字符缓冲区。test10 用它判断完整 JMM 重放是否已经到了安全时机。
+     */
+    path_call = target + 0x1Eu;
+    if (path_call[0] != 0xE8) {
+        g_jmm_manager = (LPVOID)0;
+        return FALSE;
+    }
+
+    path_builder = decode_rel32_target(path_call);
+    if (!path_builder || path_builder < region->start || path_builder + 12u > region->start + region->size) {
+        g_jmm_manager = (LPVOID)0;
+        return FALSE;
+    }
+
+    if (path_builder[0] != 0x56 || path_builder[1] != 0x57 || path_builder[2] != 0xBF ||
+        path_builder[7] != 0x83 || path_builder[8] != 0xC9 || path_builder[9] != 0xFF ||
+        path_builder[10] != 0x33 || path_builder[11] != 0xC0) {
+        g_jmm_manager = (LPVOID)0;
+        return FALSE;
+    }
+
+    resource_root_address = read_u32(path_builder + 3u);
+    if (resource_root_address < 0x00400000u || resource_root_address >= 0x00600000u) {
+        g_jmm_manager = (LPVOID)0;
+        return FALSE;
+    }
+
+    g_jmm_resource_root = (char*)resource_root_address;
     g_original_jmm_load = (FnJmmLoad)target;
+
+    if (out_call_instruction) {
+        *out_call_instruction = call_instruction;
+    }
+
+    return TRUE;
+}
+
+/*
+ * 历史实验函数：安装第一次 GUI/JMM 分辨率应用 hook。
+ * test9/test10 主线都不会安装这个 callsite hook；保留是为了让逆向知识库中的 test3~test5 研究仍可直接从源码追溯。
+ */
+static BOOL install_jmm_first_load_hook(const TextRegion* region)
+{
+    BYTE* call_instruction = (BYTE*)0;
+
+    if (!resolve_jmm_context(region, &call_instruction) || !call_instruction) {
+        return FALSE;
+    }
+
     if (!patch_rel32_call(call_instruction, (LPVOID)&jmm_load_hook)) {
         g_original_jmm_load = (FnJmmLoad)0;
         g_jmm_manager = (LPVOID)0;
@@ -2575,6 +2716,238 @@ static void broadcast_initial_ui_resolution(void)
     } else {
         str_append(line, (DWORD)sizeof(line), " guard=ok");
     }
+    append_runtime_line(line);
+}
+
+/*
+ * 对“当前已经存在的顶层 UI 链”只做尺寸广播，不重新加载任何 JMMDL 文件。
+ *
+ * 这段逻辑等价于 0x4B35F0 已确认的后半段：
+ *   node = manager+0x1C 链表头；
+ *   每个 node 调 vtable+0x14(mode=0, TargetWidth, TargetHeight)；
+ *   node = node+0x08 的 next。
+ *
+ * 返回值是成功调用了多少个顶层 UI 对象；visited_out（如果非空）则返回遍历了多少个节点。
+ * 这个函数本身不判断 Steam，也不做 one-shot，所有策略由 try_steam_delayed_ui_sync() 管理。
+ */
+static DWORD apply_current_ui_resolution_broadcast(DWORD* visited_out)
+{
+    LPVOID node;
+    DWORD visited = 0u;
+    DWORD applied = 0u;
+
+    if (visited_out) {
+        *visited_out = 0u;
+    }
+
+    if (!g_jmm_manager || g_target_width == 0u || g_target_height == 0u) {
+        return 0u;
+    }
+
+    node = *(LPVOID*)((BYTE*)g_jmm_manager + 0x1Cu);
+
+    while (node && visited < 512u) {
+        LPVOID vtable = *(LPVOID*)node;
+        DWORD function_address = 0u;
+
+        ++visited;
+
+        if (vtable) {
+            function_address = *(DWORD*)((BYTE*)vtable + 0x14u);
+        }
+
+        /*
+         * ComeOn.exe 自身代码位于 0x00400000~0x00600000 这一固定 PE32 范围。
+         * 只有 vtable 槽明确指回游戏代码时才调用，避免把空指针/数据当函数执行。
+         */
+        if (function_address >= 0x00400000u && function_address < 0x00600000u) {
+            FnUIResolutionApply apply_resolution = (FnUIResolutionApply)function_address;
+            apply_resolution(node, 0, (LONG)g_target_width, (LONG)g_target_height);
+            ++applied;
+        }
+
+        node = *(LPVOID*)((BYTE*)node + UI_OBJECT_NEXT_OFFSET);
+    }
+
+    if (visited_out) {
+        *visited_out = visited;
+    }
+
+    return applied;
+}
+
+/*
+ * Steam/ComeOn.dll 专用：在 HUD 真正成熟后，补一次非 Steam 自然会发生、Steam 缺失的第二阶段 UI 布局。
+ *
+ * 为什么触发点选在主 HUD +0x58 自动布局之后：
+ *   1. ASI 初始化时 UI manager+0x1C 还是空链，test5 日志已经证明 visited=0；
+ *   2. Steam/非 Steam 对照日志证明，两边第一次 HUD 布局完全一致，之后只有非 Steam 继续发生第二阶段布局；
+ *   3. 当 HUD 的 0x0B/0x0E child 都已经存在时，至少说明主 HUD 子控件树已经建立，不再是“只有空壳对象”的早期阶段；
+ *   4. 此时再确认 manager+0x1C 非空，才允许广播，避免重演 test4/test5 的过早初始化问题。
+ *
+ * 这个函数还特别避免两个历史坑：
+ *   - 不调用完整 0x4B35F0，所以不会再次打开 MB\\JMMDL.txt / JMMDL800.txt；
+ *   - 不改 0x4087B5 callsite，不影响非 Steam 原本就正常的自然 JMM/UI 生命周期。
+ */
+static BOOL steam_jmm_resource_root_ready(void)
+{
+    DWORD length = 0u;
+
+    if (!g_jmm_resource_root) {
+        return FALSE;
+    }
+
+    /*
+     * 不猜盘符或 Steam 安装目录，只要求游戏自己维护的资源根字符串已经非空并且正常终止。
+     * 最多扫 1024 字节，防止坏状态下越界读取。
+     */
+    while (length < 1024u && g_jmm_resource_root[length] != '\0') {
+        ++length;
+    }
+
+    if (length == 0u || length >= 1024u) {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+/*
+ * Steam/ComeOn.dll 专用：在 HUD 真正成熟后补一次“完整的原版 JMM 第二阶段应用”。
+ *
+ * test9 已经用实机日志证明：即使 34 个顶层 UI 的 vtable+0x14 全部执行，0x0B/0x0E
+ * 的矩形仍完全不变，所以非 Steam 自然第二阶段并不是单纯的“广播 TargetWidth/TargetHeight”。
+ * 重新反汇编 0x004B35F0 后确认完整流程是：
+ *   1. 0x4EB9E0 取得资源根目录并追加 "mb\\"；
+ *   2. 根据宽度选择 JMMDL.txt 或 JMMDL800.txt；
+ *   3. 0x4D0500 真正加载 JMM 布局资源；
+ *   4. 最后才遍历 UI manager+0x1C，调用各对象 vtable+0x14。
+ *
+ * 因此 test10 在 Steam 环境下不再自己模拟第 4 步，而是在以下条件全部满足后只调用一次
+ * 游戏原版 0x4B35F0(mode=0, TargetWidth, TargetHeight)：
+ *   - 主 HUD 0x0B/0x0E child 已存在；
+ *   - UI manager 顶层链已非空；
+ *   - 游戏资源根目录已经非空；
+ *   - 当前没有正在进行的 Steam JMM 重放。
+ *
+ * test4 之所以弹 MB\\JMMDL*.txt，是因为它在 ASI 初始化阶段就过早重放；test10 明确等待
+ * 资源路径和 GUI 生命周期都成熟后再调用。非 Steam 永远不会进入这条额外路径。
+ */
+static void try_steam_delayed_ui_sync(LPVOID hud)
+{
+    LPVOID child_0b;
+    LPVOID child_0e;
+    LPVOID hud_after;
+    LPVOID list_head;
+    HudRect rect_0b_before;
+    HudRect rect_0e_before;
+    HudRect rect_0b_after;
+    HudRect rect_0e_after;
+    BOOL have_0b_before;
+    BOOL have_0e_before;
+    BOOL have_0b_after;
+    BOOL have_0e_after;
+    BOOL changed = FALSE;
+    int result;
+    char line[896];
+
+    if (!hud || g_steam_ui_sync_done || g_steam_ui_sync_in_progress) {
+        return;
+    }
+
+    /* 某些加载顺序下 ComeOn.dll 可能比 ASI 稍晚出现，所以允许在早期 HUD layout 补检测。 */
+    if (!g_steam_environment && GAME_GetModuleHandleA) {
+        if (GAME_GetModuleHandleA("ComeOn.dll")) {
+            g_steam_environment = TRUE;
+            append_runtime_line("[RUNTIME] Steam environment detected late: ComeOn.dll is now loaded");
+        }
+    }
+
+    if (!g_steam_environment || !g_jmm_manager || !g_original_jmm_load) {
+        return;
+    }
+
+    child_0b = find_main_hud_child_by_id(hud, 0x0Bu);
+    child_0e = find_main_hud_child_by_id(hud, 0x0Eu);
+    if (!child_0b || !child_0e) {
+        return;
+    }
+
+    list_head = *(LPVOID*)((BYTE*)g_jmm_manager + 0x1Cu);
+    if (!list_head) {
+        return;
+    }
+
+    /* test10 的关键安全门槛：资源根目录尚未初始化时绝不调用完整 0x4B35F0。 */
+    if (!steam_jmm_resource_root_ready()) {
+        if (!g_steam_ui_sync_wait_root_logged) {
+            g_steam_ui_sync_wait_root_logged = TRUE;
+            append_runtime_line("[RUNTIME] Steam delayed JMM apply waiting: game resource root is not ready yet");
+        }
+        return;
+    }
+
+    if (g_steam_ui_sync_attempts >= 2u) {
+        return;
+    }
+    ++g_steam_ui_sync_attempts;
+
+    have_0b_before = read_child_rect(child_0b, &rect_0b_before);
+    have_0e_before = read_child_rect(child_0e, &rect_0e_before);
+
+    line[0] = '\0';
+    str_append(line, (DWORD)sizeof(line), "[RUNTIME] Steam delayed JMM apply begin attempt=");
+    append_int(line, (DWORD)sizeof(line), (LONG)g_steam_ui_sync_attempts);
+    str_append(line, (DWORD)sizeof(line), " manager=");
+    append_hex32(line, (DWORD)sizeof(line), (DWORD)g_jmm_manager);
+    str_append(line, (DWORD)sizeof(line), " head=");
+    append_hex32(line, (DWORD)sizeof(line), (DWORD)list_head);
+    str_append(line, (DWORD)sizeof(line), " target=");
+    append_int(line, (DWORD)sizeof(line), (LONG)g_target_width);
+    str_append(line, (DWORD)sizeof(line), "x");
+    append_int(line, (DWORD)sizeof(line), (LONG)g_target_height);
+    str_append(line, (DWORD)sizeof(line), " resource_root=ready id0B_before=");
+    append_child_brief(line, (DWORD)sizeof(line), child_0b);
+    str_append(line, (DWORD)sizeof(line), " id0E_before=");
+    append_child_brief(line, (DWORD)sizeof(line), child_0e);
+    append_runtime_line(line);
+
+    /* 完整复用游戏自己的 ReceiveMsg/JMM 入口；in_progress 防止内部广播再次递归触发本函数。 */
+    g_steam_ui_sync_in_progress = TRUE;
+    result = g_original_jmm_load(g_jmm_manager, 0, (LONG)g_target_width, (LONG)g_target_height);
+    g_steam_ui_sync_in_progress = FALSE;
+
+    /* 原版完整应用可能重排甚至重建 HUD，所以 after 阶段优先使用最新主 HUD 实例。 */
+    hud_after = g_main_hud_instance ? g_main_hud_instance : hud;
+    child_0b = find_main_hud_child_by_id(hud_after, 0x0Bu);
+    child_0e = find_main_hud_child_by_id(hud_after, 0x0Eu);
+    have_0b_after = read_child_rect(child_0b, &rect_0b_after);
+    have_0e_after = read_child_rect(child_0e, &rect_0e_after);
+
+    if (have_0b_before && have_0b_after &&
+        (rect_0b_before.left != rect_0b_after.left || rect_0b_before.top != rect_0b_after.top)) {
+        changed = TRUE;
+    }
+    if (have_0e_before && have_0e_after &&
+        (rect_0e_before.left != rect_0e_after.left || rect_0e_before.top != rect_0e_after.top)) {
+        changed = TRUE;
+    }
+
+    /* 返回非 0 表示原版完整 JMM 应用成功；成功后本进程不再重复。 */
+    if (result != 0) {
+        g_steam_ui_sync_done = TRUE;
+        g_steam_ui_sync_applied = 1u;
+    }
+
+    line[0] = '\0';
+    str_append(line, (DWORD)sizeof(line), "[RUNTIME] Steam delayed JMM apply end result=");
+    append_int(line, (DWORD)sizeof(line), result);
+    str_append(line, (DWORD)sizeof(line), g_steam_ui_sync_done ? " done=1" : " done=0");
+    str_append(line, (DWORD)sizeof(line), changed ? " child_layout_changed=1" : " child_layout_changed=0");
+    str_append(line, (DWORD)sizeof(line), " id0B_after=");
+    append_child_brief(line, (DWORD)sizeof(line), child_0b);
+    str_append(line, (DWORD)sizeof(line), " id0E_after=");
+    append_child_brief(line, (DWORD)sizeof(line), child_0e);
     append_runtime_line(line);
 }
 
@@ -2842,6 +3215,7 @@ static void initialize_display_fix(void)
     int font_result = 0;
     BOOL resolution_result = FALSE;
     BOOL layout_result = FALSE;
+    BOOL jmm_context_result = FALSE;
     BOOL hud_result = FALSE;
     BOOL global_release_result = FALSE;
     BOOL world_press_result = FALSE;
@@ -2861,7 +3235,7 @@ static void initialize_display_fix(void)
     make_sibling_path(module_path, "DisplayFix.ini", g_ini_path, (DWORD)sizeof(g_ini_path));
     make_sibling_path(module_path, "DisplayFix.log", g_log_path, (DWORD)sizeof(g_log_path));
 
-    log_line("DisplayFix v0.3-test8a");
+    log_line("DisplayFix v0.3-test10");
     log_line("Architecture: Win32/x86 ASI, content-signature runtime patch");
 
     if (!resolve_required_apis()) {
@@ -2957,16 +3331,37 @@ static void initialize_display_fix(void)
     }
 
     /*
-     * 非 Steam 实机已经回溯确认：v0.2-test1 的 GUI 就是正确的，v0.3-test1 放开任意 BaseHeight 后也仍正确。
-     * 因此 test3~test5 为“启动 GUI/JMM 重建”加入的额外运行时 hook/广播并不是主线所需功能，
-     * 而且会把 Steam 专属启动差异和顶部按钮问题搅在一起。v0.3-test8 明确停止安装这些实验逻辑。
+     * Steam 与非 Steam 的对照日志已经给出一个非常明确的差异：
+     *   - 非 Steam：第一次 HUD 布局后，还会自然发生第二阶段 UI 尺寸应用；
+     *   - Steam/ComeOn.dll：停在第一阶段，不再发生这轮布局，因此 GUI 最终位置不一致。
      *
-     * 下面两个函数仍保留在源码里，方便后续独立研究 Steam 的 ComeOn.dll / 初始化时序；
-     * 显式取地址只为保留编译期引用，不会执行它们，也不会改写 0x4087B5。
+     * test10 继续只“解析”0x4087A0 包装函数里的 UI manager / 0x4B35F0 上下文，绝不改写 0x4087B5 CALL。
+     * test9 已实机证明“只广播 vtable+0x14”不会产生非 Steam 的第二阶段布局；test10 因此等 HUD、顶层链和
+     * 资源根目录都成熟后，只在 Steam 环境补调用一次完整原版 0x4B35F0(mode=0,TargetWidth,TargetHeight)。
+     * 非 Steam 路径完全不会执行这次额外 JMM 应用。
      */
+    jmm_context_result = resolve_jmm_context(&text_region, (BYTE**)0);
+
+    if (GAME_GetModuleHandleA && GAME_GetModuleHandleA("ComeOn.dll")) {
+        g_steam_environment = TRUE;
+        log_line("[INFO] Steam/ComeOn.dll environment detected");
+        if (jmm_context_result) {
+            log_line("[OK] Steam delayed JMM apply armed; waits for mature HUD + top-level UI + resource root");
+            log_line("[INFO] Steam fix reuses original 0x4B35F0 once; non-Steam path remains untouched");
+        } else {
+            log_line("[FAIL] Steam environment detected but UI/JMM context signature is missing/ambiguous; Steam layout sync disabled");
+        }
+    } else {
+        log_line("[INFO] non-Steam environment detected; Steam delayed UI sync remains dormant");
+        if (!jmm_context_result) {
+            log_line("[INFO] optional Steam UI/JMM context was not resolved; non-Steam path is unaffected");
+        }
+    }
+
+    /* 历史实验函数仍保留在源码供接档研究，但 test10 主线不安装这些 callsite hook / startup 广播实验。 */
     (void)&install_jmm_first_load_hook;
     (void)&broadcast_initial_ui_resolution;
-    log_line("[INFO] experimental startup JMM/UI rebroadcast is disabled; non-Steam stable GUI path is preserved");
+    (void)&apply_current_ui_resolution_broadcast;
 
     /*
      * v0.3-test8 即使 GUI.CenterMainHUD=0 也解析同一个主 HUD 类：
@@ -3013,8 +3408,9 @@ static void initialize_display_fix(void)
     }
 
     /*
-     * 初始化日志写盘。v0.3-test8 不再主动重播任何 JMM/UI 初始化路径，
-     * 后续 [RUNTIME] 行只来自游戏自然运行时真正经过的 HUD 布局、WORLD press 与全局鼠标释放。
+     * 初始化日志写盘。test10 不在 DLL/ASI 初始化阶段主动重播 GUI/JMM；
+     * Steam 专用同步只会在 HUD 真正成熟后触发一次。普通地图 WORLD press / GLOBAL release 的高频诊断
+     * 已关闭，只有顶部按钮真正被拦截/兜底和 Steam one-shot 原版 JMM 应用才写运行时日志，减少性能干扰。
      */
     flush_log_file();
 }

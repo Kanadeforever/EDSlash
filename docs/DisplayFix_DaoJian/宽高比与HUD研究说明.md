@@ -69,3 +69,29 @@ MainHUDCenterDelta = (TargetWidth - NativeBaseWidth) / 2
 - `build.bat` 已按仓库位置重新整理：同时自动查找 PATH、`LLVM_HOME`、`LLVM_PATH`、`Program Files\LLVM` 和 Visual Studio 自带 LLVM，兼容本地与 Windows GitHub Actions；发行目录仍严格只有 ASI 与 INI。
 - 主界面固定 640x480 的等比放大居中仍是后续任务，本轮没有处理。
 
+
+
+## v0.3-test8b 构建同步说明
+
+- test8a 的 `build.bat` 最后使用 `where /r` 递归扫描 Visual Studio，实机误选到 `VC\Tools\Llvm\ARM64\bin\clang.exe`，在 x64 Windows 上出现“映像文件无效 / 对另一种计算机类型有效”。该方案已判定失败。
+- test8b 将编译器搜索精简为三层：PATH → `%ProgramFiles%\LLVM\bin` → `vswhere` 最新 Visual Studio 的 `VC\Tools\Llvm\x64\bin`；`clang.exe` 与 `lld-link.exe` 必须来自同一目录。
+- 不再支持递归扫描、`LLVM_HOME`、`LLVM_PATH` 或任意 ARM64 LLVM 回退。找到工具后先运行 `--version`，无法在当前宿主执行时立即停止。
+- `verify_build.py` 新增 build.bat 自检：禁止 `where /r`、禁止 ARM64 LLVM 路径、要求存在 x64 VS LLVM 回退，并检查 UTF-8 BOM + CRLF 以及所有有正文的 `REM` / `echo` 行末尾两个半角空格。
+- test8b 后续实机日志已经确认 INI 第一节修复成立：Steam 与非 Steam 都能正确读取 `BaseHeight=720` 并计算 `1280x720`；这一项不再是阻塞。
+
+## v0.3-test9 Steam 布局补充（历史失败）
+
+Steam 与非 Steam 使用同一 fixed-Y / auto-X 公式，第一次 HUD 布局也实测相同。Steam 异常不是 `centerDelta` 公式不同，而是 ComeOn.dll 环境缺少非 Steam 随后自然发生的第二阶段顶层 UI 尺寸应用。
+
+test9 因此保持世界分辨率、JMM 模板选择和底部 HUD 居中算法完全不变，只在 Steam 条件满足后补一次顶层 `vtable+0x14(0,W,H)` 广播。非 Steam 不执行。
+
+主界面固定 640x480 的 4:3 等比放大居中仍属于另一套前端分辨率系统，test9 没有处理。
+
+
+## v0.3-test10 Steam 布局补充
+
+test9 实机确认“只广播顶层 `vtable+0x14(0,W,H)`”不会改变 0x0B/0x0E 以及其它 HUD 的第二阶段位置，即使 34 个对象都成功调用也无效。
+
+重新反汇编 `0x004B35F0` 后确认，真正的第二阶段顺序是：先通过 `0x004EB9E0` 取得资源根并拼出 `mb\JMMDL*.txt`，由 `0x004D0500` 重新加载对应 JMM 布局资源，之后才广播 `vtable+0x14`。因此 Steam 的最终布局差异本质上是“缺少一次完整 JMM 应用”，不是单纯缺少 width/height 广播。
+
+test10 只在 Steam 环境、主 HUD/顶层 UI/资源根目录都成熟后，补调用一次原版 `0x004B35F0(0,TargetWidth,TargetHeight)`；非 Steam 不执行。主界面固定 640x480 的 4:3 等比放大居中仍属于另一套前端系统，本轮继续不处理。
