@@ -2,34 +2,27 @@
 """
 DisplayFix：ComeOn.exe 兼容性只读检查工具。
 
-这个工具只“读” EXE，不会写入任何字节，也不会生成补丁版 EXE。
-它的用途是：在把 DisplayFix.asi 放进一个新的 ComeOn.exe 改版之前，先离线确认
-目前 ASI 依赖的关键代码结构是不是仍然存在，而且每条签名都只出现一次。
+这个工具只读取 EXE，不写入任何字节，也不会生成补丁版 EXE。DisplayFix 不再用整个文件的
+SHA-256 白名单锁版本，而是检查运行时真正依赖的机器码、调用关系和 vtable 结构是否仍然成立。
 
-为什么需要它：
-- DisplayFix 已经明确不再用整个 EXE 的 SHA-256 锁死版本；
-- 但是“不锁哈希”不等于“看到任何 EXE 都盲改”；
-- 真正安全的做法是验证具体目标代码结构、目标 vtable 关系和字体路径状态；
-- 这个脚本把 ASI 运行时会做的主要结构检查提前做一遍，方便测试和接档。
+v0.3-test11 除了保留字体、动态分辨率、JMM、HUD、顶部按钮和输入链验证，还新增两项前端生命周期证据：
 
-当前检查：
-1. 目标必须是 PE32 / i386；
-2. 字体 DPI 路径必须是“原始”或“已经修复”两种已确认状态之一；
-3. 分辨率模式派发签名必须唯一；
-4. 两处分辨率映射签名必须唯一；
-5. JMM 的 480/600 布局文件选择器签名必须唯一；
-6. 0x4087A0 这一类“应用当前 Width/Height 给 GUI/JMM”的包装函数签名必须唯一，且其 CALL 必须真正指向已确认的 JMM/UI 广播函数头；
-7. 底部主 HUD 根类构造签名必须唯一；
-8. JMM 通用布局函数签名必须唯一；
-9. 从主 HUD 构造函数读出的 vtable +0x58 必须确实指向该通用布局函数；
-10. 主 HUD vtable +0x24 必须保留实机闭合的 0x0B / 0x0E 两条顶部按钮分支；每条分支都必须先查询目标窗口 active，再调用目标对象 vtable+0x1C 切换显示状态；
-11. 主 HUD +0x58 必须保留视觉居中所需的通用布局关系，0x0B/0x0E 两条原版窗口开关分支必须完整存在；
-12. 0x004060EB 一带的世界鼠标按下 callsite 必须唯一，而且 E8 必须真正指向已确认的 0x00473F10 世界输入函数；test8 只在这一层阻止 0x0B/0x0E 点击穿透，不再包装 0x004B44F0。
-13. 0x00406086 一带的全局鼠标释放 callsite 必须唯一，而且 E8 必须真正指向已确认的 0x004B4560 UI manager 分派函数。
-    v0.3-test8 的顶部按钮窗口兜底仍安装在释放层：原版分派永远优先，只有按钮真实矩形被点击且目标窗口状态未变化时才补一次原版式开关；世界按下穿透则在 0x00473F10 callsite 独立阻断。
-另外继续检查 0x4087A0 wrapper/JMM 结构，供 Steam 与非 Steam 启动时序调查。
+1. 从唯一的 0x00404D7A 风格分辨率派发签名向前 0x4A 字节，必须能验证到原版 0x00404D30
+   风格显示模式函数头。test11 在主 HUD 真正出现后会复用这个函数，从原生前端 640x480/800x600
+   切到 TargetWidth x BaseHeight；不能只靠“减一个地址常数”猜函数。
+2. 主 HUD vtable +0x00 必须仍然指向已确认的 scalar deleting destructor 形状
+   `56 8B F1 E8 ...`。test11 在 HUD 生命周期结束时通过这一槽恢复 FRONTEND profile，使返回菜单时
+   原游戏自己的 640x480 请求不再被 GAMEPLAY profile 改写。
 
-代码注释故意写得很细，方便没有逆向经验的人也能看懂每一步为什么存在。
+同时继续验证：
+- 字体 DPI 原始/已修复状态；
+- 两处分辨率映射与 JMM 选择器；
+- 0x4087A0 -> 0x4B35F0 以及 test10 Steam delayed JMM 所需的资源路径构造链；
+- 主 HUD +0x24 的真实 0x0B/0x0E 窗口分支与 +0x58 布局关系；
+- test8 世界输入 0x4060EB -> 0x473F10；
+- 全局 release 0x406086 -> 0x4B4560。
+
+工具只报告兼容/不兼容，不运行游戏。代码注释故意写得很细，方便以后减少重复反编译。
 """
 
 from __future__ import annotations
@@ -348,6 +341,21 @@ def verify_one(path: Path) -> list[str]:
         )
 
     mode_off = require_unique("分辨率模式派发", find_masked(text_data, RES_MODE, RES_MODE_MASK))
+
+    # test11 需要在“主 HUD 真正出现后”复用原版 SetDisplayMode 包装函数，把前端 640x480 切成
+    # DisplayFix 的游戏内目标。因此除了模式派发签名唯一，还必须验证 mode_off 前 0x4A 字节确实
+    # 是 0x404D30 风格函数头，避免仅凭固定差值误认函数。
+    if mode_off < 0x4A:
+        raise RuntimeError("分辨率模式派发前空间不足，无法解析原版显示模式函数。")
+    display_mode_off = mode_off - 0x4A
+    display_head = text_data[display_mode_off : display_mode_off + 18]
+    if len(display_head) < 18 or not (
+        display_head[0:9] == bytes.fromhex("64 A1 00 00 00 00 6A FF 68")
+        and display_head[13:18] == bytes.fromhex("50 8B 44 24 10")
+    ):
+        raise RuntimeError("分辨率模式派发没有位于已确认的原版 SetDisplayMode 包装函数内。")
+    display_mode_va = image_base + text_rva + display_mode_off
+
     map1_off = require_unique("第一处分辨率映射", find_masked(text_data, RES_MAP1, RES_MAP1_MASK))
     map2_off = require_unique("第二处分辨率映射", find_masked(text_data, RES_MAP2, RES_MAP2_MASK))
     jmm_off = require_unique("JMM 布局选择器", find_masked(text_data, JMM_LAYOUT, JMM_LAYOUT_MASK))
@@ -368,7 +376,7 @@ def verify_one(path: Path) -> list[str]:
     # ---------------------------------------------------------------------------------------------
     # 0x4087A0 风格 GUI/JMM 分辨率应用包装函数。
     #
-    # v0.3-test10 继续把这条包装函数作为 Steam delayed JMM apply 的关键结构证据：
+    # v0.3-test11 继续把这条包装函数作为 Steam delayed JMM apply 的关键结构证据：
     #   1. 先要求整个包装函数签名唯一；
     #   2. 包装函数 +16 必须仍能解析出 UI manager，+21 必须是 E8；
     #   3. 解码 rel32 后，目标必须落在 PE 中并匹配 0x4B35F0 已确认函数头；
@@ -466,6 +474,24 @@ def verify_one(path: Path) -> list[str]:
         )
 
     # ---------------------------------------------------------------------------------------------
+    # vtable +0x00：主 HUD scalar deleting destructor。
+    #
+    # test11 用它把运行时代码 profile 从 GAMEPLAY 恢复为 FRONTEND，保证返回主菜单/动画后
+    # 原游戏下一次 640x480 请求不会继续被 TargetWidth/TargetHeight 截走。
+    # 原版函数头必须是 push esi / mov esi,ecx / call <real dtor>。
+    # ---------------------------------------------------------------------------------------------
+    destructor_slot_va = vtable_va + 0x00
+    destructor_slot_file_offset = va_to_file_offset(destructor_slot_va, image_base, sections)
+    destructor_slot_target = u32(data, destructor_slot_file_offset)
+    destructor_target_file_offset = va_to_file_offset(destructor_slot_target, image_base, sections)
+    destructor_head = data[destructor_target_file_offset : destructor_target_file_offset + 4]
+    if destructor_head != bytes.fromhex("56 8B F1 E8"):
+        raise RuntimeError(
+            "主 HUD vtable +0x00 不符合已确认 scalar deleting destructor 形状："
+            f"target=0x{destructor_slot_target:08X}。"
+        )
+
+    # ---------------------------------------------------------------------------------------------
     # vtable +0x58：主 HUD 的布局函数。
     #
     # v0.2-test1 就依赖这一槽完成“只移动底部主 HUD，不碰小地图和右侧按钮”。
@@ -558,6 +584,7 @@ def verify_one(path: Path) -> list[str]:
         f"SHA-256={hashlib.sha256(data).hexdigest()}",
         font_state,
         f"分辨率模式派发 VA=0x{image_base + text_rva + mode_off:08X}",
+        f"原版显示模式函数 VA=0x{display_mode_va:08X}（test11 前端/游戏内 profile 生命周期切换）",
         f"当前内部/扩展分支={hidden_width}x{hidden_height}",
         f"第一处分辨率映射 VA=0x{image_base + text_rva + map1_off:08X}",
         f"第二处分辨率映射 VA=0x{image_base + text_rva + map2_off:08X}",
@@ -568,6 +595,7 @@ def verify_one(path: Path) -> list[str]:
         f"全局鼠标释放 callsite VA=0x{global_release_va:08X} -> 0x{global_release_target_va:08X}（顶部窗口 fallback）",
         f"主 HUD 根类构造 VA=0x{hud_va:08X}",
         f"主 HUD vtable=0x{vtable_va:08X}",
+        f"vtable+0x00 -> 0x{destructor_slot_target:08X}（test11 前端 profile 恢复点）",
         f"vtable+0x24 -> 0x{event_slot_target:08X}（顶部按钮 0x0B/0x0E 原版窗口开关已验证）",
         f"ID 0x0B target global=0x{target_global_0b_a:08X}",
         f"ID 0x0E target global=0x{target_global_0e_a:08X}",

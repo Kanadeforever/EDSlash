@@ -2,67 +2,65 @@
  * DisplayFix.c
  *
  * 《刀剑封魔录》ComeOn.exe 显示修复 ASI 插件。
- * 当前版本：v0.3-test10
+ * 当前版本：v0.3-test11
  *
- * v0.3-test10 针对 test9 的 Steam 实机反证继续收窄：test9 在 HUD 成熟后只调用顶层 UI 的
- * vtable+0x14(0,W,H)，日志显示 visited=34 / applied=34，但 0x0B / 0x0E 的坐标完全不变，
- * 证明“只广播宽高”并不是非 Steam 自然第二阶段布局的完整语义。重新反汇编 0x004B35F0 后确认：
- * 原版在广播之前还会先通过 0x004EB9E0 取得当前资源根目录并拼出 mb\JMMDL*.txt，再调用
- * 0x004D0500 真正加载对应 JMM 布局资源；随后才遍历顶层 UI 调 vtable+0x14。
- * test10 因此不再伪造“广播后半段”，而是在 Steam 环境、HUD 和顶层 UI 均已成熟、并且资源根目录
- * 已经非空后，只执行一次原版 0x004B35F0(mode=0,TargetWidth,TargetHeight)。这与非 Steam 自然调用
- * 走的是同一个原版入口；in-progress 防递归，one-shot 防重复。非 Steam 路径仍然完全不额外调用。
- * v0.3-test9 以 v0.3-test8b 为输入与分辨率基线，只新增 Steam/ComeOn.dll 专用的“延迟一次性 UI 布局同步”。
- * 用户的 Steam / 非 Steam 对照日志已经证明：两边第一次主 HUD 布局完全一致，但非 Steam 后续还会自然
- * 发生一轮 UI/JMM 尺寸应用，Steam 环境却缺少这一步，因此 Steam 最终停留在第一阶段 GUI 状态。
- * test9 不重载 JMMDL 文件，也不碰非 Steam 已经稳定的 GUI 路径；它只在检测到 ComeOn.dll、主 HUD
- * 子控件已经完整建立、UI manager 顶层链表已经非空后，调用各顶层 UI 自己的 vtable+0x14(0,W,H)
- * 一次，把 Steam 补到与非 Steam 第二阶段布局相同的状态。整个同步有 in-progress 与 one-shot 双重保护，
- * 即使广播过程中主 HUD 再次进入 +0x58 布局 hook，也不会递归重复广播。
- * v0.3-test8a 的核心变化：彻底撤销 v0.3-test7 的全局 mouse-press 包装 hook，
- * 恢复 v0.3-test6 的输入行为基线，并只在“真正准备调用世界鼠标输入”的最后一个 callsite 上
- * 做极窄拦截。test7 实机已经证明：即使日志显示普通地图 original_result=0 / consume=0，
- * 地图左键仍然失效，而且 Alt+F4 也被破坏。进一步反汇编发现 0x004B44F0 并不是普通、
- * 可以随意用 C wrapper 重新调用的 thiscall：它会把调用者保留下来的 ESI 直接压给下游虚函数。
- * 因此 test7 的包装层改变了非标准隐藏寄存器上下文，不能继续使用。
+ * ----------------------------------------------------------------------------------------------
+ * v0.3-test11 的核心目标：把“固定 640x480 的前端/动画”和“可扩展的游戏内世界”彻底分开。
+ * ----------------------------------------------------------------------------------------------
  *
- * test8 改为：保留 0x004060CD -> 0x004B44F0 完整原版路径；只有当它自己返回 0、
- * 主循环已经走到 0x004060EB -> 0x00473F10“世界鼠标按下”这一步时，DisplayFix 才检查
- * 当前鼠标是否落在主 HUD 实时 ID 0x0B / 0x0E 的真实矩形。命中时仅跳过这一次
- * 0x00473F10；否则原样调用原函数。这样属性/道具窗口继续由 test6 已实机成功的 release fallback
- * 打开，但地图普通左键、Alt+F4、右侧鼠标技能按钮和其他原版输入都不再经过 test7 的危险包装层。
+ * 用户实机已经确认一个非常重要的原版行为：
+ *   1. 启动动画、主菜单等前端阶段，本来固定使用 640x480 的 4:3 逻辑画布；
+ *   2. 真正进入游戏以后，游戏才接受 640x480 / 800x600 这套游戏内分辨率设置；
+ *   3. 旧版 DisplayFix 在 ASI 初始化时就把所有分辨率分支改成 TargetWidth x TargetHeight，
+ *      因此当 BaseHeight=1080 时，主菜单仍只画左上角那块原生内容，剩余大 surface 没被正确覆盖，
+ *      甚至会把旧帧/动画/3D surface 残留显示到黑区里。这正是用户截图里“大面积黑屏 + 黄色残影”的根因方向。
  *
- * 本测试版把已经确认的显示修复合到一个运行时 ASI 中，并针对上一轮实机结果做两项“换路径”修正：
- *   1. 高 DPI 字体修复：只让游戏创建字体时使用 96 DPI，不改变整个程序的 DPI 模式；
- *   2. 固定 Y / 自动 X：BaseHeight 是任意正整数，X 根据真实/指定宽高比自动计算；
- *      BaseHeight 越大，游戏逻辑视野越大，效果接近“缩远/FOV 增大”，不设置人为上限；
- *   3. 底部主 HUD 居中：继续保留 v0.2-test1 已经实机确认“非常完美”的根节点布局 hook；
- *   4. 属性/道具两个顶部按钮：v0.3-test4 已用 A/B 实机日志闭合真实 control ID 为 0x0B / 0x0E，
- *      不是此前误判的 0x0F / 0x10。v0.3-test6 又在 BaseHeight=720 下实机确认：把 fallback 提升到
- *      0x00406086 -> 0x004B4560 全局鼠标释放层后，这两个窗口终于能够正常打开。
- *   5. test6 成功后暴露最后一层输入问题：点击窗口能打开，但角色同时向按钮下方地图坐标移动。
- *      test7 曾尝试包装 0x004B44F0 并改 handled 返回值，实机却导致普通地图左键失效、Alt+F4 失效；
- *      反汇编确认 0x004B44F0 依赖调用者保留下来的 ESI，不能用普通 C wrapper 安全包裹。
- *      test8 因此完全恢复原版 0x004B44F0，只在其返回 0 后真正调用世界函数 0x00473F10 的 callsite
- *      做“命中 0x0B/0x0E 才跳过世界输入”的最小拦截。
- *   6. JMM/UI 启动重播实验退出非 Steam 主线：用户回溯确认非 Steam GUI 从 v0.2-test1 / v0.3-test1
- *      起一直正常；完整重放 0x4B35F0 还会弹“MB\JMMDL.txt / MB\JMMDL800.txt”。所以本版不主动
- *      重播 JMM/UI，只保留历史研究函数供 Steam 专项以后参考。
- *   7. 运行时诊断记录 WORLD press / GLOBAL release：前者只告诉我们 0x00473F10 是否因顶部按钮而被跳过，
- *      后者继续记录 test6 的属性/道具窗口 fallback 是否执行；日志都严格限次数，不会每帧刷盘。
+ * test11 不再让一个分辨率补丁同时支配前端和游戏内，而是维护两个运行时代码 profile：
  *
- * 特别更正：
- *   游戏设置界面正式可选的最高分辨率只有 800x600。原程序代码中确实还残留一个
- *   1024x768 的内部/隐藏分支，但它不是用户可在菜单里选择的“第三个分辨率槽位”。
- *   v0.1-test1 把这个内部分支误写成“可选择的 1024x768 槽位”，这是错误说明。
- *   本版不再要求选择不存在的 1024x768；运行时会把 640/800/内部三个分辨率分支
- *   统一到当前 DisplayFix 计算出的目标逻辑分辨率，因此当前游戏保存的是哪一个模式都能接住。
+ *   FRONTEND profile（启动动画 / 主菜单 / 返回主菜单）：
+ *     - 恢复当前 EXE 自己原来的 640/800/内部模式立即数；
+ *     - 恢复当前 EXE 自己原来的两处分辨率映射；
+ *     - 恢复 JMM 原来的 640/800 比较值；
+ *     - 不把 BaseHeight/TargetWidth 提前写入前端；
+ *     - 因而原版真正请求 640x480 时，cnc-ddraw 拿到的是完整 4:3 画面，可以按其输出窗口
+ *       做等比放大和居中，而不是拿到一个“1920x1080 里只画左上 640x480”的错误 surface。
  *
- * 重要：
- *   - 这个文件故意不依赖 C 运行库，也不链接额外 DLL；
- *   - 它通过 ComeOn.exe 已经存在的 Win32 导入表调用少量系统 API；
- *   - 修改前会扫描并验证目标机器码内容，不用整个 EXE 的 SHA-256 锁版本；
- *   - 如果签名不唯一，插件宁可不改，也不会猜地址。
+ *   GAMEPLAY profile（主 HUD 真正出现以后）：
+ *     - 把三条显示模式分支统一到 TargetWidth x BaseHeight；
+ *     - 同步两处分辨率映射；
+ *     - 根据 BaseHeight 选择 JMMDL.txt 或 JMMDL800.txt 的目标宽度比较；
+ *     - 如果当前 live display 还是前端尺寸，就调用游戏自己的 0x00404D30 强制重应用当前模式一次；
+ *     - 设备/GUI 可能在这次调用中销毁重建，因此触发 Reset 后绝不继续访问旧 HUD 指针。
+ *
+ * 什么时候切换：
+ *   - 主 HUD vtable+0x58 第一次真正自动布局，说明已经进入游戏内，切 GAMEPLAY profile；
+ *   - 主 HUD vtable+0x00 析构时，恢复 FRONTEND profile，让原版随后返回菜单时的 640x480 请求
+ *     不再被 GAMEPLAY profile 截成 TargetWidth x TargetHeight；
+ *   - 析构 hook 本身不强制 SetDisplayMode(640x480)，避免地图切换/读档临时重建 HUD 时插入额外 Reset。
+ *
+ * Steam 特殊路径继续保留 v0.3-test10 已实机通过的修复：
+ *   - Steam/ComeOn.dll 环境缺少非 Steam 自然发生的一次完整后续 JMM apply；
+ *   - 等 HUD、顶层 UI、资源根都成熟后，one-shot 调用原版 0x004B35F0(0,W,H)；
+ *   - test10 实机已确认 child_layout_changed=1，Steam GUI 最终位置与非 Steam 一致；
+ *   - test11 的前端/gameplay profile 切换必须与这条 one-shot 互相加锁，避免递归重建。
+ *
+ * 输入修复继续保留 test8 已实机验证的方案：
+ *   - 顶部“属性/道具”真实 control ID 是 0x0B / 0x0E；
+ *   - 释放阶段在 0x00406086 -> 0x004B4560 之后仅在原版没切换窗口时补一次原版式 toggle；
+ *   - 按下阶段绝不包装 0x004B44F0（它依赖调用者保留的 ESI，test7 已证明会破坏地图左键和 Alt+F4）；
+ *   - 只在真正世界输入 0x004060EB -> 0x00473F10 的最后 callsite 上，命中 0x0B/0x0E 时跳过
+ *     本次角色移动，其他地图点击完全走原版。
+ *
+ * 其它已经实机确认并继续保留：
+ *   - 字体创建路径固定 96 DPI，解决 Windows 125% 等缩放下字体裁切，同时不改变整个进程 DPI；
+ *   - BaseHeight 任意正整数，TargetWidth 按宽高比自动计算；
+ *   - v0.2-test1 的底部主 HUD 根节点水平居中；边缘 UI（小地图/右侧按钮）继续贴边；
+ *   - INI 第一节 BOM 防护；
+ *   - 机器码/上下文签名验证，不用整个 EXE SHA-256 锁死兼容版本。
+ *
+ * 重要测试状态：
+ *   test11 的“前端/动画保持原生 4:3 + 进入游戏后再切动态分辨率”目前只有静态逆向、
+ *   内容签名和构建验证，还没有用户实机验收。代码与文档都必须把它标为测试方案，不能提前写成已通过。
  *
  * 代码里的注释故意写得非常细，目标是让只学过一天编程的人也能顺着看懂每一步。
  */
@@ -1170,6 +1168,7 @@ static const char UI_LAYOUT_MASK[] = "xxxxxxxxxxxxxxxxxxxxx????";
  * 但不再改写它：test5 已经实机证明，问题发生时鼠标释放可能根本到不了 +0x24，
  * 因此在这里继续安装行为补丁既太晚，也会增加不必要的变量。
  */
+#define MAIN_HUD_DESTRUCTOR_SLOT 0x00u
 #define MAIN_HUD_EVENT_SLOT      0x24u
 #define MAIN_HUD_INPUT_SLOT      0x30u
 #define MAIN_HUD_LAYOUT_SLOT     0x58u
@@ -1205,6 +1204,18 @@ typedef void (__thiscall *FnMainHudEvent)(LPVOID self, LONG event_type, LONG mou
  */
 static FnMainHudEvent g_original_main_hud_event = (FnMainHudEvent)0;
 static FnUILayout g_original_main_hud_layout = (FnUILayout)0;
+
+/*
+ * 主 HUD vtable +0x00 是 scalar deleting destructor。
+ * 它的参数只有一个删除标志 DWORD，返回 self。这个函数本身会先正常析构 HUD，
+ * 再根据 flags&1 决定是否释放对象内存。
+ *
+ * test11 只用这个 hook 做一件很窄的事：当 HUD 真正离开时，把“游戏内动态分辨率代码配置”
+ * 恢复成“前端原版配置”。这样下一次主菜单/开场动画请求原版 640x480 时，不会再被 BaseHeight
+ * 的目标分辨率截走。我们自己的分辨率切换期间会打开 guard，避免 HUD 因设备重建暂时析构时误恢复。
+ */
+typedef LPVOID (__thiscall *FnMainHudDestructor)(LPVOID self, DWORD flags);
+static FnMainHudDestructor g_original_main_hud_destructor = (FnMainHudDestructor)0;
 
 /*
  * 保存“最近一次真正参与布局的主 HUD 实例”。
@@ -1255,6 +1266,45 @@ static DWORD g_target_height = 0u;
  */
 static DWORD g_native_base_width = 640u;
 
+/*
+ * test11 把“前端/动画”和“真正游戏内”重新拆成原游戏本来的两套分辨率生命周期。
+ *
+ * 以前 test10 在 ASI 初始化时就把 640/800/内部三个分支全部永久改成 TargetWidth x TargetHeight，
+ * 这会让原本固定 640x480 的主菜单和开场/过场动画也得到一个超大的主表面。菜单本身仍只画原生
+ * 4:3 区域，于是画面停在左上角，未覆盖区域还可能残留动画/3D surface 的旧内容，出现用户截图中
+ * “黑底 + 黄色轮廓残影”一类现象。
+ *
+ * test11 改成两套“代码配置 profile”：
+ *   FRONTEND：完全恢复 EXE 原始的 640/800/内部分辨率与 JMM 比较；主菜单/动画继续用原版 640x480，
+ *             最终放大、保持 4:3、居中交给 cnc-ddraw 这一层完成；
+ *   GAMEPLAY：只有主 HUD 真正出现后才把对应立即数改成 DisplayFix 目标分辨率。
+ *
+ * 这些指针全部来自唯一内容签名，不按 SHA-256 绑版本；原始立即数也在安装时从当前 EXE 现场保存，
+ * 所以 Steam EXE、原版 EXE 和已经修改过隐藏分支的宽屏 EXE 都能各自恢复“自己原来的前端代码”。
+ */
+typedef int (__thiscall *FnDisplayModeApply)(LPVOID self, LONG mode, LONG force);
+static FnDisplayModeApply g_display_mode_apply = (FnDisplayModeApply)0;
+
+static BYTE* g_res_mode_patch = (BYTE*)0;
+static BYTE* g_res_map1_patch = (BYTE*)0;
+static BYTE* g_res_map2_patch = (BYTE*)0;
+static BYTE* g_jmm_selector_patch = (BYTE*)0;
+
+static DWORD g_res_mode_original[6];
+static DWORD g_res_map1_original[5];
+static DWORD g_res_map2_original[6];
+static DWORD g_jmm_original_cmp640 = 0u;
+static DWORD g_jmm_original_cmp800 = 0u;
+static BOOL g_resolution_profile_ready = FALSE;
+static BOOL g_gameplay_profile_active = FALSE;
+static BOOL g_gameplay_mode_switch_in_progress = FALSE;
+
+/* ComeOn.exe 的显示模式管理对象；当前兼容样本中架构固定，真实修改位置仍由内容签名验证。 */
+#define GAME_DISPLAY_MANAGER ((LPVOID)0x00548398u)
+#define DISPLAY_CURRENT_MODE_OFFSET   0x04u
+#define DISPLAY_CURRENT_WIDTH_OFFSET  0x228u
+#define DISPLAY_CURRENT_HEIGHT_OFFSET 0x22Cu
+
 /* 是否启用主 HUD 居中；顶部按钮兜底在更上层的全局鼠标释放 hook 中，与此开关彼此独立。 */
 static BOOL g_center_main_hud = TRUE;
 
@@ -1285,6 +1335,8 @@ static DWORD g_hud_event_log_count = 0u;
 static DWORD g_global_release_log_count = 0u;
 static DWORD g_world_press_log_count = 0u;
 static DWORD g_hud_candidate_log_count = 0u;
+/* test11 只在 HUD 真正退出时记录少量前端 profile 恢复信息，方便验证“返回主菜单”生命周期。 */
+static DWORD g_frontend_restore_log_count = 0u;
 
 /*
  * 从一个 child 读取矩形。
@@ -1430,6 +1482,43 @@ static void log_hud_candidate_children(LPVOID self)
  */
 static LPVOID find_main_hud_child_by_id(LPVOID self, DWORD wanted_id);
 static void try_steam_delayed_ui_sync(LPVOID hud);
+static BOOL set_frontend_resolution_profile(void);
+static BOOL activate_gameplay_resolution_if_needed(void);
+
+/*
+ * 主 HUD 析构 hook。
+ *
+ * 只要不是我们自己正在做“前端 -> 游戏内”的显示模式重建，也不是 Steam delayed JMM 正在重载布局，
+ * 就把下一阶段重新视为“前端 profile”。这里不主动 SetDisplayMode(640x480)：真正返回主菜单时，
+ * 原游戏本来就会自己请求固定 640x480。我们只负责保证那次原版请求不再被 TargetWidth/Height 截走。
+ *
+ * 这样做比在析构函数里强行 Reset 设备安全：地图切换/读档如果临时重建 HUD，也不会被 DisplayFix
+ * 粗暴插入一次额外 640x480 Reset；最坏只是在下一次 HUD 出现时重新确认/激活 GAMEPLAY profile。
+ */
+static LPVOID __fastcall main_hud_destructor_hook(LPVOID self, LPVOID unused_edx, DWORD flags)
+{
+    LPVOID result;
+
+    (void)unused_edx;
+
+    if (!g_original_main_hud_destructor) {
+        return self;
+    }
+
+    result = g_original_main_hud_destructor(self, flags);
+
+    if (!g_gameplay_mode_switch_in_progress && !g_steam_ui_sync_in_progress) {
+        g_main_hud_instance = (LPVOID)0;
+        if (g_resolution_profile_ready) {
+            if (set_frontend_resolution_profile() && g_frontend_restore_log_count < 4u) {
+                ++g_frontend_restore_log_count;
+                append_runtime_line("[RUNTIME] frontend resolution profile restored after HUD destruction; no forced display reset");
+            }
+        }
+    }
+
+    return result;
+}
 
 /*
  * 主 HUD vtable +0x58 的视觉居中 hook。
@@ -1463,7 +1552,19 @@ static int __fastcall main_hud_layout_hook(LPVOID self, LPVOID unused_edx, LONG 
 
     result = g_original_main_hud_layout(self, x, y);
 
+    /*
+     * test11 的核心时序点：第一次真正的主 HUD 自动布局说明游戏已经离开固定 640x480 的前端/动画阶段。
+     * 如果当前显示对象仍然不是 TargetWidth x TargetHeight，就先切 GAMEPLAY profile，再让游戏自己的
+     * 0x404D30 强制重应用一次当前显示模式。这个调用可能销毁当前 HUD，因此一旦真的发生 Reset，
+     * 必须立即返回，绝不能继续读 self；重建后的新 HUD 会再次进入本 hook 并完成正常居中。
+     */
+    if (activate_gameplay_resolution_if_needed()) {
+        return result;
+    }
+
     if (!g_center_main_hud) {
+        /* 即使用户不想居中，GAMEPLAY profile/Steam GUI 修复仍然已经在上面独立完成。 */
+        try_steam_delayed_ui_sync(self);
         log_hud_candidate_children(self);
         return result;
     }
@@ -2267,18 +2368,29 @@ static DWORD calculate_target_width(DWORD base_height, DWORD aspect_width, DWORD
 }
 
 /*
- * 把游戏三条分辨率模式分支统一成 target_width x target_height，
- * 再同步两处分辨率映射表。
+ * 解析动态分辨率所需的三组代码位置，但 test11 初始化阶段**不立刻写入目标宽高**。
  *
- * 返回 TRUE 只代表：三条签名都唯一，并且每一处写入都成功。
- * 如果任意签名缺失/重复，整个分辨率修复会直接拒绝，不猜地址。
+ * 旧版函数名沿用 apply_dynamic_resolution，是为了减少大面积重命名带来的审阅噪音；
+ * test11 里的真实职责已经变成：
+ *   1. 唯一定位模式派发与两处分辨率映射；
+ *   2. 保存当前 EXE 自己的原始立即数；
+ *   3. 解析并验证原版显示模式函数 0x404D30；
+ *   4. 保存 TargetWidth/TargetHeight，等待主 HUD 出现后才切 GAMEPLAY profile。
+ *
+ * 返回 TRUE 代表这些运行时 profile 的必要结构全部闭合；任意签名缺失/重复就拒绝启用。
  */
 static BOOL apply_dynamic_resolution(const TextRegion* region, DWORD target_width, DWORD target_height)
 {
     BYTE* mode;
     BYTE* map1;
     BYTE* map2;
+    BYTE* function_start;
 
+    /*
+     * test11 这里不再“初始化时立刻改宽高”。
+     * 我们先把三个唯一签名找出来、保存当前 EXE 的原始立即数，并解析真正的 0x404D30 显示模式函数。
+     * 主菜单/动画阶段保持这些原始字节不变；真正进入游戏后，main HUD hook 才切到 GAMEPLAY profile。
+     */
     mode = find_unique_pattern(region,
                                RES_MODE_ALL_PATTERN,
                                RES_MODE_ALL_MASK,
@@ -2298,109 +2410,83 @@ static BOOL apply_dynamic_resolution(const TextRegion* region, DWORD target_widt
         return FALSE;
     }
 
-    /* 内部/隐藏分支：无论输入 EXE 原来是 1024x768 还是某个宽屏改版，都统一覆盖。 */
-    if (!patch_u32(mode + 17u, target_width)) {
-        return FALSE;
-    }
-    if (!patch_u32(mode + 27u, target_height)) {
-        return FALSE;
-    }
+    /* 保存分辨率模式派发里 6 个会被 GAMEPLAY profile 改写的立即数。 */
+    g_res_mode_original[0] = read_u32(mode + 17u);
+    g_res_mode_original[1] = read_u32(mode + 27u);
+    g_res_mode_original[2] = read_u32(mode + 39u);
+    g_res_mode_original[3] = read_u32(mode + 49u);
+    g_res_mode_original[4] = read_u32(mode + 61u);
+    g_res_mode_original[5] = read_u32(mode + 71u);
 
-    /* 原生 800x600 分支也统一成目标值，所以用户不需要记住“必须选哪一格”。 */
-    if (!patch_u32(mode + 39u, target_width)) {
-        return FALSE;
-    }
-    if (!patch_u32(mode + 49u, target_height)) {
-        return FALSE;
-    }
+    /* 保存第一处分辨率映射中的原生 640/800 比较、隐藏宽度和隐藏高度。 */
+    g_res_map1_original[0] = read_u32(map1 + 1u);
+    g_res_map1_original[1] = read_u32(map1 + 8u);
+    g_res_map1_original[2] = read_u32(map1 + 15u);
+    g_res_map1_original[3] = read_u32(map1 + 24u);
 
-    /* 原生 640x480 分支同样统一成目标值。 */
-    if (!patch_u32(mode + 61u, target_width)) {
-        return FALSE;
-    }
-    if (!patch_u32(mode + 71u, target_height)) {
-        return FALSE;
-    }
+    /* 保存第二处分辨率映射中的原生 640/800 比较、隐藏宽高。 */
+    g_res_map2_original[0] = read_u32(map2 + 1u);
+    g_res_map2_original[1] = read_u32(map2 + 8u);
+    g_res_map2_original[2] = read_u32(map2 + 15u);
+    g_res_map2_original[3] = read_u32(map2 + 34u);
+    g_res_map2_original[4] = read_u32(map2 + 39u);
 
-    /*
-     * 第一处分辨率映射：
-     *   +15 = 隐藏/扩展分支拿来比较的 Width；
-     *   +24 = 隐藏/扩展分支写给 edi 的 Height。
-     */
-    if (!patch_u32(map1 + 15u, target_width)) {
-        return FALSE;
-    }
-    if (!patch_u32(map1 + 24u, target_height)) {
-        return FALSE;
-    }
+    g_res_mode_patch = mode;
+    g_res_map1_patch = map1;
+    g_res_map2_patch = map2;
 
     /*
-     * 第二处分辨率映射：
-     *   +15 = 隐藏/扩展分支比较 Width；
-     *   +34 = push Height；
-     *   +39 = push Width。
+     * RES_MODE_ALL_PATTERN 从 0x404D7A 开始；已确认的 SetDisplayMode 包装函数从它前面 0x4A 字节的
+     * 0x404D30 开始。这里继续用函数头机器码做一次结构验证，避免单纯依赖“减常数”猜函数。
      */
-    if (!patch_u32(map2 + 15u, target_width)) {
-        return FALSE;
-    }
-    if (!patch_u32(map2 + 34u, target_height)) {
-        return FALSE;
-    }
-    if (!patch_u32(map2 + 39u, target_width)) {
+    function_start = mode - 0x4Au;
+    if (function_start[0] != 0x64 || function_start[1] != 0xA1 ||
+        function_start[2] != 0x00 || function_start[3] != 0x00 ||
+        function_start[4] != 0x00 || function_start[5] != 0x00 ||
+        function_start[6] != 0x6A || function_start[7] != 0xFF ||
+        function_start[8] != 0x68 ||
+        function_start[13] != 0x50 ||
+        function_start[14] != 0x8B || function_start[15] != 0x44 ||
+        function_start[16] != 0x24 || function_start[17] != 0x10) {
+        g_res_mode_patch = (BYTE*)0;
+        g_res_map1_patch = (BYTE*)0;
+        g_res_map2_patch = (BYTE*)0;
         return FALSE;
     }
 
-    /*
-     * 处理“目标宽度刚好撞上原生 640/800”这一类边界情况。
-     *
-     * 两个哨兵都取远大于实际屏幕宽度的正整数，GetSystemMetrics(SM_CXSCREEN)
-     * 在本游戏可运行环境下不可能返回它们，因此等价于“暂时禁用这条比较”。
-     *
-     * 真正的 640x480 仍保留游戏原 640 分支：这样 640 模式里那个尚未完全解释的 431 高度
-     * 不会因为 DisplayFix 而发生无谓变化。
-     * 真正的 800x600 同理保留原 800 分支。
-     */
-    if (target_width == 640u && target_height != 480u) {
-        if (!patch_u32(map1 + 1u, 0x7FFFFFFEu)) {
-            return FALSE;
-        }
-        if (!patch_u32(map2 + 1u, 0x7FFFFFFEu)) {
-            return FALSE;
-        }
-    }
+    g_display_mode_apply = (FnDisplayModeApply)function_start;
 
-    if (target_width == 800u && target_height != 600u) {
-        if (!patch_u32(map1 + 8u, 0x7FFFFFFDu)) {
-            return FALSE;
-        }
-        if (!patch_u32(map2 + 8u, 0x7FFFFFFDu)) {
-            return FALSE;
-        }
-    }
+    /* 参数先写入全局；真正的 GAMEPLAY profile 后面会用它们。 */
+    g_target_width = target_width;
+    g_target_height = target_height;
 
     return TRUE;
 }
 
 /*
- * 让非原生目标宽度仍然加载正确的原生 JMM 布局文件。
+ * 解析 JMM 布局选择器，并保存原版 640/800 比较值。
  *
- * 为什么这一步必须和动态分辨率一起做：
- *   如果一启动就把 640/800 都改成 854，而 JMM 仍只认识 640/800/1024，
- *   那么某些启动顺序下可能根本没有机会加载对应布局文件。
+ * test10 以前会在初始化时直接把 target_width 写进这两条比较；test11 不能再这样做，
+ * 因为前端/动画阶段必须继续按原版 640x480 生命周期工作。
  *
- * BaseHeight < 600：
- *   把“cmp width,640”的立即数改成 target_width，目标宽度走 JMMDL.txt。
+ * 真正进入 GAMEPLAY profile 后才按以下规则临时改写：
+ *   BaseHeight < 600  -> TargetWidth 匹配 JMMDL.txt；
+ *   BaseHeight >=600 -> 禁用第一条 640 比较，让 TargetWidth 匹配 JMMDL800.txt。
  *
- * BaseHeight >= 600：
- *   把第一条 640 比较改成 0（逻辑宽度不可能是 0），
- *   再把“cmp width,800”改成 target_width，目标宽度走 JMMDL800.txt。
- *   先禁用第一条比较，是为了避免极端窄比例刚好算出 640 时错误走 480 系布局。
+ * 返回前端时 set_frontend_resolution_profile() 会把这里保存的原值完整恢复。
  */
 static BOOL apply_jmm_layout_selection(const TextRegion* region, DWORD target_width, DWORD base_height)
 {
     BYTE* selector;
-    BOOL use_600_layout;
 
+    (void)target_width;
+    (void)base_height;
+
+    /*
+     * 与分辨率 profile 一样，test11 初始化阶段只解析并保存原始 JMM 比较值，不立即写入目标宽度。
+     * 这样主菜单/动画仍完整使用原版 640/800/1024 选择规则；游戏内 profile 启用时再按 BaseHeight
+     * 临时改成 test10 已经实机通过的 TargetWidth -> JMMDL/JMMDL800 规则。
+     */
     selector = find_unique_pattern(region,
                                    JMM_LAYOUT_SELECT_PATTERN,
                                    JMM_LAYOUT_SELECT_MASK,
@@ -2410,34 +2496,202 @@ static BOOL apply_jmm_layout_selection(const TextRegion* region, DWORD target_wi
         return FALSE;
     }
 
-    /*
-     * BaseHeight 已经不再只允许 480/600，所以 GUI 必须有一个稳定的二选一规则。
-     * 游戏自身只有两套已确认布局数据：JMMDL.txt（480 系）和 JMMDL800.txt（600 系）。
-     * 本版采用最容易理解、也最不容易破坏原版语义的分界：
-     *
-     *   BaseHeight < 600  -> 使用 480 系布局
-     *   BaseHeight >= 600 -> 使用 600 系布局
-     *
-     * 这不是对世界视野的限制。比如 BaseHeight=720 仍然真的创建 720 高逻辑画面，
-     * 只是 HUD / JMM 资源沿用游戏已经存在的 600 系模板。
-     */
-    use_600_layout = (base_height >= 600u) ? TRUE : FALSE;
+    g_jmm_selector_patch = selector;
+    g_jmm_original_cmp640 = read_u32(selector + 2u);
+    g_jmm_original_cmp800 = read_u32(selector + 23u);
 
+    /* 到这里四组签名都已解析，profile 才算完整可用。 */
+    g_resolution_profile_ready =
+        (g_res_mode_patch && g_res_map1_patch && g_res_map2_patch && g_jmm_selector_patch && g_display_mode_apply)
+        ? TRUE : FALSE;
+
+    return g_resolution_profile_ready;
+}
+
+/*
+ * 恢复前端/动画使用的原始分辨率代码配置。
+ *
+ * 这不是把整个游戏永久锁回 640x480；它只恢复 ComeOn.exe 自己原来的几个分支立即数。
+ * 原游戏主菜单/动画本来就会请求 640x480，所以恢复原始代码后，cnc-ddraw 能重新把真正的 4:3
+ * 640x480 输入等比放大并居中，而不是在一个 1920x1080 游戏 surface 左上角只画 640x480 内容。
+ */
+static BOOL set_frontend_resolution_profile(void)
+{
+    if (!g_resolution_profile_ready) {
+        return FALSE;
+    }
+
+    if (!patch_u32(g_res_mode_patch + 17u, g_res_mode_original[0]) ||
+        !patch_u32(g_res_mode_patch + 27u, g_res_mode_original[1]) ||
+        !patch_u32(g_res_mode_patch + 39u, g_res_mode_original[2]) ||
+        !patch_u32(g_res_mode_patch + 49u, g_res_mode_original[3]) ||
+        !patch_u32(g_res_mode_patch + 61u, g_res_mode_original[4]) ||
+        !patch_u32(g_res_mode_patch + 71u, g_res_mode_original[5])) {
+        return FALSE;
+    }
+
+    if (!patch_u32(g_res_map1_patch + 1u, g_res_map1_original[0]) ||
+        !patch_u32(g_res_map1_patch + 8u, g_res_map1_original[1]) ||
+        !patch_u32(g_res_map1_patch + 15u, g_res_map1_original[2]) ||
+        !patch_u32(g_res_map1_patch + 24u, g_res_map1_original[3])) {
+        return FALSE;
+    }
+
+    if (!patch_u32(g_res_map2_patch + 1u, g_res_map2_original[0]) ||
+        !patch_u32(g_res_map2_patch + 8u, g_res_map2_original[1]) ||
+        !patch_u32(g_res_map2_patch + 15u, g_res_map2_original[2]) ||
+        !patch_u32(g_res_map2_patch + 34u, g_res_map2_original[3]) ||
+        !patch_u32(g_res_map2_patch + 39u, g_res_map2_original[4])) {
+        return FALSE;
+    }
+
+    if (!patch_u32(g_jmm_selector_patch + 2u, g_jmm_original_cmp640) ||
+        !patch_u32(g_jmm_selector_patch + 23u, g_jmm_original_cmp800)) {
+        return FALSE;
+    }
+
+    g_gameplay_profile_active = FALSE;
+    return TRUE;
+}
+
+/*
+ * 启用真正游戏内的 fixed-Y / auto-X profile。
+ * 这里完整复制 test10 已实机通过的目标分辨率与 JMM 路由逻辑，只是把“什么时候写进去”从 ASI 初始化
+ * 改成“主 HUD 真正出现以后”。因此输入/HUD/Steam JMM 方案都不需要推翻。
+ */
+static BOOL set_gameplay_resolution_profile(void)
+{
+    BOOL use_600_layout;
+
+    if (!g_resolution_profile_ready || g_target_width == 0u || g_target_height == 0u) {
+        return FALSE;
+    }
+
+    /* 三条显示模式分支在 GAMEPLAY profile 中仍全部统一到目标宽高。 */
+    if (!patch_u32(g_res_mode_patch + 17u, g_target_width) ||
+        !patch_u32(g_res_mode_patch + 27u, g_target_height) ||
+        !patch_u32(g_res_mode_patch + 39u, g_target_width) ||
+        !patch_u32(g_res_mode_patch + 49u, g_target_height) ||
+        !patch_u32(g_res_mode_patch + 61u, g_target_width) ||
+        !patch_u32(g_res_mode_patch + 71u, g_target_height)) {
+        return FALSE;
+    }
+
+    /* 每次切 profile 都先恢复原生 640/800 比较，再只处理真正发生数值碰撞的特殊比例。 */
+    if (!patch_u32(g_res_map1_patch + 1u, g_res_map1_original[0]) ||
+        !patch_u32(g_res_map1_patch + 8u, g_res_map1_original[1]) ||
+        !patch_u32(g_res_map1_patch + 15u, g_target_width) ||
+        !patch_u32(g_res_map1_patch + 24u, g_target_height)) {
+        return FALSE;
+    }
+
+    if (!patch_u32(g_res_map2_patch + 1u, g_res_map2_original[0]) ||
+        !patch_u32(g_res_map2_patch + 8u, g_res_map2_original[1]) ||
+        !patch_u32(g_res_map2_patch + 15u, g_target_width) ||
+        !patch_u32(g_res_map2_patch + 34u, g_target_height) ||
+        !patch_u32(g_res_map2_patch + 39u, g_target_width)) {
+        return FALSE;
+    }
+
+    if (g_target_width == 640u && g_target_height != 480u) {
+        if (!patch_u32(g_res_map1_patch + 1u, 0x7FFFFFFEu) ||
+            !patch_u32(g_res_map2_patch + 1u, 0x7FFFFFFEu)) {
+            return FALSE;
+        }
+    }
+
+    if (g_target_width == 800u && g_target_height != 600u) {
+        if (!patch_u32(g_res_map1_patch + 8u, 0x7FFFFFFDu) ||
+            !patch_u32(g_res_map2_patch + 8u, 0x7FFFFFFDu)) {
+            return FALSE;
+        }
+    }
+
+    use_600_layout = (g_target_height >= 600u) ? TRUE : FALSE;
     if (!use_600_layout) {
-        /* 第一条 cmp ebp,640 的 imm32 位于签名 +2，让目标宽度走 JMMDL.txt。 */
-        if (!patch_u32(selector + 2u, target_width)) {
+        if (!patch_u32(g_jmm_selector_patch + 2u, g_target_width) ||
+            !patch_u32(g_jmm_selector_patch + 23u, g_jmm_original_cmp800)) {
             return FALSE;
         }
     } else {
-        /* 先让“640 布局”比较永远不可能命中，避免极窄比例误走 480 系布局。 */
-        if (!patch_u32(selector + 2u, 0u)) {
+        if (!patch_u32(g_jmm_selector_patch + 2u, 0u) ||
+            !patch_u32(g_jmm_selector_patch + 23u, g_target_width)) {
             return FALSE;
         }
+    }
 
-        /* 第二条 cmp ebp,800 从签名 +21 开始，imm32 在 +23。 */
-        if (!patch_u32(selector + 23u, target_width)) {
-            return FALSE;
-        }
+    g_gameplay_profile_active = TRUE;
+    return TRUE;
+}
+
+/*
+ * 第一次主 HUD 自动布局时，游戏已经确定“真正进入游戏内”。
+ * 如果此时显示对象仍然是前端 640x480/800x600，就复用游戏原版 0x404D30，强制重应用当前模式一次。
+ * 因为 GAMEPLAY profile 已经先写入，模式 4/5/6 中任意当前模式都会得到同一个 TargetWidth x TargetHeight。
+ *
+ * 返回 TRUE 表示这次真的触发了设备/分辨率重建。调用者必须立刻停止继续访问当前 HUD self，
+ * 因为原版 SetDisplayMode 可能在内部销毁并重建 UI 对象。
+ */
+static BOOL activate_gameplay_resolution_if_needed(void)
+{
+    LONG current_width;
+    LONG current_height;
+    LONG current_mode;
+    int result;
+    char line[320];
+
+    if (!g_resolution_profile_ready || !g_display_mode_apply || g_gameplay_mode_switch_in_progress) {
+        return FALSE;
+    }
+
+    current_width = *(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_WIDTH_OFFSET);
+    current_height = *(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_HEIGHT_OFFSET);
+
+    if (!set_gameplay_resolution_profile()) {
+        return FALSE;
+    }
+
+    /* 已经是目标尺寸时只需要保持 GAMEPLAY profile，不必再次 Reset 设备。 */
+    if ((DWORD)current_width == g_target_width && (DWORD)current_height == g_target_height) {
+        return FALSE;
+    }
+
+    current_mode = *(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_MODE_OFFSET);
+    if (current_mode < 4 || current_mode > 6) {
+        /* 正常兼容样本只会是 4/5/6；异常时退到原生正式存在的 800x600 槽位 5。 */
+        current_mode = 5;
+    }
+
+    line[0] = '\0';
+    str_append(line, (DWORD)sizeof(line), "[RUNTIME] gameplay resolution switch begin current=");
+    append_int(line, (DWORD)sizeof(line), current_width);
+    str_append(line, (DWORD)sizeof(line), "x");
+    append_int(line, (DWORD)sizeof(line), current_height);
+    str_append(line, (DWORD)sizeof(line), " target=");
+    append_int(line, (DWORD)sizeof(line), (LONG)g_target_width);
+    str_append(line, (DWORD)sizeof(line), "x");
+    append_int(line, (DWORD)sizeof(line), (LONG)g_target_height);
+    str_append(line, (DWORD)sizeof(line), " mode=");
+    append_int(line, (DWORD)sizeof(line), current_mode);
+    append_runtime_line(line);
+
+    g_gameplay_mode_switch_in_progress = TRUE;
+    result = g_display_mode_apply(GAME_DISPLAY_MANAGER, current_mode, 1);
+    g_gameplay_mode_switch_in_progress = FALSE;
+
+    line[0] = '\0';
+    str_append(line, (DWORD)sizeof(line), "[RUNTIME] gameplay resolution switch end result=");
+    append_int(line, (DWORD)sizeof(line), result);
+    str_append(line, (DWORD)sizeof(line), " live=");
+    append_int(line, (DWORD)sizeof(line), *(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_WIDTH_OFFSET));
+    str_append(line, (DWORD)sizeof(line), "x");
+    append_int(line, (DWORD)sizeof(line), *(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_HEIGHT_OFFSET));
+    append_runtime_line(line);
+
+    if (!result) {
+        /* 失败时恢复前端 profile，宁可留在原版 4:3，也不让代码处于半修改状态。 */
+        set_frontend_resolution_profile();
+        return FALSE;
     }
 
     return TRUE;
@@ -2851,7 +3105,7 @@ static void try_steam_delayed_ui_sync(LPVOID hud)
     int result;
     char line[896];
 
-    if (!hud || g_steam_ui_sync_done || g_steam_ui_sync_in_progress) {
+    if (!hud || g_steam_ui_sync_done || g_steam_ui_sync_in_progress || g_gameplay_mode_switch_in_progress) {
         return;
     }
 
@@ -2964,8 +3218,10 @@ static BOOL install_main_hud_center_hook(const TextRegion* region)
     BYTE* root_ctor;
     BYTE* generic_layout;
     DWORD vtable_address;
+    BYTE* destructor_slot;
     BYTE* event_slot;
     BYTE* layout_slot;
+    DWORD destructor_slot_value;
     DWORD event_slot_value;
     DWORD layout_slot_value;
     const BYTE* event_code;
@@ -2991,8 +3247,10 @@ static BOOL install_main_hud_center_hook(const TextRegion* region)
         return FALSE;
     }
 
+    destructor_slot = (BYTE*)(vtable_address + MAIN_HUD_DESTRUCTOR_SLOT);
     event_slot = (BYTE*)(vtable_address + MAIN_HUD_EVENT_SLOT);
     layout_slot = (BYTE*)(vtable_address + MAIN_HUD_LAYOUT_SLOT);
+    destructor_slot_value = read_u32(destructor_slot);
     event_slot_value = read_u32(event_slot);
     layout_slot_value = read_u32(layout_slot);
 
@@ -3000,6 +3258,18 @@ static BOOL install_main_hud_center_hook(const TextRegion* region)
      * +0x58 必须仍然指向唯一找到的通用布局函数；
      * +0x24 必须仍然是我们已经闭合的主 HUD 事件函数形状。
      */
+    /*
+     * +0x00 必须是当前类自己的 scalar deleting destructor。
+     * 原版函数头固定为 push esi / mov esi,ecx / call <real dtor>；这个形状在 Steam/非 Steam 样本一致。
+     */
+    if (destructor_slot_value < 0x00400000u || destructor_slot_value >= 0x00600000u ||
+        ((BYTE*)destructor_slot_value)[0] != 0x56 ||
+        ((BYTE*)destructor_slot_value)[1] != 0x8B ||
+        ((BYTE*)destructor_slot_value)[2] != 0xF1 ||
+        ((BYTE*)destructor_slot_value)[3] != 0xE8) {
+        return FALSE;
+    }
+
     if (layout_slot_value != (DWORD)generic_layout) {
         return FALSE;
     }
@@ -3061,8 +3331,22 @@ static BOOL install_main_hud_center_hook(const TextRegion* region)
     g_original_main_hud_event = (FnMainHudEvent)event_slot_value;
     (void)&main_hud_event_hook;
 
+    g_original_main_hud_destructor = (FnMainHudDestructor)destructor_slot_value;
     g_original_main_hud_layout = (FnUILayout)generic_layout;
+
+    if (!patch_u32(destructor_slot, (DWORD)&main_hud_destructor_hook)) {
+        g_original_main_hud_destructor = (FnMainHudDestructor)0;
+        g_original_main_hud_event = (FnMainHudEvent)0;
+        g_original_main_hud_layout = (FnUILayout)0;
+        g_top_button_0b_target_slot = (LPVOID*)0;
+        g_top_button_0e_target_slot = (LPVOID*)0;
+        return FALSE;
+    }
+
     if (!patch_u32(layout_slot, (DWORD)&main_hud_layout_hook)) {
+        /* layout 安装失败时把 destructor vtable 槽恢复原值，避免只装一半生命周期 hook。 */
+        patch_u32(destructor_slot, destructor_slot_value);
+        g_original_main_hud_destructor = (FnMainHudDestructor)0;
         g_original_main_hud_event = (FnMainHudEvent)0;
         g_original_main_hud_layout = (FnUILayout)0;
         g_top_button_0b_target_slot = (LPVOID*)0;
@@ -3235,7 +3519,7 @@ static void initialize_display_fix(void)
     make_sibling_path(module_path, "DisplayFix.ini", g_ini_path, (DWORD)sizeof(g_ini_path));
     make_sibling_path(module_path, "DisplayFix.log", g_log_path, (DWORD)sizeof(g_log_path));
 
-    log_line("DisplayFix v0.3-test10");
+    log_line("DisplayFix v0.3-test11");
     log_line("Architecture: Win32/x86 ASI, content-signature runtime patch");
 
     if (!resolve_required_apis()) {
@@ -3305,29 +3589,38 @@ static void initialize_display_fix(void)
     }
 
     if (resolution_result) {
-        log_line("[OK] 640/800/internal resolution branches unified to fixed-Y target");
+        log_line("[OK] dynamic-resolution code points resolved; startup/frontend code is left original");
+        log_line("[INFO] main menu and fixed-resolution animations keep the game's native 4:3 display lifecycle");
+        log_line("[INFO] gameplay TargetWidth/TargetHeight will be activated only after the main HUD really exists");
         log_line("[INFO] No 1024x768 menu option is required; the game menu only exposes up to 800x600");
     } else {
-        log_line("[FAIL] dynamic-resolution signatures are missing/ambiguous; resolution patch skipped");
+        log_line("[FAIL] dynamic-resolution signatures are missing/ambiguous; runtime profile switching disabled");
     }
 
     /*
-     * 分辨率改完后，把 target_width 明确映射回对应的原生 JMM 布局文件。
-     * 这一层和主 HUD hook 是两件不同的事：前者保证“加载哪套 480/600 GUI 数据”正确，
-     * 后者只负责把底部主 HUD 的根节点再水平移动到中心。
+     * test11 也只解析 JMM 选择器。前端阶段保持原版 640/800/1024 比较；主 HUD 出现后才切到
+     * test10 已经实机通过的 TargetWidth -> JMMDL/JMMDL800 游戏内选择规则。
      */
     if (target_width != 0) {
         layout_result = apply_jmm_layout_selection(&text_region, target_width, config.base_height);
     }
 
-    if (layout_result) {
-        if (config.base_height >= 600u) {
-            log_line("[OK] target width mapped to JMMDL800.txt (BaseHeight >= 600 GUI baseline)");
+    if (layout_result && resolution_result) {
+        /* 明确把当前进程保持在 FRONTEND profile；理论上此时还是原字节，这一步也是一次完整自检。 */
+        if (set_frontend_resolution_profile()) {
+            log_line("[OK] frontend/animation resolution profile armed: original display/JMM rules preserved");
+            if (config.base_height >= 600u) {
+                log_line("[INFO] gameplay profile will map TargetWidth to JMMDL800.txt when HUD appears");
+            } else {
+                log_line("[INFO] gameplay profile will map TargetWidth to JMMDL.txt when HUD appears");
+            }
         } else {
-            log_line("[OK] target width mapped to JMMDL.txt (BaseHeight < 600 GUI baseline)");
+            resolution_result = FALSE;
+            layout_result = FALSE;
+            log_line("[FAIL] frontend profile self-check failed; dynamic resolution lifecycle disabled");
         }
     } else {
-        log_line("[FAIL] JMM layout-selector signature is missing/ambiguous; layout remap skipped");
+        log_line("[FAIL] JMM layout-selector signature is missing/ambiguous; runtime layout profile disabled");
     }
 
     /*
@@ -3377,6 +3670,7 @@ static void initialize_display_fix(void)
         } else {
             log_line("[INFO] GUI.CenterMainHUD=0; visual centering disabled, pure HUD diagnostics still installed");
         }
+        log_line("[OK] main HUD lifecycle hooks installed: +0x00 restores frontend profile, +0x58 activates/centers gameplay");
         log_line("[OK] main HUD +0x24 structure parsed for confirmed top-button IDs 0x0B/0x0E; +0x24 itself is not hooked");
         log_line("[INFO] edge-anchored top-level UI is intentionally left untouched");
     } else {
@@ -3408,8 +3702,9 @@ static void initialize_display_fix(void)
     }
 
     /*
-     * 初始化日志写盘。test10 不在 DLL/ASI 初始化阶段主动重播 GUI/JMM；
-     * Steam 专用同步只会在 HUD 真正成熟后触发一次。普通地图 WORLD press / GLOBAL release 的高频诊断
+     * 初始化日志写盘。test11 不在 DLL/ASI 初始化阶段扩大主菜单/动画分辨率，也不主动重播 GUI/JMM；
+     * 主 HUD 出现后才切 GAMEPLAY profile，Steam 专用 JMM 同步仍只会在 HUD 真正成熟后触发一次。
+     * 普通地图 WORLD press / GLOBAL release 的高频诊断
      * 已关闭，只有顶部按钮真正被拦截/兜底和 Steam one-shot 原版 JMM 应用才写运行时日志，减少性能干扰。
      */
     flush_log_file();
