@@ -2,7 +2,13 @@
  * DisplayFix.c
  *
  * 《刀剑封魔录外传：上古传说》ComeOn.exe 显示修复 ASI 插件。
- * 当前版本：v0.1-test1（外传非 Steam 首个适配测试版）
+ * 当前版本：v0.1-test2（修复 Font.FixDPI 与 Display.Enable 错误耦合）
+ *
+ * 外传 v0.1-test1 已由用户实机确认：非 Steam 版的标题 4:3、进入游戏宽屏、GUI/HUD 居中、
+ * 右侧 6 个菜单按钮、高 DPI 字体与返回主菜单恢复 4:3 均正常；Steam 版顺带测试也确认绝大多数功能正常。
+ * test2 不改这些已经通过的 Strategy/JMM/HUD/输入机器码路径，只修一个配置初始化顺序问题：
+ * 旧版在 Display.Enable=0 时会过早 return，使本应独立的 Font.FixDPI=1 也失效；test2 改为先处理字体，
+ * 再决定是否安装宽屏/HUD/输入补丁。
  *
  * ----------------------------------------------------------------------------------------------
  * v0.3 封版沿用 test15 已实机通过的最终方案：进入游戏切宽屏，退出 Strategy 后恢复原游戏真正的标题 640x480 生命周期。
@@ -21,10 +27,10 @@
  *   - 标题/启动动画/前端：真正的 mode 4，也就是原版 640x480；
  *   - Strategy/gameplay：才临时把当前模式映射到 TargetWidth x BaseHeight；
  *   - 离开 Strategy：先让原版 外传 Strategy-exit 做完游戏内清理，再恢复 FRONTEND 代码 profile，最后复用原版
- *     0x00404D30(self, mode=4, force=1) 强制重建一次真正的前端 mode 4 surface。
+ *     0x0040BCC0(self, mode=4, force=1) 强制重建一次真正的前端 mode 4 surface。
  *
- * 这里的 mode 4 不是新猜的魔法数字。进一步反汇编已经确认原游戏启动前端自己就在 0x004053D8~0x004053E4
- * 明确执行 `push 0 / push 4 / call 0x00404D30`；而 0x00404D30 的 mode 4 原始分支就是 640x480。
+ * 这里的 mode 4 不是新猜的魔法数字。进一步反汇编已经确认原游戏启动前端自己就在 0x0040C339~0x0040C345
+ * 明确执行 `push 0 / push 4 / call 0x0040BCC0`；而 0x0040BCC0 的 mode 4 原始分支就是 640x480。
  * 因此 test15 做的是“返回前端时补回原游戏本来就使用的显示模式语义”，不是另造一套菜单缩放规则。
  * ----------------------------------------------------------------------------------------------
  *
@@ -32,15 +38,15 @@
  *   [RUNTIME] Strategy enter state=3 GAMEPLAY profile=ready
  *   [RUNTIME] Strategy enter original apply finished live=640x480
  *
- * 这说明 test13 的 Strategy gate 本身已经命中正确时机，但 外传 Strategy-enter 调 0x00404D30 时传入 force=0。
- * 原版 0x00404D30 会先比较 self+0x04 的“当前 mode ID”和这次请求的 mode ID；二者相同且 force=0 时，
+ * 这说明 test13 的 Strategy gate 本身已经命中正确时机，但 外传 Strategy-enter 调 0x0040BCC0 时传入 force=0。
+ * 原版 0x0040BCC0 会先比较 self+0x04 的“当前 mode ID”和这次请求的 mode ID；二者相同且 force=0 时，
  * 会在真正写入 self+0x228/self+0x22C 新宽高之前直接返回。DisplayFix 虽然已经把 mode 4 对应的立即数改成
  * 854x480，但 mode ID 仍然是 4，所以实际 live display 继续保持 640x480。随后 Steam delayed JMM 却按 854x480
  * 重排 GUI，便出现用户截图里的严重错位；1080 时 center delta 更大，所以几乎整套 HUD 都被移出可见区域。
  *
  * test14 不再增加新的 gameplay 判据。它继续使用 test13 的 Strategy state=3 gate，只在调用原版 外传 Strategy-enter
- * 的极短时间内，把该函数开头的 `push 0` 临时改成 `push 1`，也就是把原版 0x00404D30 的 force 参数设为 1。
- * 原函数返回后立刻恢复 `push 0`。这样显示设备重建仍然完整走游戏自己的 外传 Strategy-enter -> 0x00404D30 路径，
+ * 的极短时间内，把该函数开头的 `push 0` 临时改成 `push 1`，也就是把原版 0x0040BCC0 的 force 参数设为 1。
+ * 原函数返回后立刻恢复 `push 0`。这样显示设备重建仍然完整走游戏自己的 外传 Strategy-enter -> 0x0040BCC0 路径，
  * 但不会再因为“mode ID 没变”而早退。
  *
  * 另外 test14 新增 live-size 安全核对：Strategy enter 返回后如果实际宽高仍不等于 TargetWidth/TargetHeight，
@@ -55,26 +61,26 @@
  *
  * test13 不再猜“某个对象出现了是不是代表 gameplay”，而是直接接到 ComeOn.exe 自己的高层状态机：
  *
- *   0x00404A00  状态切换函数
+ *   0x0040B9C0  状态切换函数
  *       self+0x0C = 当前高层状态
  *
  *   新状态 3：
- *       0x00404A83  打印 "BeforeStrategy() Begin"
- *       0x00404A97  call 外传 Strategy-enter
- *       0x00404A9C  打印 "BeforeStrategy() End"
+ *       0x0040BA4B  打印 "BeforeStrategy() Begin"
+ *       0x0040BA5F  call 外传 Strategy-enter
+ *       0x0040BA64  打印 "BeforeStrategy() End"
  *
  *   离开旧状态 3：
- *       0x00404A17  call 0x00408690
- *       0x00404A1E  call 外传 Strategy-exit
- *       0x00404A23  打印 "AfterStrategy()  End"
+ *       0x0040B9E1  call 0x0040F8B0
+ *       0x0040B9E8  call 外传 Strategy-exit
+ *       0x0040B9ED  打印 "AfterStrategy()  End"
  *
  * 外传 Strategy-enter 不是我们猜出来的“可能会切分辨率”的函数：它自己读取显示管理器 self+0x280 的游戏设置模式，
- * 然后直接调用原版 0x00404D30 重新应用显示模式。因此 test13 只做两件事：
- *   1. 在 0x00404A97 调原版 外传 Strategy-enter 之前，把代码立即数切成 GAMEPLAY profile；
- *   2. 在 0x00404A1E 调原版 外传 Strategy-exit 之前，恢复 FRONTEND profile。
+ * 然后直接调用原版 0x0040BCC0 重新应用显示模式。因此 test13 只做两件事：
+ *   1. 在 0x0040BA5F 调原版 外传 Strategy-enter 之前，把代码立即数切成 GAMEPLAY profile；
+ *   2. 在 0x0040B9E8 调原版 外传 Strategy-exit 之前，恢复 FRONTEND profile。
  *
  * 这样真正的 SetDisplayMode 仍然由游戏原来的 Strategy 进入流程自己执行，DisplayFix 不再额外插入一次
- * 0x00404D30 Reset，也不再依赖 HUD/world 对象生命周期。前端/主菜单完整保留原版 4:3 逻辑 surface。
+ * 0x0040BCC0 Reset，也不再依赖 HUD/world 对象生命周期。前端/主菜单完整保留原版 4:3 逻辑 surface。
  *
  * HUD 与 Steam GUI 路径也同步加一道防线：
  *   - FRONTEND profile 时，主 HUD +0x58 只执行原版布局，不做宽屏平移；
@@ -84,14 +90,14 @@
  *
  * Steam 特殊路径继续保留 v0.3-test10 已实机通过的修复：
  *   - Steam/ComeOn.dll 环境缺少非 Steam 自然发生的一次完整后续 JMM apply；
- *   - 等 HUD、顶层 UI、资源根都成熟后，one-shot 调用原版 0x004B35F0(0,W,H)；
+ *   - 等 HUD、顶层 UI、资源根都成熟后，one-shot 调用原版 0x004C6970(0,W,H)；
  *   - test10 实机已确认 GUI 最终可恢复正确位置；test13 不改变这个原版 JMM 调用本身，只修正它的触发阶段。
  *
  * 输入修复继续保留 test8 已实机验证的方案：
  *   - 顶部“属性/道具”真实 control ID 是 0x0B / 0x0E；
- *   - 释放阶段在 0x00406086 -> 0x004B4560 之后，仅在原版没有切换窗口时补一次原版式 toggle；
- *   - 按下阶段绝不包装 0x004B44F0（test7 已证明它依赖调用者隐藏寄存器状态）；
- *   - 只在真正世界输入 0x004060EB -> 0x00473F10 的最后 callsite 上，命中 0x0B/0x0E 时跳过
+ *   - 释放阶段在 0x0040CF96 -> 0x004C7930 之后，仅在原版没有切换窗口时补一次原版式 toggle；
+ *   - 按下阶段绝不包装 0x004C78C0（test7 已证明它依赖调用者隐藏寄存器状态）；
+ *   - 只在真正世界输入 0x0040CFFB -> 0x00482790 的最后 callsite 上，命中 0x0B/0x0E 时跳过
  *     本次角色移动，其他地图点击完全走原版。
  *
  * 关于 BaseHeight 和性能必须特别说明：
@@ -1050,11 +1056,11 @@ static const BYTE JMM_LAYOUT_SELECT_PATTERN[] = {
 static const char JMM_LAYOUT_SELECT_MASK[] = "xxxxxxxxxxxxxxx????xxxxxxxxxxxxxxxxxx";
 
 /*
- * test13：0x00404A00 是游戏自己的高层状态切换函数。
+ * test13：0x0040B9C0 是游戏自己的高层状态切换函数。
  *
  * 这个长签名从函数头一路覆盖到“离开旧状态 3”的两次清理 call：
- *   0x00404A17 -> 0x00408690
- *   0x00404A1E -> 外传 Strategy-exit
+ *   0x0040B9E1 -> 0x0040F8B0
+ *   0x0040B9E8 -> 外传 Strategy-exit
  * 后面的两个字符串地址分别落在 AfterStrategy 日志附近，是很强的语义锚点。
  *
  * E8 的 rel32 和 jump-table 绝对地址不作为固定版本地址使用：安装时会重新解码目标函数，
@@ -1101,20 +1107,20 @@ static const char STRATEGY_ENTER_CALLSITE_MASK[] =
  * 0x004060D6 一带是“UI 按下分派已经明确返回 0，接下来准备把同一次按下交给游戏世界”的路径。
  *
  * 原版机器码顺序已经闭合：
- *   0x004060CD  CALL 0x004B44F0    ; UI manager 按下分派
+ *   0x0040CFDD  CALL 0x004C78C0    ; UI manager 按下分派
  *   0x004060D2  test eax,eax
  *   0x004060D4  jne  0x004060F0    ; UI 已处理时直接跳过世界输入
  *   0x004060D6  mov  ecx,[world]    ; 世界输入对象
  *   ...
- *   0x004060EB  CALL 0x00473F10    ; 真正的世界鼠标按下/角色移动路径
+ *   0x0040CFFB  CALL 0x00482790    ; 真正的世界鼠标按下/角色移动路径
  *
- * v0.3-test7 曾在更早的 0x004060CD 包装 0x004B44F0。实机证明这会让普通地图左键和 Alt+F4 都失效。
- * 进一步反汇编发现 0x004B44F0 会把调用者保留的 ESI 直接压给下游 vtable+0x20，说明它存在
+ * v0.3-test7 曾在更早的 0x0040CFDD 包装 0x004C78C0。实机证明这会让普通地图左键和 Alt+F4 都失效。
+ * 进一步反汇编发现 0x004C78C0 会把调用者保留的 ESI 直接压给下游 vtable+0x20，说明它存在
  * 非标准隐藏寄存器输入；用普通 C wrapper 再调用原函数会破坏这个上下文。
  *
- * test8 不再碰 0x004B44F0，而只改 0x004060EB 这一条世界调用：
+ * test8 不再碰 0x004C78C0，而只改 0x0040CFFB 这一条世界调用：
  *   - 当前鼠标在主 HUD ID 0x0B / 0x0E 实时矩形内 -> 只跳过本次世界输入；
- *   - 其他任何位置 -> 原样调用 0x00473F10；
+ *   - 其他任何位置 -> 原样调用 0x00482790；
  *   - 属性/道具窗口仍由 release fallback 开关，因此这里绝不主动开窗。
  *
  * 签名中的世界对象全局地址、CALL rel32、后续全局写地址都设为通配，只锁定稳定指令结构。
@@ -1137,10 +1143,10 @@ static const char WORLD_MOUSE_PRESS_CALLSITE_MASK[] = "xx????xxxxxxxxxxxxxxxx???
  * 0x00406070 一带是游戏主循环里的“鼠标左键释放”分派点。
  *
  * 原版流程已经逐条反汇编确认：
- *   1. 0x00405FB0 先通过 ComeOn.exe 自己的 GetCursorPos IAT 取得游戏逻辑鼠标坐标；
+ *   1. 外传主输入循环先通过 ComeOn.exe 自己的 GetCursorPos IAT 取得游戏逻辑鼠标坐标；
  *   2. 检测到鼠标从按下变成抬起时，把 event_type=1、mouse_x、mouse_y 压栈；
  *   3. ECX 放 UI manager（原版是 0x0055AF98）；
- *   4. 0x00406086 CALL 0x004B4560，把释放事件交给当前顶层 UI。
+ *   4. 0x0040CF96 CALL 0x004C7930，把释放事件交给当前顶层 UI。
  *
  * v0.3-test4 的实机 A/B 日志已经确认，属性/道具顶部两个按钮真正对应直属 child ID 0x0B / 0x0E。
  * v0.3-test5 又证明：当 HUD 居中以后，鼠标释放有时根本到不了主 HUD 的 +0x24 事件函数，
@@ -1148,7 +1154,7 @@ static const char WORLD_MOUSE_PRESS_CALLSITE_MASK[] = "xx????xxxxxxxxxxxxxxxx???
  *
  * v0.3-test6 起把窗口 fallback 提升到这个全局释放分派点，test8 继续保留这条已实机成功路径：
  *   - 先根据主 HUD 当前真实 child 矩形判断鼠标是否落在 0x0B / 0x0E；
- *   - 永远先完整调用原版 0x004B4560；
+ *   - 永远先完整调用原版 0x004C7930；
  *   - 只有目标窗口 active 前后没有变化时，才复用原版同一个 vtable+0x1C 开关；
  *   - 兜底真正触发时返回 handled=1，保持原版“UI 已处理释放”的语义；按下阶段的世界穿透由独立 0x473F10 callsite guard 处理。
  *
@@ -1169,8 +1175,8 @@ static const BYTE GLOBAL_MOUSE_RELEASE_CALLSITE_PATTERN[] = {
 static const char GLOBAL_MOUSE_RELEASE_CALLSITE_MASK[] = "xxxxxxxxxxxx????xx????x????xxxx";
 
 /*
- * 0x004087A0 是“把当前分辨率重新应用给 GUI/JMM 管理器”的小包装函数。
- * 它从分辨率对象 +0x228/+0x22C 读取 Width/Height，然后在 0x004087B5 调 0x004B35F0。
+ * 0x0040F9C0 是“把当前分辨率重新应用给 GUI/JMM 管理器”的小包装函数。
+ * 它从分辨率对象 +0x228/+0x22C 读取 Width/Height，然后在 0x0040F9D5 调 0x004C6970。
  * 用户高 BaseHeight 实机出现“启动不对、手工切一次分辨率就恢复”，正好指向这条调用时序。
  *
  * 这里把 ECX 中的 GUI 管理器绝对地址和 CALL rel32 都设为通配，只锁周围稳定结构。
@@ -1187,7 +1193,7 @@ static const BYTE JMM_APPLY_CALLSITE_PATTERN[] = {
 };
 static const char JMM_APPLY_CALLSITE_MASK[] = "xxxxxxxxxxxxxxxxx????x????x";
 
-/* 0x004B35F0 已确认的函数头；用来验证 0x4087B5 真正 call 到我们理解的 JMM/UI 广播函数。 */
+/* 0x004C6970 已确认的函数头；用来验证 0x4087B5 真正 call 到我们理解的 JMM/UI 广播函数。 */
 static const BYTE JMM_LOAD_FUNCTION_HEAD[] = {
     0x81,0xEC,0x00,0x01,0x00,0x00,
     0x53,0x55,0x56,0x57,
@@ -1287,11 +1293,11 @@ typedef int (__thiscall *FnUILayout)(LPVOID self, LONG x, LONG y);
 
 /*
  * 主 HUD 真正的鼠标释放事件是 vtable +0x24。
- * 0x00405FB0 读取光标，0x00406086 在鼠标由按下变成抬起时经 0x004B4560 调这个虚函数；
+ * 外传主输入循环读取光标，0x0040CF96 在鼠标由按下变成抬起时经 0x004C7930 调这个虚函数；
  * 此时三个参数已经闭合为：event_type=1、mouse_x、mouse_y。
  *
  * v0.3-test8 不再实际 hook 这个 +0x24 函数。下面保留的桥接实现只作为历史诊断代码和
- * 静态研究依据，不会写进 vtable；真正的新兜底已经提升到 0x00406086 -> 0x004B4560 的全局释放层。
+ * 静态研究依据，不会写进 vtable；真正的新兜底已经提升到 0x0040CF96 -> 0x004C7930 的全局释放层。
  */
 typedef void (__thiscall *FnMainHudEvent)(LPVOID self, LONG event_type, LONG mouse_x, LONG mouse_y);
 
@@ -1317,7 +1323,7 @@ static FnUILayout g_original_main_hud_layout = (FnUILayout)0;
  * 再根据 flags&1 决定是否释放对象内存。
  *
  * test13 继续保留这个 destructor hook，但它只负责清掉 g_main_hud_instance 缓存。
- * 分辨率 profile 生命周期已经完全交给 0x00404A00 的 Strategy 状态 enter/exit callsite，
+ * 分辨率 profile 生命周期已经完全交给 0x0040B9C0 的 Strategy 状态 enter/exit callsite，
  * 所以 HUD 析构、地图临时重建和设备 Reset 都不会再改变 FRONTEND/GAMEPLAY 状态。
  */
 typedef LPVOID (__thiscall *FnMainHudDestructor)(LPVOID self, DWORD flags);
@@ -1331,7 +1337,7 @@ static FnMainHudDestructor g_original_main_hud_destructor = (FnMainHudDestructor
 static LPVOID g_main_hud_instance = (LPVOID)0;
 
 /*
- * UI manager 的全局鼠标释放函数 0x004B4560：
+ * UI manager 的全局鼠标释放函数 0x004C7930：
  *   ECX=this(UI manager)，栈参数依次是 event_type、mouse_x、mouse_y，返回非 0 表示事件已处理。
  * callsite 改到 fastcall 桥接后，unused_edx 只占住 EDX；三个真实参数的栈位置保持不变。
  */
@@ -1339,10 +1345,10 @@ typedef int (__thiscall *FnUiManagerMouseRelease)(LPVOID self, LONG event_type, 
 static FnUiManagerMouseRelease g_original_ui_manager_mouse_release = (FnUiManagerMouseRelease)0;
 
 /*
- * 0x00473F10 是 UI manager 已经明确“没有处理本次按下”以后才会进入的世界输入函数。
+ * 0x00482790 是 UI manager 已经明确“没有处理本次按下”以后才会进入的世界输入函数。
  * 调用点使用 ECX=世界对象，栈上仍是 event_type / mouse_x / mouse_y，并由原函数 ret 0x0C 清栈。
  *
- * 与 0x004B44F0 不同，0x00473F10 的函数头会先保存 EBX/EBP/ESI/EDI，然后立即 mov esi,ecx；
+ * 与 0x004C78C0 不同，0x00482790 的函数头会先保存 EBX/EBP/ESI/EDI，然后立即 mov esi,ecx；
  * 没有观察到依赖调用者原始 ESI/EDI/EBX 的隐藏输入，因此可以用同形状桥接安全包裹。
  */
 typedef void (__thiscall *FnWorldMousePress)(LPVOID self, LONG event_type, LONG mouse_x, LONG mouse_y);
@@ -1355,7 +1361,7 @@ static FnWorldMousePress g_original_world_mouse_press = (FnWorldMousePress)0;
  */
 
 /*
- * 外传 Strategy-enter / 外传 Strategy-exit 是 Strategy 状态进入/离开时由 0x00404A00 状态机直接调用的原版函数。
+ * 外传 Strategy-enter / 外传 Strategy-exit 是 Strategy 状态进入/离开时由 0x0040B9C0 状态机直接调用的原版函数。
  * 二者都使用 thiscall：ECX 是同一个显示/高层状态管理对象，栈上没有参数。
  */
 typedef void (__thiscall *FnStrategyStateStep)(LPVOID self);
@@ -1368,10 +1374,10 @@ static FnStrategyStateStep g_original_strategy_exit = (FnStrategyStateStep)0;
  * 原机器码是：
  *     56          push esi
  *     8B F1       mov  esi,ecx
- *     6A 00       push 0        ; 传给 0x00404D30 的 force 参数
+ *     6A 00       push 0        ; 传给 0x0040BCC0 的 force 参数
  *
  * 进入 Strategy state=3 时，我们只把最后这个 00 临时改成 01。
- * 这样原版 外传 Strategy-enter 自己仍然负责读取 mode、写 self+0x08、调用 0x00404D30 和后续 Strategy 初始化；
+ * 这样原版 外传 Strategy-enter 自己仍然负责读取 mode、写 self+0x08、调用 0x0040BCC0 和后续 Strategy 初始化；
  * DisplayFix 不复制这些逻辑，也不额外调用第二次 SetDisplayMode。原函数返回后马上恢复 00。
  */
 static BYTE* g_strategy_enter_force_immediate = (BYTE*)0;
@@ -1666,14 +1672,14 @@ static LPVOID __fastcall main_hud_destructor_hook(LPVOID self, LPVOID unused_edx
 /*
  * test13：Strategy 状态 3 的进入桥接。
  *
- * 这个 hook 是从 0x00404A97 的原版 callsite 进入的。到这里时，状态机已经先执行：
+ * 这个 hook 是从 0x0040BA5F 的原版 callsite 进入的。到这里时，状态机已经先执行：
  *     self+0x0C = 3
  * 所以不需要靠 HUD、world、鼠标或资源对象去“猜”是不是 gameplay。
  *
  * 顺序非常重要：
  *   1. 先把 ComeOn.exe 的几处分辨率/JMM 立即数切成 GAMEPLAY profile；
  *   2. 再调用原版 外传 Strategy-enter；
- *   3. 原版 外传 Strategy-enter 自己会读取 self+0x280 的显示模式并调用 0x00404D30。
+ *   3. 原版 外传 Strategy-enter 自己会读取 self+0x280 的显示模式并调用 0x0040BCC0。
  *
  * 因此 DisplayFix 不再额外调用 SetDisplayMode，也就不会像 test11/test12 一样在一个“疑似 gameplay”对象
  * 出现时突然 Reset 设备。真正的分辨率切换时刻完全跟随游戏原本的 BeforeStrategy 流程。
@@ -1732,13 +1738,13 @@ static void __fastcall strategy_enter_hook(LPVOID self, LPVOID unused_edx)
      *     mov eax,[self+0x280] ; 当前显示模式 ID，例如 4
      *     push eax
      *     mov [self+0x08],eax
-     *     call 0x00404D30
+     *     call 0x0040BCC0
      *
-     * 0x00404D30 一开始会比较 self+0x04（当前 mode ID）和传入 mode ID。
+     * 0x0040BCC0 一开始会比较 self+0x04（当前 mode ID）和传入 mode ID。
      * 如果二者相同，并且第二个参数 force 也是 0，它就直接返回，不会走到我们已经改成 854x480 / 1068x600
      * 的宽高立即数。因此 test13 日志才会出现“GAMEPLAY profile=ready，但 live=640x480”。
      *
-     * test14 不额外调用一次 0x00404D30，而是临时把原函数自己的 `push 0` 改成 `push 1`。
+     * test14 不额外调用一次 0x0040BCC0，而是临时把原函数自己的 `push 0` 改成 `push 1`。
      * 这样原版调用链只执行一次，但会真正重建同一个 mode ID 对应的新宽高。
      */
     if (profile_ok && g_strategy_enter_force_immediate && g_strategy_enter_force_original == 0u) {
@@ -1820,13 +1826,13 @@ static void __fastcall strategy_enter_hook(LPVOID self, LPVOID unused_edx)
  *   第 2 步：设置 transition guard，然后完整调用原版 外传 Strategy-exit。
  *           这一步先让游戏自己结束 Strategy 资源；我们绝不在旧 HUD/旧 world 仍处于清理中时重建显示设备。
  *   第 3 步：原版清理返回后，恢复 FRONTEND 分辨率/JMM 立即数。
- *   第 4 步：复用已经由内容签名解析并验证过的原版 0x00404D30，强制请求 mode 4。
- *           force=1 很重要：当前 self+0x04 很可能仍然也是 mode 4；如果 force=0，0x00404D30 会和 test13
+ *   第 4 步：复用已经由内容签名解析并验证过的原版 0x0040BCC0，强制请求 mode 4。
+ *           force=1 很重要：当前 self+0x04 很可能仍然也是 mode 4；如果 force=0，0x0040BCC0 会和 test13
  *           一样因为“mode ID 没变”直接早退，live surface 就还是宽屏。
  *   第 5 步：读取 self+0x228/self+0x22C，确认真的回到了当前 EXE 自己保存下来的 mode 4 原始宽高。
  *
  * 为什么使用 mode 4：
- *   - 原游戏启动路径 0x004053D8~0x004053E4 本身就明确 `push 0; push 4; call 0x00404D30`；
+ *   - 原游戏启动路径 0x0040C339~0x0040C345 本身就明确 `push 0; push 4; call 0x0040BCC0`；
  *   - 标准 ComeOn.exe 中 mode 4 的原始宽高正是 640x480；
  *   - 历史“只改游戏内宽屏”的 EXE 也保留了这条前端 640x480 语义。
  *
@@ -1852,7 +1858,7 @@ static void __fastcall strategy_exit_hook(LPVOID self, LPVOID unused_edx)
     }
 
     /*
-     * callsite 0x00404A1E 只有“旧状态是 Strategy/state 3”时才会执行。
+     * callsite 0x0040B9E8 只有“旧状态是 Strategy/state 3”时才会执行。
      * 此时 self+0x0C 还没有被 0x00404A50 后面的代码改成新状态，所以可以先把旧值记下来供日志核对。
      */
     if (self) {
@@ -1891,13 +1897,13 @@ static void __fastcall strategy_exit_hook(LPVOID self, LPVOID unused_edx)
      * 只有三项都成立才真正强制回前端：
      *   1. FRONTEND profile 已成功恢复；
      *   2. self 非空；
-     *   3. 0x00404D30 已经在初始化时通过函数头签名解析成功。
+     *   3. 0x0040BCC0 已经在初始化时通过函数头签名解析成功。
      *
      * 第二个参数固定 mode=4；第三个参数 force=1，专门绕开“当前 mode ID 同样是 4”的原版早退。
      */
     if (profile_ok && self && g_display_mode_apply) {
         /*
-         * 原版启动前端在 0x004053DD 还会先写 self+0x08 = 4，然后才调用 0x00404D30。
+         * 原版启动前端在 0x0040C33E 还会先写 self+0x08 = 4，然后才调用 0x0040BCC0。
          * 这个字段不是 live 宽高，而是对象内部保存的“本轮请求/准备使用的模式”。
          * test15 也照着原版顺序写回 4，避免 BaseHeight=600 等情况下刚离开的 gameplay 曾使用 mode 5，
          * 结果虽然 surface 已回 640x480，但对象内部的请求模式仍残留 5，影响后续前端状态或下一轮切换。
@@ -1908,7 +1914,7 @@ static void __fastcall strategy_exit_hook(LPVOID self, LPVOID unused_edx)
 
     /*
      * 现在再读取真实 live 宽高。self 就是 外传 Strategy-enter 进入路径使用的同一个显示/高层对象，
-     * 其 +0x228/+0x22C 也是 0x00404D30 写入并在前几版日志中已经验证过的当前宽高字段。
+     * 其 +0x228/+0x22C 也是 0x0040BCC0 写入并在前几版日志中已经验证过的当前宽高字段。
      */
     live_width = self ? *(LONG*)((BYTE*)self + DISPLAY_CURRENT_WIDTH_OFFSET) : 0;
     live_height = self ? *(LONG*)((BYTE*)self + DISPLAY_CURRENT_HEIGHT_OFFSET) : 0;
@@ -2249,13 +2255,13 @@ static DWORD identify_top_button_at_point(LPVOID hud, LONG mouse_x, LONG mouse_y
 /*
  * v0.3-test8：只在真正进入“世界鼠标按下”函数之前阻止属性/道具按钮的点击穿透。
  *
- * 这和 test7 最大的区别是：这里已经处在 0x004B44F0 返回 0 之后。也就是说游戏自己的 UI 按下分派
+ * 这和 test7 最大的区别是：这里已经处在 0x004C78C0 返回 0 之后。也就是说游戏自己的 UI 按下分派
  * 已经完整执行过，DisplayFix 不需要、也绝不能再包装那条存在隐藏 ESI 语义的路径。
  *
  * 此桥接只做三件事：
  *   1. 用 callsite 原本传给世界函数的 mouse_x / mouse_y 检查当前主 HUD 的 0x0B / 0x0E 实时矩形；
- *   2. 命中两个特殊按钮时直接返回，相当于“只跳过这一次 0x00473F10”；
- *   3. 其他位置完整调用原版 0x00473F10。
+ *   2. 命中两个特殊按钮时直接返回，相当于“只跳过这一次 0x00482790”；
+ *   3. 其他位置完整调用原版 0x00482790。
  *
  * 为什么这里不再额外 GetCursorPos：test7 实机日志已经证明 callsite 的 arg 坐标和游戏 IAT GetCursorPos
  * 在这些点击上完全一致。直接使用原参数更窄、更少副作用，也不会在世界输入入口额外调用 USER32。
@@ -2311,7 +2317,7 @@ static void __fastcall world_mouse_press_hook(LPVOID self, LPVOID unused_edx,
  * v0.3-test6 已实机成功、test8 继续保留：在 UI manager 全局鼠标释放分派层做“原版优先、失败才兜底”。
  *
  * 为什么这一层比之前的 +0x24 hook 更可靠：
- *   - 0x00406086 的 call 一定发生在鼠标释放检测成立之后；
+ *   - 0x0040CF96 的 call 一定发生在鼠标释放检测成立之后；
  *   - 它还没决定这次释放最终能不能进入主 HUD，所以不会遇到“事件根本没送到 HUD，兜底代码也永远不执行”；
  *   - mouse_x/mouse_y 就来自同一帧的 GetCursorPos，和原版 UI manager 使用的是同一套游戏逻辑坐标。
  *
@@ -2433,15 +2439,15 @@ static int __fastcall ui_manager_mouse_release_hook(LPVOID self, LPVOID unused_e
 }
 
 /*
- * 安装 0x004060EB -> 0x00473F10 的世界鼠标按下 callsite hook。
+ * 安装 0x0040CFFB -> 0x00482790 的世界鼠标按下 callsite hook。
  *
- * 这里故意不再触碰 0x004060CD -> 0x004B44F0。test7 的实机回归已经证明后者不能被普通 C wrapper
+ * 这里故意不再触碰 0x0040CFDD -> 0x004C78C0。test7 的实机回归已经证明后者不能被普通 C wrapper
  * 安全包裹；它的 ESI 隐式输入细节已写入“逆向工程知识库.md”。
  *
  * 安装步骤：
  *   1. 用 WORLD_MOUSE_PRESS_CALLSITE_PATTERN 唯一定位 0x004060D6 一带；
  *   2. E8 CALL 位于签名 +21；
- *   3. 解码原目标并验证其函数头确实是 0x00473F10 的 SEH/寄存器保存结构；
+ *   3. 解码原目标并验证其函数头确实是 0x00482790 的 SEH/寄存器保存结构；
  *   4. 只改 E8 后 4 字节 rel32，让调用先进入 world_mouse_press_hook。
  */
 static BOOL install_world_mouse_press_hook(const TextRegion* region)
@@ -2469,7 +2475,7 @@ static BOOL install_world_mouse_press_hook(const TextRegion* region)
     }
 
     /*
-     * 0x00473F10 函数头：
+     * 0x00482790 函数头：
      *   64 A1 00000000 6A FF 68 ???????? 50 A1 ???????? 64 89 25 00000000
      * 只验证稳定 opcode/零常量，SEH 记录地址和游戏全局地址保持通配。
      */
@@ -2499,9 +2505,9 @@ static BOOL install_world_mouse_press_hook(const TextRegion* region)
 /*
  * 安装 test15 使用的 Strategy 状态进入/离开 callsite hook。
  *
- * 为什么改 callsite 而不是直接改 0x00404A00 整个状态函数：
- *   - 0x00404A97 只会在“新状态 == 3”分支执行，语义就是 BeforeStrategy；
- *   - 0x00404A1E 只会在“旧状态 == 3”清理分支执行，语义就是 AfterStrategy；
+ * 为什么改 callsite 而不是直接改 0x0040B9C0 整个状态函数：
+ *   - 0x0040BA5F 只会在“新状态 == 3”分支执行，语义就是 BeforeStrategy；
+ *   - 0x0040B9E8 只会在“旧状态 == 3”清理分支执行，语义就是 AfterStrategy；
  *   - 两个 callsite 都把同一个 self 放在 ECX，桥接非常简单；
  *   - 只替换 E8 rel32，不改 jump table、不改状态值，也不复制游戏自己的状态机逻辑。
  *
@@ -2616,15 +2622,15 @@ static BOOL install_strategy_state_hooks(const TextRegion* region)
 }
 
 /*
- * 安装 0x00406086 的全局鼠标释放 callsite hook。
+ * 安装 0x0040CF96 的全局鼠标释放 callsite hook。
  *
- * 不写死 0x00406086 / 0x004B4560：
+ * 不写死 0x0040CF96 / 0x004C7930：
  *   - 先用上面的长签名唯一定位 callsite；
  *   - 再解码 E8 rel32 得到真实目标；
  *   - 验证目标函数头和 0x4B4560 已确认结构一致；
  *   - 最后只替换 E8 后面的 rel32。
  *
- * 这个签名已经离线在原版、480P/540P/720P/768P/900P/1080P 改版和 Steam EXE 上全部唯一命中。
+ * 这个签名已经离线在外传原版、1280/12802/1366/1440/1600/1680/1920/19202 历史宽屏 EXE 和 Steam EXE 上全部唯一命中。
  */
 static BOOL install_global_mouse_release_hook(const TextRegion* region)
 {
@@ -3187,7 +3193,7 @@ static BOOL set_gameplay_resolution_profile(void)
 }
 
 /*
- * 0x004B35F0 的真实 thiscall 类型：ECX=UI 管理器，栈上依次是 mode、width、height，ret 0x0C。
+ * 0x004C6970 的真实 thiscall 类型：ECX=UI 管理器，栈上依次是 mode、width、height，ret 0x0C。
  */
 typedef int (__thiscall *FnJmmLoad)(LPVOID self, LONG mode, LONG width, LONG height);
 
@@ -3209,7 +3215,7 @@ static char* g_jmm_resource_root = (char*)0;
 static DWORD g_jmm_runtime_log_count = 0u;
 
 /*
- * 通过 0x004087B5 改过来的桥接函数。
+ * 通过 0x0040F9D5 改过来的桥接函数。
  * fastcall 的 ECX 正好继续接 this；EDX 只是占位；后三个参数仍在原来的栈位置。
  */
 static int __fastcall jmm_load_hook(LPVOID self, LPVOID unused_edx, LONG mode, LONG width, LONG height)
@@ -3560,7 +3566,7 @@ static BOOL steam_jmm_resource_root_ready(void)
  *
  * test9 已经用实机日志证明：即使 34 个顶层 UI 的 vtable+0x14 全部执行，0x0B/0x0E
  * 的矩形仍完全不变，所以非 Steam 自然第二阶段并不是单纯的“广播 TargetWidth/TargetHeight”。
- * 重新反汇编 0x004B35F0 后确认完整流程是：
+ * 重新反汇编 0x004C6970 后确认完整流程是：
  *   1. 0x4EB9E0 取得资源根目录并追加 "mb\\"；
  *   2. 根据宽度选择 JMMDL.txt 或 JMMDL800.txt；
  *   3. 0x4D0500 真正加载 JMM 布局资源；
@@ -4011,7 +4017,7 @@ static void initialize_display_fix(void)
     make_sibling_path(module_path, "DisplayFix.ini", g_ini_path, (DWORD)sizeof(g_ini_path));
     make_sibling_path(module_path, "DisplayFix.log", g_log_path, (DWORD)sizeof(g_log_path));
 
-    log_line("DisplayFix WaiZhuan v0.1-test1");
+    log_line("DisplayFix WaiZhuan v0.1-test2");
     log_line("Architecture: Win32/x86 ASI, content-signature runtime patch");
 
     if (!resolve_required_apis()) {
@@ -4035,8 +4041,39 @@ static void initialize_display_fix(void)
 
     load_config(&config);
 
+    /*
+     * v0.1-test1 的实机反馈暴露了一个纯配置层错误：
+     * Display.Enable=0 时，旧代码会在这里直接 return，导致下面本应独立的 Font.FixDPI 也完全没有机会执行。
+     *
+     * 这和 INI 的分节语义不一致。Display.Enable 只应该控制“宽屏 / HUD / 输入”这一整套显示运行时修复，
+     * [Font] FixDPI 则是一个独立的字体修复开关。用户可能只想保留原版 4:3 分辨率，却仍然需要在 Windows
+     * 125% / 150% DPI 下修复字体裁切，因此字体补丁必须先独立处理，然后才能根据 Display.Enable 决定
+     * 是否继续安装后面的动态分辨率与 GUI Hook。
+     *
+     * 下面的顺序因此是故意设计成：
+     *   1. 读取配置；
+     *   2. 先根据 Font.FixDPI 决定是否修字体；
+     *   3. 如果 Display.Enable=0，就在字体步骤结束后退出；
+     *   4. 只有 Display.Enable=1 才继续计算目标宽高和安装宽屏/HUD/输入补丁。
+     *
+     * 这样两个开关才真正彼此独立，而且 Display.Enable=0 时也不会去写任何分辨率、JMM、HUD 或输入代码。
+     */
+
+    if (config.fix_font_dpi) {
+        font_result = apply_font_dpi_fix(&text_region);
+        if (font_result == 1) {
+            log_line("[OK] font DPI path patched to 96 DPI");
+        } else if (font_result == 2) {
+            log_line("[OK] font DPI path was already patched");
+        } else {
+            log_line("[FAIL] font DPI signature is missing/ambiguous; font patch skipped");
+        }
+    } else {
+        log_line("[INFO] Font.FixDPI=0, font patch disabled by INI");
+    }
+
     if (!config.enable) {
-        log_line("[INFO] Display.Enable=0, no runtime patch applied");
+        log_line("[INFO] Display.Enable=0; widescreen/HUD/input patches disabled; Font.FixDPI remains independent");
         flush_log_file();
         return;
     }
@@ -4071,19 +4108,6 @@ static void initialize_display_fix(void)
     hud_delta = ((LONG)g_target_width - (LONG)g_native_base_width) / 2;
     log_uint("[INFO] NativeBaseWidth=", g_native_base_width);
     log_int("[INFO] MainHUDCenterDelta=", hud_delta);
-
-    if (config.fix_font_dpi) {
-        font_result = apply_font_dpi_fix(&text_region);
-        if (font_result == 1) {
-            log_line("[OK] font DPI path patched to 96 DPI");
-        } else if (font_result == 2) {
-            log_line("[OK] font DPI path was already patched");
-        } else {
-            log_line("[FAIL] font DPI signature is missing/ambiguous; font patch skipped");
-        }
-    } else {
-        log_line("[INFO] Font.FixDPI=0, font patch disabled by INI");
-    }
 
     if (target_width != 0) {
         resolution_result = apply_dynamic_resolution(&text_region, target_width, config.base_height);
@@ -4153,13 +4177,16 @@ static void initialize_display_fix(void)
 
     if (GAME_GetModuleHandleA && GAME_GetModuleHandleA("ComeOn.dll")) {
         /*
-         * 外传 Steam 版目前明确放到非 Steam 版完成以后再处理。
-         * 用户已经确认：cnc-ddraw 的 D3D9 后端可运行，OpenGL 后端会在开场动画后闪退。
-         * 因此 v0.1-test1 即使检测到 ComeOn.dll，也绝不启用继承自本传的 Steam delayed JMM 特殊路径，
-         * 避免把“外传宽屏适配”和“Steam/cnc-ddraw 后端兼容问题”混成一个实验变量。
+         * 外传 Steam 版仍然不是当前非 Steam 主线的正式验收对象。
+         * test1 用户顺带实机发现：D3D9 后端下大部分 DisplayFix 功能实际上已经可用，而且成熟 HUD 阶段
+         * 的 try_steam_delayed_ui_sync() 会再次检测 ComeOn.dll，并进入继承自本传的 delayed JMM 路径。
+         *
+         * 这里继续先把 g_steam_environment 置为 FALSE，不提前改变原有时序；真正到 GAMEPLAY HUD 成熟以后，
+         * try_steam_delayed_ui_sync() 再按原逻辑 late-detect。这样 test2 只修 Display/Font 配置耦合，不把
+         * Steam 兼容也偷偷变成第二个实验变量。日志也改成准确描述“暂定 / 延后检测”，不再宣称完全禁用。
          */
         g_steam_environment = FALSE;
-        log_line("[INFO] WaiZhuan Steam/ComeOn.dll detected; Steam-specific compatibility is intentionally disabled in v0.1-test1");
+        log_line("[INFO] WaiZhuan Steam/ComeOn.dll detected; Steam path remains provisional and is re-detected only at mature GAMEPLAY HUD");
     } else {
         g_steam_environment = FALSE;
         log_line("[INFO] WaiZhuan non-Steam environment detected");

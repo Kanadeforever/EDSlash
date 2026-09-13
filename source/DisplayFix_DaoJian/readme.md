@@ -1,5 +1,9 @@
 # DisplayFix_DaoJian 构建说明
 
+## 当前版本：v0.3.1
+
+`v0.3.1` 是 v0.3/test15 封版后的配置层热修复：`[Font] FixDPI` 现在先于 `[Display] Enable` gate 执行，因此 `Enable=0 + FixDPI=1` 可以只修字体而不安装宽屏/HUD/输入补丁。除此之外不修改 v0.3 已实机通过的运行时架构。
+
 ## 仓库目录
 
 本项目从 test11 起固定使用以下目录结构，后续版本不得自行改名或增加根目录散文件：
@@ -75,7 +79,13 @@ BAT 固定 **UTF-8 无 BOM + CRLF**；即使首行已有 `chcp 65001 >nul` 也�
 
 不得破坏：96 DPI、BaseHeight 读取、普通地图左键、Alt+F4、右侧鼠标技能、0x0B/0x0E 点击与防穿透、主 HUD 居中、Steam test10 JMM 路径。
 
-## v0.3 封版验证
+## v0.3.1 构建与回归验证
+
+- 新增 `verify_build.py` 防回归项：强制验证 `FixDPI -> apply_font_dpi_fix -> Display.Enable gate` 的初始化顺序；
+- v0.3 的 Strategy/HUD/Steam/输入逻辑保持原样；
+- v0.3 原封版结论继续作为运行时稳定基线。
+
+## v0.3 封版验证（历史稳定基线）
 
 - ASI SHA-256：`edfc6b2e4e06211d161f49289b13b40effc75c7c596d17c45786973adc512e2e`
 - PE32 / i386 / DLL / `InitializeASI` / Import Directory=0：通过；

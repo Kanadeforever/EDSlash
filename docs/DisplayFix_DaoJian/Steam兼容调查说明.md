@@ -1,7 +1,12 @@
-# Steam 兼容调查说明（截至 v0.3 封版）
+# Steam 兼容调查说明（截至 v0.3.1）
+
+## v0.3.1 同步说明
+
+v0.3.1 只调整 `FixDPI` 与 `Display.Enable` 的初始化顺序，不修改 Steam delayed full JMM apply、Strategy gate、HUD 或输入链。因此 Steam test10 与 v0.3/test15 的所有既有结论保持不变。
+
+---
 
 ## v0.3 封版生命周期结论（Steam test10 稳定路径不变）
-
 Steam 专项的稳定结论仍然是 test10：`ComeOn.dll` 环境缺少非 Steam 自然发生的后续完整 JMM apply，因此在 HUD、顶层 UI 与资源根成熟后 one-shot 调用原版 `0x004B35F0(0,W,H)`。
 
 从 test11 到 test15 修改的都是**什么时候进入/离开 GAMEPLAY profile**，不是重新设计 Steam JMM：

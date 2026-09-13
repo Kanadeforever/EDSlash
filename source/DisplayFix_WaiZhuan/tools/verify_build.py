@@ -285,6 +285,48 @@ def validate_repository_bom_free(package_root: Path) -> list[str]:
 
     return [f"仓库文本 UTF-8 BOM=0（已检查 {checked} 个文本文件）"]
 
+
+def validate_font_display_independence(source_path: Path) -> list[str]:
+    """
+    静态检查 v0.1-test2 的配置开关顺序，防止以后又把字体修复绑回 Display.Enable。
+
+    这里不尝试做完整 C 语法解析，因为这个小工具的职责只是构建后防回归。
+    我们只检查 initialize_display_fix() 中三个非常稳定的语义锚点顺序：
+
+    1. `if (config.fix_font_dpi)`：字体开关开始处理；
+    2. `apply_font_dpi_fix(&text_region)`：真正执行字体补丁；
+    3. `if (!config.enable)`：Display 主开关的提前退出。
+
+    正确顺序必须是 1 -> 2 -> 3。这样即使 Display.Enable=0，字体步骤也已经先执行。
+    如果以后有人把 Display gate 又挪回字体步骤前面，这个构建验证会立刻失败。
+    """
+
+    if not source_path.is_file():
+        raise RuntimeError(f"缺少主源码：{source_path}")
+
+    text = source_path.read_text(encoding="utf-8")
+
+    # 先只截取初始化函数，避免文件前面的注释或其他辅助函数里出现相同关键字干扰位置判断。
+    function_start = text.find("static void initialize_display_fix(void)")
+    if function_start < 0:
+        raise RuntimeError("找不到 initialize_display_fix()。")
+
+    function_text = text[function_start:]
+
+    font_if = function_text.find("if (config.fix_font_dpi)")
+    font_apply = function_text.find("apply_font_dpi_fix(&text_region)")
+    display_gate = function_text.find("if (!config.enable)")
+
+    if font_if < 0 or font_apply < 0 or display_gate < 0:
+        raise RuntimeError("找不到 FixDPI / apply_font_dpi_fix / Display.Enable 三个初始化锚点。")
+
+    if not (font_if < font_apply < display_gate):
+        raise RuntimeError(
+            "配置顺序回归：Font.FixDPI 必须在 Display.Enable 提前退出之前独立执行。"
+        )
+
+    return ["Font.FixDPI 与 Display.Enable 初始化顺序独立（字体先执行，Display gate 后判断）"]
+
 def main() -> int:
     """命令行入口。成功返回 0，失败返回 1。"""
 
@@ -294,7 +336,7 @@ def main() -> int:
         asi_path = Path(sys.argv[1]).resolve()
     else:
         # 新仓库结构固定为：
-        #   <仓库根>\source\DisplayFix_DaoJian\tools\verify_build.py
+        #   <仓库根>\source\DisplayFix_WaiZhuan\tools\verify_build.py
         # 所以 parents[3] 才是仓库根目录。
         package_root = Path(__file__).resolve().parents[3]
         asi_path = package_root / "release" / "DisplayFix.asi"
@@ -314,6 +356,10 @@ def main() -> int:
         package_root = Path(__file__).resolve().parents[3]
         bom_lines = validate_repository_bom_free(package_root)
 
+        # v0.1-test2 新增：确保字体修复永远先于 Display.Enable 的提前退出。
+        source_path = Path(__file__).resolve().parents[1] / "src" / "DisplayFix.c"
+        independence_lines = validate_font_display_independence(source_path)
+
         print(f"[验证目标] {asi_path}")
         for line in lines:
             print(f"[通过] {line}")
@@ -322,6 +368,8 @@ def main() -> int:
         for line in build_lines:
             print(f"[通过] {line}")
         for line in bom_lines:
+            print(f"[通过] {line}")
+        for line in independence_lines:
             print(f"[通过] {line}")
         print(f"[通过] 配置文件：{ini_path.name}")
         return 0

@@ -2,7 +2,19 @@
  * DisplayFix.c
  *
  * 《刀剑封魔录》ComeOn.exe 显示修复 ASI 插件。
- * 当前版本：v0.3（封版；基于 test15 实机通过）
+ * 当前版本：v0.3.1（v0.3 封版后的配置解耦修正版）
+ *
+ * v0.3.1 只修复一个已经由外传移植测试反向发现、随后确认本传同样存在的配置层问题：
+ *   - 旧版在 [Display] Enable=0 时，会在初始化早期直接 return；
+ *   - 这使得本应独立的 [Font] FixDPI=1 也无法执行；
+ *   - v0.3.1 把 96-DPI 字体补丁提前到 Display.Enable gate 之前。
+ *
+ * 因此现在可以只关闭宽屏/HUD/输入修复而保留字体修复：
+ *   [Display] Enable=0
+ *   [Font]    FixDPI=1
+ *
+ * 除初始化顺序外，v0.3.1 不修改 v0.3/test15 已实机通过的 Strategy 生命周期、HUD、Steam JMM、
+ * 0x0B/0x0E 输入、防穿透和显示模式机器码逻辑。
  *
  * ----------------------------------------------------------------------------------------------
  * v0.3 封版沿用 test15 已实机通过的最终方案：进入游戏切宽屏，退出 Strategy 后恢复原游戏真正的标题 640x480 生命周期。
@@ -119,6 +131,7 @@
  *   - test15：保留 test14 的进入路径；离开 Strategy 后强制恢复原版 mode 4 前端 surface，BaseHeight=480 实机通过；
  *             进入日志 live=854x480 / expected=854x480 / force=1，退出日志 live=640x480 / expected=640x480。
  *   - v0.3：不再扩大运行时修改范围，直接以 test15 的实机通过代码封版。
+ *   - v0.3.1：仅修正 Font.FixDPI 与 Display.Enable 的错误耦合；其它 v0.3 运行时路径保持不变。
  *
  * 代码里的注释故意写得非常细，目标是让只学过一天编程的人也能顺着看懂每一步。
  */
@@ -3984,7 +3997,7 @@ static void initialize_display_fix(void)
     make_sibling_path(module_path, "DisplayFix.ini", g_ini_path, (DWORD)sizeof(g_ini_path));
     make_sibling_path(module_path, "DisplayFix.log", g_log_path, (DWORD)sizeof(g_log_path));
 
-    log_line("DisplayFix v0.3");
+    log_line("DisplayFix v0.3.1");
     log_line("Architecture: Win32/x86 ASI, content-signature runtime patch");
 
     if (!resolve_required_apis()) {
@@ -4008,8 +4021,35 @@ static void initialize_display_fix(void)
 
     load_config(&config);
 
+    /*
+     * v0.3.1 修复：Font.FixDPI 必须和 Display.Enable 完全独立。
+     *
+     * 旧版顺序是“先检查 Display.Enable，再处理字体”。这样用户只要写 Enable=0，函数就会提前返回，
+     * 后面的 FixDPI=1 根本没有执行机会。这个行为和 INI 分成 [Display] / [Font] 两个独立分节的语义不一致。
+     *
+     * 正确顺序固定为：
+     *   1. 先读取全部配置；
+     *   2. 根据 Font.FixDPI 独立处理字体；
+     *   3. 再检查 Display.Enable；
+     *   4. Enable=0 时只停止宽屏、HUD、输入等显示运行时修复，不撤销已经完成的字体修复。
+     *
+     * 这样用户可以保留原版 4:3 / 原版显示生命周期，只单独解决 Windows 125% 等缩放下的字体裁切。
+     */
+    if (config.fix_font_dpi) {
+        font_result = apply_font_dpi_fix(&text_region);
+        if (font_result == 1) {
+            log_line("[OK] font DPI path patched to 96 DPI");
+        } else if (font_result == 2) {
+            log_line("[OK] font DPI path was already patched");
+        } else {
+            log_line("[FAIL] font DPI signature is missing/ambiguous; font patch skipped");
+        }
+    } else {
+        log_line("[INFO] Font.FixDPI=0, font patch disabled by INI");
+    }
+
     if (!config.enable) {
-        log_line("[INFO] Display.Enable=0, no runtime patch applied");
+        log_line("[INFO] Display.Enable=0; widescreen/HUD/input patches disabled; Font.FixDPI remains independent");
         flush_log_file();
         return;
     }
@@ -4044,19 +4084,6 @@ static void initialize_display_fix(void)
     hud_delta = ((LONG)g_target_width - (LONG)g_native_base_width) / 2;
     log_uint("[INFO] NativeBaseWidth=", g_native_base_width);
     log_int("[INFO] MainHUDCenterDelta=", hud_delta);
-
-    if (config.fix_font_dpi) {
-        font_result = apply_font_dpi_fix(&text_region);
-        if (font_result == 1) {
-            log_line("[OK] font DPI path patched to 96 DPI");
-        } else if (font_result == 2) {
-            log_line("[OK] font DPI path was already patched");
-        } else {
-            log_line("[FAIL] font DPI signature is missing/ambiguous; font patch skipped");
-        }
-    } else {
-        log_line("[INFO] Font.FixDPI=0, font patch disabled by INI");
-    }
 
     if (target_width != 0) {
         resolution_result = apply_dynamic_resolution(&text_region, target_width, config.base_height);

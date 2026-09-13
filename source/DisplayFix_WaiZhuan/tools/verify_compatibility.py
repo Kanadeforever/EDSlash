@@ -5,7 +5,7 @@ DisplayFix_WaiZhuan：外传 ComeOn.exe 兼容性只读检查工具。
 这个工具只读取 EXE，不写入任何字节，也不会生成补丁版 EXE。DisplayFix 不再用整个文件的
 SHA-256 白名单锁版本，而是检查运行时真正依赖的机器码、调用关系和 vtable 结构是否仍然成立。
 
-v0.1-test1 以本传 v0.3 的最终结构为参考，但所有关键地址/调用链都重新从外传 EXE 验证。test15 在 test14 已经闭合的 Strategy enter / force=1 证据之上，新增“原版前端 mode 4”交叉验证：
+v0.1-test2 继续以本传 v0.3 的最终结构为参考，但所有关键地址/调用链都重新从外传 EXE 验证。test15 在 test14 已经闭合的 Strategy enter / force=1 证据之上，新增“原版前端 mode 4”交叉验证：
 
 1. 0x00404A00 风格状态切换函数必须唯一存在；
 2. “离开旧状态 3”的 callsite 必须解码到 0x00407040 风格清理包装函数；
