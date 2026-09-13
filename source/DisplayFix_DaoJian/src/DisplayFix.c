@@ -1,66 +1,122 @@
-/*
+﻿/*
  * DisplayFix.c
  *
  * 《刀剑封魔录》ComeOn.exe 显示修复 ASI 插件。
- * 当前版本：v0.3-test11
+ * 当前版本：v0.3-test15
  *
  * ----------------------------------------------------------------------------------------------
- * v0.3-test11 的核心目标：把“固定 640x480 的前端/动画”和“可扩展的游戏内世界”彻底分开。
+ * v0.3-test15 的核心目标：保留 test14 已实机通过的“进入游戏切宽屏”，并恢复原游戏真正的标题 640x480 生命周期。
  * ----------------------------------------------------------------------------------------------
  *
- * 用户实机已经确认一个非常重要的原版行为：
- *   1. 启动动画、主菜单等前端阶段，本来固定使用 640x480 的 4:3 逻辑画布；
- *   2. 真正进入游戏以后，游戏才接受 640x480 / 800x600 这套游戏内分辨率设置；
- *   3. 旧版 DisplayFix 在 ASI 初始化时就把所有分辨率分支改成 TargetWidth x TargetHeight，
- *      因此当 BaseHeight=1080 时，主菜单仍只画左上角那块原生内容，剩余大 surface 没被正确覆盖，
- *      甚至会把旧帧/动画/3D surface 残留显示到黑区里。这正是用户截图里“大面积黑屏 + 黄色残影”的根因方向。
+ * test14 的实机结果已经把问题进一步拆开：
+ *   1. 进入 Strategy state=3 时，临时 force=1 后，live display 已经正确从 640x480 变成 854x480；
+ *   2. 游戏内 HUD/JMM 也因此有了正确宽屏 surface，说明“进入游戏”方向已经闭合；
+ *   3. 但是离开 Strategy state=3 时，test14 只把代码立即数恢复成 FRONTEND profile，没有真正把已经存在的
+ *      854x480/其它宽屏 DirectDraw surface 重建回 640x480；
+ *   4. 用户实机因此看到：第一次标题正常 4:3，进入游戏正常宽屏，退出游戏后标题却留在 16:9 surface 上，
+ *      同时还残留小地图/技能 UI 等旧游戏内画面。
  *
- * test11 不再让一个分辨率补丁同时支配前端和游戏内，而是维护两个运行时代码 profile：
+ * 这说明“恢复前端代码 profile”和“恢复当前 live display”是两回事。test15 不再追求从头到尾统一一个宽屏
+ * surface，而是完全顺着原游戏自己的设计：
+ *   - 标题/启动动画/前端：真正的 mode 4，也就是原版 640x480；
+ *   - Strategy/gameplay：才临时把当前模式映射到 TargetWidth x BaseHeight；
+ *   - 离开 Strategy：先让原版 0x00407040 做完游戏内清理，再恢复 FRONTEND 代码 profile，最后复用原版
+ *     0x00404D30(self, mode=4, force=1) 强制重建一次真正的前端 mode 4 surface。
  *
- *   FRONTEND profile（启动动画 / 主菜单 / 返回主菜单）：
- *     - 恢复当前 EXE 自己原来的 640/800/内部模式立即数；
- *     - 恢复当前 EXE 自己原来的两处分辨率映射；
- *     - 恢复 JMM 原来的 640/800 比较值；
- *     - 不把 BaseHeight/TargetWidth 提前写入前端；
- *     - 因而原版真正请求 640x480 时，cnc-ddraw 拿到的是完整 4:3 画面，可以按其输出窗口
- *       做等比放大和居中，而不是拿到一个“1920x1080 里只画左上 640x480”的错误 surface。
+ * 这里的 mode 4 不是新猜的魔法数字。进一步反汇编已经确认原游戏启动前端自己就在 0x004053D8~0x004053E4
+ * 明确执行 `push 0 / push 4 / call 0x00404D30`；而 0x00404D30 的 mode 4 原始分支就是 640x480。
+ * 因此 test15 做的是“返回前端时补回原游戏本来就使用的显示模式语义”，不是另造一套菜单缩放规则。
+ * ----------------------------------------------------------------------------------------------
  *
- *   GAMEPLAY profile（主 HUD 真正出现以后）：
- *     - 把三条显示模式分支统一到 TargetWidth x BaseHeight；
- *     - 同步两处分辨率映射；
- *     - 根据 BaseHeight 选择 JMMDL.txt 或 JMMDL800.txt 的目标宽度比较；
- *     - 如果当前 live display 还是前端尺寸，就调用游戏自己的 0x00404D30 强制重应用当前模式一次；
- *     - 设备/GUI 可能在这次调用中销毁重建，因此触发 Reset 后绝不继续访问旧 HUD 指针。
+ * test13 的实机日志新增了一条决定性证据：
+ *   [RUNTIME] Strategy enter state=3 GAMEPLAY profile=ready
+ *   [RUNTIME] Strategy enter original apply finished live=640x480
  *
- * 什么时候切换：
- *   - 主 HUD vtable+0x58 第一次真正自动布局，说明已经进入游戏内，切 GAMEPLAY profile；
- *   - 主 HUD vtable+0x00 析构时，恢复 FRONTEND profile，让原版随后返回菜单时的 640x480 请求
- *     不再被 GAMEPLAY profile 截成 TargetWidth x TargetHeight；
- *   - 析构 hook 本身不强制 SetDisplayMode(640x480)，避免地图切换/读档临时重建 HUD 时插入额外 Reset。
+ * 这说明 test13 的 Strategy gate 本身已经命中正确时机，但 0x00407000 调 0x00404D30 时传入 force=0。
+ * 原版 0x00404D30 会先比较 self+0x04 的“当前 mode ID”和这次请求的 mode ID；二者相同且 force=0 时，
+ * 会在真正写入 self+0x228/self+0x22C 新宽高之前直接返回。DisplayFix 虽然已经把 mode 4 对应的立即数改成
+ * 854x480，但 mode ID 仍然是 4，所以实际 live display 继续保持 640x480。随后 Steam delayed JMM 却按 854x480
+ * 重排 GUI，便出现用户截图里的严重错位；1080 时 center delta 更大，所以几乎整套 HUD 都被移出可见区域。
+ *
+ * test14 不再增加新的 gameplay 判据。它继续使用 test13 的 Strategy state=3 gate，只在调用原版 0x00407000
+ * 的极短时间内，把该函数开头的 `push 0` 临时改成 `push 1`，也就是把原版 0x00404D30 的 force 参数设为 1。
+ * 原函数返回后立刻恢复 `push 0`。这样显示设备重建仍然完整走游戏自己的 0x00407000 -> 0x00404D30 路径，
+ * 但不会再因为“mode ID 没变”而早退。
+ *
+ * 另外 test14 新增 live-size 安全核对：Strategy enter 返回后如果实际宽高仍不等于 TargetWidth/TargetHeight，
+ * DisplayFix 会立即撤销 GAMEPLAY profile，禁止 HUD 居中和 Steam JMM 继续在错误 surface 上工作。失败时宁可保留
+ * 原生 4:3，也不再产生 test13 那种整套 GUI 错位。
+ *
+ * test11 和 test12 都已经由用户实机证明失败，但它们留下了非常重要的排除证据：
+ *   - test11 用“主 HUD 第一次 +0x58 自动布局”判断已经进入游戏；主菜单也会建立同类 HUD，所以过早切宽屏；
+ *   - test12 改用“world 全局对象非空”判断；实机再次证明主菜单阶段 world 对象同样已经存在，因此还是过早切宽屏；
+ *   - 两次失败都会在主菜单阶段把 live display 从 640x480 改成 TargetWidth x BaseHeight，随后出现
+ *     左上角只有原生菜单、其余大面积黑区和旧 surface 黄色残影。
+ *
+ * test13 不再猜“某个对象出现了是不是代表 gameplay”，而是直接接到 ComeOn.exe 自己的高层状态机：
+ *
+ *   0x00404A00  状态切换函数
+ *       self+0x0C = 当前高层状态
+ *
+ *   新状态 3：
+ *       0x00404A83  打印 "BeforeStrategy() Begin"
+ *       0x00404A97  call 0x00407000
+ *       0x00404A9C  打印 "BeforeStrategy() End"
+ *
+ *   离开旧状态 3：
+ *       0x00404A17  call 0x00408690
+ *       0x00404A1E  call 0x00407040
+ *       0x00404A23  打印 "AfterStrategy()  End"
+ *
+ * 0x00407000 不是我们猜出来的“可能会切分辨率”的函数：它自己读取显示管理器 self+0x280 的游戏设置模式，
+ * 然后直接调用原版 0x00404D30 重新应用显示模式。因此 test13 只做两件事：
+ *   1. 在 0x00404A97 调原版 0x00407000 之前，把代码立即数切成 GAMEPLAY profile；
+ *   2. 在 0x00404A1E 调原版 0x00407040 之前，恢复 FRONTEND profile。
+ *
+ * 这样真正的 SetDisplayMode 仍然由游戏原来的 Strategy 进入流程自己执行，DisplayFix 不再额外插入一次
+ * 0x00404D30 Reset，也不再依赖 HUD/world 对象生命周期。前端/主菜单完整保留原版 4:3 逻辑 surface。
+ *
+ * HUD 与 Steam GUI 路径也同步加一道防线：
+ *   - FRONTEND profile 时，主 HUD +0x58 只执行原版布局，不做宽屏平移；
+ *   - 只有 GAMEPLAY profile 已经由 Strategy 状态机正式启用后，才执行 v0.2-test1 已实机通过的 HUD 居中；
+ *   - Steam/ComeOn.dll 的 test10 delayed full JMM apply 也只允许在 GAMEPLAY profile 中执行；
+ *   - 每次重新进入 Strategy 状态 3，会重置 Steam one-shot 状态，保证“返回菜单再开新局”也能重新同步。
  *
  * Steam 特殊路径继续保留 v0.3-test10 已实机通过的修复：
  *   - Steam/ComeOn.dll 环境缺少非 Steam 自然发生的一次完整后续 JMM apply；
  *   - 等 HUD、顶层 UI、资源根都成熟后，one-shot 调用原版 0x004B35F0(0,W,H)；
- *   - test10 实机已确认 child_layout_changed=1，Steam GUI 最终位置与非 Steam 一致；
- *   - test11 的前端/gameplay profile 切换必须与这条 one-shot 互相加锁，避免递归重建。
+ *   - test10 实机已确认 GUI 最终可恢复正确位置；test13 不改变这个原版 JMM 调用本身，只修正它的触发阶段。
  *
  * 输入修复继续保留 test8 已实机验证的方案：
  *   - 顶部“属性/道具”真实 control ID 是 0x0B / 0x0E；
- *   - 释放阶段在 0x00406086 -> 0x004B4560 之后仅在原版没切换窗口时补一次原版式 toggle；
- *   - 按下阶段绝不包装 0x004B44F0（它依赖调用者保留的 ESI，test7 已证明会破坏地图左键和 Alt+F4）；
+ *   - 释放阶段在 0x00406086 -> 0x004B4560 之后，仅在原版没有切换窗口时补一次原版式 toggle；
+ *   - 按下阶段绝不包装 0x004B44F0（test7 已证明它依赖调用者隐藏寄存器状态）；
  *   - 只在真正世界输入 0x004060EB -> 0x00473F10 的最后 callsite 上，命中 0x0B/0x0E 时跳过
  *     本次角色移动，其他地图点击完全走原版。
  *
+ * 关于 BaseHeight 和性能必须特别说明：
+ *   - BaseHeight 是“游戏内部逻辑高度 / 世界视野量级”，不是最终显示器输出清晰度；
+ *   - BaseHeight=1080 + 16:9 会让老游戏真正运行 1920x1080 的内部世界，看到的地图范围显著增加，
+ *     CPU/GPU/对象更新和 DirectDraw surface 成本都会明显上升，所以用户本轮实机看到严重掉帧是可解释的；
+ *   - 原项目最初的 fixed-Y 目标仍推荐 BaseHeight=480 或 600，让 cnc-ddraw 负责最终放大到 4K；
+ *   - 用户此前已经允许任意正整数 BaseHeight 作为高级 FOV/世界缩放实验，所以 test13 不重新封死上限，
+ *     但 BaseHeight>600 会在日志和 INI 中明确标为高级高负载用法，而不是“4K 画质模式”。
+ *
  * 其它已经实机确认并继续保留：
  *   - 字体创建路径固定 96 DPI，解决 Windows 125% 等缩放下字体裁切，同时不改变整个进程 DPI；
- *   - BaseHeight 任意正整数，TargetWidth 按宽高比自动计算；
+ *   - TargetWidth 按宽高比自动计算；
  *   - v0.2-test1 的底部主 HUD 根节点水平居中；边缘 UI（小地图/右侧按钮）继续贴边；
  *   - INI 第一节 BOM 防护；
  *   - 机器码/上下文签名验证，不用整个 EXE SHA-256 锁死兼容版本。
  *
  * 重要测试状态：
- *   test11 的“前端/动画保持原生 4:3 + 进入游戏后再切动态分辨率”目前只有静态逆向、
- *   内容签名和构建验证，还没有用户实机验收。代码与文档都必须把它标为测试方案，不能提前写成已通过。
+ *   - test10：Steam delayed full JMM apply 稳定基线，已实机通过；
+ *   - test11：HUD 存在误判 gameplay，实机失败；
+ *   - test12：world 对象存在误判 gameplay，实机失败；
+ *   - test13：Strategy gate 时机正确，但原版 0x407000 以 force=0 重应用相同 mode ID，实际 live 仍停在 640x480，实机失败；
+ *   - test14：Strategy enter force=1 实机成功，进入游戏 live 已正确变成目标宽高；但退出只恢复代码 profile，
+ *             没有把 live surface 强制重建回 640x480，因此返回标题后仍停留宽屏，实机失败；
+ *   - test15：保留 test14 的进入路径；离开 Strategy 后强制恢复原版 mode 4 前端 surface，待实机验收。
  *
  * 代码里的注释故意写得非常细，目标是让只学过一天编程的人也能顺着看懂每一步。
  */
@@ -992,6 +1048,38 @@ static const BYTE JMM_LAYOUT_SELECT_PATTERN[] = {
 static const char JMM_LAYOUT_SELECT_MASK[] = "xxxxxxxxxxxxxxx????xxxxxxxxxxxxxxxxxx";
 
 /*
+ * test13：0x00404A00 是游戏自己的高层状态切换函数。
+ *
+ * 这个长签名从函数头一路覆盖到“离开旧状态 3”的两次清理 call：
+ *   0x00404A17 -> 0x00408690
+ *   0x00404A1E -> 0x00407040
+ * 后面的两个字符串地址分别落在 AfterStrategy 日志附近，是很强的语义锚点。
+ *
+ * E8 的 rel32 和 jump-table 绝对地址不作为固定版本地址使用：安装时会重新解码目标函数，
+ * 并逐字验证 0x00407000 / 0x00407040 的函数头结构。这样历史宽屏 EXE 只要状态机结构未变就能兼容。
+ */
+static const BYTE STRATEGY_STATE_TRANSITION_PATTERN[] = {
+    0x56,                         /* push esi */
+    0x8B,0xF1,                   /* mov esi,ecx */
+    0x8B,0x46,0x0C,              /* mov eax,[esi+0x0C]：旧状态 */
+    0x83,0xC0,0xFE,
+    0x83,0xF8,0x04,
+    0x77,0x42,
+    0xFF,0x24,0x85,0,0,0,0,     /* jmp [eax*4+jump_table]，表地址通配 */
+    0x8B,0xCE,
+    0xE8,0,0,0,0,               /* call 0x00408690，rel32 通配 */
+    0x8B,0xCE,
+    0xE8,0,0,0,0,               /* call 0x00407040：Strategy 离开清理 */
+    0x68,0xF4,0x4D,0x54,0x00,   /* "AfterStrategy()  End" 附近字符串 */
+    0x68,0xD0,0x5D,0x54,0x00,
+    0xE8,0,0,0,0,
+    0x83,0xC4,0x08,
+    0xEB,0x19
+};
+static const char STRATEGY_STATE_TRANSITION_MASK[] =
+    "xxxxxxxxxxxxxxxxx????xxx????xxx????xxxxxxxxxxx????xxxxx";
+
+/*
  * 0x004060D6 一带是“UI 按下分派已经明确返回 0，接下来准备把同一次按下交给游戏世界”的路径。
  *
  * 原版机器码顺序已经闭合：
@@ -1210,9 +1298,9 @@ static FnUILayout g_original_main_hud_layout = (FnUILayout)0;
  * 它的参数只有一个删除标志 DWORD，返回 self。这个函数本身会先正常析构 HUD，
  * 再根据 flags&1 决定是否释放对象内存。
  *
- * test11 只用这个 hook 做一件很窄的事：当 HUD 真正离开时，把“游戏内动态分辨率代码配置”
- * 恢复成“前端原版配置”。这样下一次主菜单/开场动画请求原版 640x480 时，不会再被 BaseHeight
- * 的目标分辨率截走。我们自己的分辨率切换期间会打开 guard，避免 HUD 因设备重建暂时析构时误恢复。
+ * test13 继续保留这个 destructor hook，但它只负责清掉 g_main_hud_instance 缓存。
+ * 分辨率 profile 生命周期已经完全交给 0x00404A00 的 Strategy 状态 enter/exit callsite，
+ * 所以 HUD 析构、地图临时重建和设备 Reset 都不会再改变 FRONTEND/GAMEPLAY 状态。
  */
 typedef LPVOID (__thiscall *FnMainHudDestructor)(LPVOID self, DWORD flags);
 static FnMainHudDestructor g_original_main_hud_destructor = (FnMainHudDestructor)0;
@@ -1241,6 +1329,38 @@ static FnUiManagerMouseRelease g_original_ui_manager_mouse_release = (FnUiManage
  */
 typedef void (__thiscall *FnWorldMousePress)(LPVOID self, LONG event_type, LONG mouse_x, LONG mouse_y);
 static FnWorldMousePress g_original_world_mouse_press = (FnWorldMousePress)0;
+
+/*
+ * test13 不再把 world 对象是否存在当成 gameplay 判据。
+ * 用户已经用 test12 实机证明：主菜单阶段 world 全局对象同样会存在，所以“对象非空”并不等于进入地图。
+ * 世界输入 hook 仍保留，只负责 0x0B/0x0E 点击防穿透；它和分辨率生命周期彻底解耦。
+ */
+
+/*
+ * 0x00407000 / 0x00407040 是 Strategy 状态进入/离开时由 0x00404A00 状态机直接调用的原版函数。
+ * 二者都使用 thiscall：ECX 是同一个显示/高层状态管理对象，栈上没有参数。
+ */
+typedef void (__thiscall *FnStrategyStateStep)(LPVOID self);
+static FnStrategyStateStep g_original_strategy_enter = (FnStrategyStateStep)0;
+static FnStrategyStateStep g_original_strategy_exit = (FnStrategyStateStep)0;
+
+/*
+ * test14 起保存 0x00407000 开头 `push 0` 的“立即数字节”地址。
+ * test15 继续原样使用这条进入游戏 force 补丁；本轮新增逻辑只发生在 Strategy exit 之后。
+ * 原机器码是：
+ *     56          push esi
+ *     8B F1       mov  esi,ecx
+ *     6A 00       push 0        ; 传给 0x00404D30 的 force 参数
+ *
+ * 进入 Strategy state=3 时，我们只把最后这个 00 临时改成 01。
+ * 这样原版 0x00407000 自己仍然负责读取 mode、写 self+0x08、调用 0x00404D30 和后续 Strategy 初始化；
+ * DisplayFix 不复制这些逻辑，也不额外调用第二次 SetDisplayMode。原函数返回后马上恢复 00。
+ */
+static BYTE* g_strategy_enter_force_immediate = (BYTE*)0;
+static BYTE g_strategy_enter_force_original = 0u;
+
+static BOOL g_strategy_state_hooks_installed = FALSE;
+static DWORD g_frontend_hud_skip_log_count = 0u;
 
 /*
  * v0.3-test4 的实机日志已经把主 HUD 顶部两个圆形按钮真正闭合为：
@@ -1277,7 +1397,7 @@ static DWORD g_native_base_width = 640u;
  * test11 改成两套“代码配置 profile”：
  *   FRONTEND：完全恢复 EXE 原始的 640/800/内部分辨率与 JMM 比较；主菜单/动画继续用原版 640x480，
  *             最终放大、保持 4:3、居中交给 cnc-ddraw 这一层完成；
- *   GAMEPLAY：只有主 HUD 真正出现后才把对应立即数改成 DisplayFix 目标分辨率。
+ *   GAMEPLAY：只有游戏状态机真正进入 Strategy 状态 3 前才把对应立即数改成 DisplayFix 目标分辨率。
  *
  * 这些指针全部来自唯一内容签名，不按 SHA-256 绑版本；原始立即数也在安装时从当前 EXE 现场保存，
  * 所以 Steam EXE、原版 EXE 和已经修改过隐藏分支的宽屏 EXE 都能各自恢复“自己原来的前端代码”。
@@ -1297,7 +1417,13 @@ static DWORD g_jmm_original_cmp640 = 0u;
 static DWORD g_jmm_original_cmp800 = 0u;
 static BOOL g_resolution_profile_ready = FALSE;
 static BOOL g_gameplay_profile_active = FALSE;
-static BOOL g_gameplay_mode_switch_in_progress = FALSE;
+
+/*
+ * Strategy enter/exit 原函数内部可能触发 SetDisplayMode、设备重建和 HUD 临时布局。
+ * 这段调用栈里绝不能再递归做 HUD 居中或 Steam full JMM；等原版 Strategy 步骤返回后，
+ * 新 HUD 后续的正常 +0x58 自动布局再执行游戏内修复。
+ */
+static BOOL g_strategy_transition_in_progress = FALSE;
 
 /* ComeOn.exe 的显示模式管理对象；当前兼容样本中架构固定，真实修改位置仍由内容签名验证。 */
 #define GAME_DISPLAY_MANAGER ((LPVOID)0x00548398u)
@@ -1335,8 +1461,9 @@ static DWORD g_hud_event_log_count = 0u;
 static DWORD g_global_release_log_count = 0u;
 static DWORD g_world_press_log_count = 0u;
 static DWORD g_hud_candidate_log_count = 0u;
-/* test11 只在 HUD 真正退出时记录少量前端 profile 恢复信息，方便验证“返回主菜单”生命周期。 */
-static DWORD g_frontend_restore_log_count = 0u;
+/* test13 只记录少量 Strategy 进入/离开与前端 HUD 跳过信息，避免运行时刷盘。 */
+static DWORD g_strategy_enter_log_count = 0u;
+static DWORD g_strategy_exit_log_count = 0u;
 
 /*
  * 从一个 child 读取矩形。
@@ -1483,7 +1610,7 @@ static void log_hud_candidate_children(LPVOID self)
 static LPVOID find_main_hud_child_by_id(LPVOID self, DWORD wanted_id);
 static void try_steam_delayed_ui_sync(LPVOID hud);
 static BOOL set_frontend_resolution_profile(void);
-static BOOL activate_gameplay_resolution_if_needed(void);
+static BOOL set_gameplay_resolution_profile(void);
 
 /*
  * 主 HUD 析构 hook。
@@ -1507,17 +1634,298 @@ static LPVOID __fastcall main_hud_destructor_hook(LPVOID self, LPVOID unused_edx
 
     result = g_original_main_hud_destructor(self, flags);
 
-    if (!g_gameplay_mode_switch_in_progress && !g_steam_ui_sync_in_progress) {
+    /*
+     * test11 已被实机证明不能把“HUD 析构”当成返回前端；test12 的 world 对象生命周期同样不够精确。
+     * test13 因此这里只清掉缓存实例，FRONTEND/GAMEPLAY 由 Strategy 状态机唯一负责。
+     */
+    if (g_main_hud_instance == self) {
         g_main_hud_instance = (LPVOID)0;
-        if (g_resolution_profile_ready) {
-            if (set_frontend_resolution_profile() && g_frontend_restore_log_count < 4u) {
-                ++g_frontend_restore_log_count;
-                append_runtime_line("[RUNTIME] frontend resolution profile restored after HUD destruction; no forced display reset");
-            }
-        }
     }
 
     return result;
+}
+
+/*
+ * test13：Strategy 状态 3 的进入桥接。
+ *
+ * 这个 hook 是从 0x00404A97 的原版 callsite 进入的。到这里时，状态机已经先执行：
+ *     self+0x0C = 3
+ * 所以不需要靠 HUD、world、鼠标或资源对象去“猜”是不是 gameplay。
+ *
+ * 顺序非常重要：
+ *   1. 先把 ComeOn.exe 的几处分辨率/JMM 立即数切成 GAMEPLAY profile；
+ *   2. 再调用原版 0x00407000；
+ *   3. 原版 0x00407000 自己会读取 self+0x280 的显示模式并调用 0x00404D30。
+ *
+ * 因此 DisplayFix 不再额外调用 SetDisplayMode，也就不会像 test11/test12 一样在一个“疑似 gameplay”对象
+ * 出现时突然 Reset 设备。真正的分辨率切换时刻完全跟随游戏原本的 BeforeStrategy 流程。
+ */
+static void __fastcall strategy_enter_hook(LPVOID self, LPVOID unused_edx)
+{
+    BOOL profile_ok;
+    BOOL force_patch_ok = FALSE;
+    BOOL force_restore_ok = TRUE;
+    BOOL live_matches_target;
+    BYTE forced_value = 1u;
+    char line[384];
+
+    (void)unused_edx;
+
+    if (!g_original_strategy_enter) {
+        return;
+    }
+
+    /*
+     * 新一轮 Strategy 会重新创建/重排 HUD，因此 Steam test10 的 one-shot 也必须按“每次进入游戏”重置。
+     * 这里只重置 DisplayFix 自己的标志，不主动加载 JMM；真正 delayed apply 仍要等新 HUD/资源根成熟。
+     */
+    g_steam_ui_sync_done = FALSE;
+    g_steam_ui_sync_wait_root_logged = FALSE;
+    g_steam_ui_sync_attempts = 0u;
+    g_steam_ui_sync_applied = 0u;
+    g_main_hud_instance = (LPVOID)0;
+    g_hud_candidate_log_count = 0u;
+    g_hud_layout_log_count = 0u;
+
+    /*
+     * 第一步仍然是 test13 已证明时机正确的做法：把 mode 4/5/6 对应的宽高和 JMM 选择器切到 GAMEPLAY。
+     * 注意，这一步只改“同一个 mode ID 对应什么宽高”，不会改变 self+0x280 里的 mode ID 本身。
+     */
+    profile_ok = set_gameplay_resolution_profile();
+
+    if (g_strategy_enter_log_count < 4u) {
+        ++g_strategy_enter_log_count;
+        line[0] = '\0';
+        str_append(line, (DWORD)sizeof(line), "[RUNTIME] Strategy enter state=");
+        if (self) {
+            append_int(line, (DWORD)sizeof(line), *(LONG*)((BYTE*)self + 0x0Cu));
+        } else {
+            append_int(line, (DWORD)sizeof(line), -1);
+        }
+        str_append(line, (DWORD)sizeof(line), profile_ok ? " GAMEPLAY profile=ready" : " GAMEPLAY profile=FAILED");
+        append_runtime_line(line);
+    }
+
+    /*
+     * test13 的关键失败点就在这里。
+     *
+     * 原版 0x00407000 会执行：
+     *     push 0               ; force = 0
+     *     mov eax,[self+0x280] ; 当前显示模式 ID，例如 4
+     *     push eax
+     *     mov [self+0x08],eax
+     *     call 0x00404D30
+     *
+     * 0x00404D30 一开始会比较 self+0x04（当前 mode ID）和传入 mode ID。
+     * 如果二者相同，并且第二个参数 force 也是 0，它就直接返回，不会走到我们已经改成 854x480 / 1068x600
+     * 的宽高立即数。因此 test13 日志才会出现“GAMEPLAY profile=ready，但 live=640x480”。
+     *
+     * test14 不额外调用一次 0x00404D30，而是临时把原函数自己的 `push 0` 改成 `push 1`。
+     * 这样原版调用链只执行一次，但会真正重建同一个 mode ID 对应的新宽高。
+     */
+    if (profile_ok && g_strategy_enter_force_immediate && g_strategy_enter_force_original == 0u) {
+        force_patch_ok = patch_bytes(g_strategy_enter_force_immediate, &forced_value, 1u);
+    }
+
+    /*
+     * 如果连这个 1 字节都无法安全写入，就不要在错误的 640x480 surface 上继续启用宽屏 HUD/JMM。
+     * 这里立刻回退 FRONTEND profile，让游戏至少保持原生 4:3 可玩，而不是产生 test13 那种 GUI 大错位。
+     */
+    if (profile_ok && !force_patch_ok) {
+        append_runtime_line("[RUNTIME] Strategy enter force-reapply patch FAILED; fall back to FRONTEND profile");
+        set_frontend_resolution_profile();
+        profile_ok = FALSE;
+    }
+
+    /*
+     * 原版在这里执行真正的显示模式应用和 Strategy 初始化。
+     * 期间设备可能销毁/重建 HUD，所以继续保留 transition guard：这段调用栈内只允许原版布局。
+     */
+    g_strategy_transition_in_progress = TRUE;
+    g_original_strategy_enter(self);
+    g_strategy_transition_in_progress = FALSE;
+
+    /*
+     * 原函数已经返回，立即把 `push 1` 恢复成原版 `push 0`。
+     * 这样其他任何潜在的 0x00407000 调用都继续保持游戏原始语义；强制重应用只发生在我们的 Strategy hook 这一次。
+     */
+    if (force_patch_ok) {
+        force_restore_ok = patch_bytes(g_strategy_enter_force_immediate, &g_strategy_enter_force_original, 1u);
+        if (!force_restore_ok) {
+            append_runtime_line("[RUNTIME] Strategy enter force-reapply restore FAILED; 0x407000 remains force=1");
+        }
+    }
+
+    /*
+     * test14 的第二道保险：不要只相信“补丁写成功”，还要看游戏显示管理器最终记录的 live 宽高。
+     * 只有 live 真正等于 TargetWidth x TargetHeight，HUD 居中和 Steam delayed JMM 才有资格继续执行。
+     */
+    live_matches_target =
+        (*(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_WIDTH_OFFSET) == (LONG)g_target_width) &&
+        (*(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_HEIGHT_OFFSET) == (LONG)g_target_height);
+
+    line[0] = '\0';
+    str_append(line, (DWORD)sizeof(line), "[RUNTIME] Strategy enter original apply finished live=");
+    append_int(line, (DWORD)sizeof(line), *(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_WIDTH_OFFSET));
+    str_append(line, (DWORD)sizeof(line), "x");
+    append_int(line, (DWORD)sizeof(line), *(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_HEIGHT_OFFSET));
+    str_append(line, (DWORD)sizeof(line), " expected=");
+    append_int(line, (DWORD)sizeof(line), (LONG)g_target_width);
+    str_append(line, (DWORD)sizeof(line), "x");
+    append_int(line, (DWORD)sizeof(line), (LONG)g_target_height);
+    str_append(line, (DWORD)sizeof(line), force_patch_ok ? " force=1" : " force=0");
+    append_runtime_line(line);
+
+    if (profile_ok && !live_matches_target) {
+        append_runtime_line("[RUNTIME] Strategy enter live-size mismatch; disable GAMEPLAY HUD/JMM and restore FRONTEND code profile");
+        set_frontend_resolution_profile();
+    }
+}
+
+/*
+ * test15：离开旧 Strategy 状态 3 的前端恢复桥接。
+ *
+ * test14 在这里暴露了一个非常重要的区别：
+ *   - set_frontend_resolution_profile() 只把 ComeOn.exe 里的“以后再选择 mode 时应该得到什么宽高”恢复成原值；
+ *   - 它不会自动改变当前已经建立好的 DirectDraw 主 surface。
+ *
+ * 所以 test14 虽然打印了：
+ *     FRONTEND profile=restored
+ * 但当前 live display 仍然是刚才游戏内的 854x480 / 1068x600 / 其它目标宽高。
+ * 返回标题以后，原生 640x480 菜单素材便被画进这个仍然宽屏的 surface，最终出现用户截图中的宽屏标题错位、
+ * 小地图/技能 UI 残留等现象。
+ *
+ * test15 的顺序严格按“先清游戏内，再恢复前端显示”执行：
+ *
+ *   第 1 步：记住旧状态，并清掉 DisplayFix 缓存的 HUD 指针。
+ *   第 2 步：设置 transition guard，然后完整调用原版 0x00407040。
+ *           这一步先让游戏自己结束 Strategy 资源；我们绝不在旧 HUD/旧 world 仍处于清理中时重建显示设备。
+ *   第 3 步：原版清理返回后，恢复 FRONTEND 分辨率/JMM 立即数。
+ *   第 4 步：复用已经由内容签名解析并验证过的原版 0x00404D30，强制请求 mode 4。
+ *           force=1 很重要：当前 self+0x04 很可能仍然也是 mode 4；如果 force=0，0x00404D30 会和 test13
+ *           一样因为“mode ID 没变”直接早退，live surface 就还是宽屏。
+ *   第 5 步：读取 self+0x228/self+0x22C，确认真的回到了当前 EXE 自己保存下来的 mode 4 原始宽高。
+ *
+ * 为什么使用 mode 4：
+ *   - 原游戏启动路径 0x004053D8~0x004053E4 本身就明确 `push 0; push 4; call 0x00404D30`；
+ *   - 标准 ComeOn.exe 中 mode 4 的原始宽高正是 640x480；
+ *   - 历史“只改游戏内宽屏”的 EXE 也保留了这条前端 640x480 语义。
+ *
+ * 这里没有把 640/480 写死成判断常量。expected_width / expected_height 直接读取安装时保存的
+ * g_res_mode_original[4]/[5]，这样只要兼容 EXE 仍保持同一代码结构，日志和安全核对就尊重它自己的原始 mode 4。
+ */
+static void __fastcall strategy_exit_hook(LPVOID self, LPVOID unused_edx)
+{
+    LONG old_state = -1;
+    LONG expected_width;
+    LONG expected_height;
+    LONG live_width;
+    LONG live_height;
+    int reset_result = 0;
+    BOOL profile_ok;
+    BOOL live_matches_frontend;
+    char line[448];
+
+    (void)unused_edx;
+
+    if (!g_original_strategy_exit) {
+        return;
+    }
+
+    /*
+     * callsite 0x00404A1E 只有“旧状态是 Strategy/state 3”时才会执行。
+     * 此时 self+0x0C 还没有被 0x00404A50 后面的代码改成新状态，所以可以先把旧值记下来供日志核对。
+     */
+    if (self) {
+        old_state = *(LONG*)((BYTE*)self + 0x0Cu);
+    }
+
+    /*
+     * 旧 HUD 很快会随着 Strategy 清理失效。先把插件缓存清掉，避免后面的鼠标/JMM 辅助逻辑再引用它。
+     */
+    g_main_hud_instance = (LPVOID)0;
+
+    /*
+     * 原版 Strategy 清理期间可能释放 UI、world、DirectDraw 相关对象。
+     * transition guard 会让主 HUD 居中和 Steam delayed JMM 暂停，避免在半析构状态下碰这些对象。
+     */
+    g_strategy_transition_in_progress = TRUE;
+    g_original_strategy_exit(self);
+
+    /*
+     * 原版游戏内资源已经清理完，现在才把几处分辨率/JMM 机器码恢复为 FRONTEND 原值。
+     * 这一步决定“接下来 mode 4 应该重新得到原生前端宽高”。
+     */
+    profile_ok = set_frontend_resolution_profile();
+
+    /*
+     * RES_MODE_ALL_PATTERN 保存顺序已经由 0x00404D7A 分支闭合：
+     *   [0],[1] = mode 6 宽高；
+     *   [2],[3] = mode 5 宽高；
+     *   [4],[5] = mode 4 / 默认分支宽高。
+     * 标准原版这里就是 640x480。
+     */
+    expected_width = (LONG)g_res_mode_original[4];
+    expected_height = (LONG)g_res_mode_original[5];
+
+    /*
+     * 只有三项都成立才真正强制回前端：
+     *   1. FRONTEND profile 已成功恢复；
+     *   2. self 非空；
+     *   3. 0x00404D30 已经在初始化时通过函数头签名解析成功。
+     *
+     * 第二个参数固定 mode=4；第三个参数 force=1，专门绕开“当前 mode ID 同样是 4”的原版早退。
+     */
+    if (profile_ok && self && g_display_mode_apply) {
+        /*
+         * 原版启动前端在 0x004053DD 还会先写 self+0x08 = 4，然后才调用 0x00404D30。
+         * 这个字段不是 live 宽高，而是对象内部保存的“本轮请求/准备使用的模式”。
+         * test15 也照着原版顺序写回 4，避免 BaseHeight=600 等情况下刚离开的 gameplay 曾使用 mode 5，
+         * 结果虽然 surface 已回 640x480，但对象内部的请求模式仍残留 5，影响后续前端状态或下一轮切换。
+         */
+        *(LONG*)((BYTE*)self + 0x08u) = 4;
+        reset_result = g_display_mode_apply(self, 4, 1);
+    }
+
+    /*
+     * 现在再读取真实 live 宽高。self 就是 0x00407000 进入路径使用的同一个显示/高层对象，
+     * 其 +0x228/+0x22C 也是 0x00404D30 写入并在前几版日志中已经验证过的当前宽高字段。
+     */
+    live_width = self ? *(LONG*)((BYTE*)self + DISPLAY_CURRENT_WIDTH_OFFSET) : 0;
+    live_height = self ? *(LONG*)((BYTE*)self + DISPLAY_CURRENT_HEIGHT_OFFSET) : 0;
+
+    live_matches_frontend =
+        (profile_ok && reset_result != 0 &&
+         live_width == expected_width && live_height == expected_height) ? TRUE : FALSE;
+
+    /*
+     * 显示重建和尺寸核对都结束后，才解除 transition guard。
+     * 后续真正新建的前端 HUD 会继续走 FRONTEND 分支，不会再被 DisplayFix 水平平移或做 Steam gameplay JMM。
+     */
+    g_strategy_transition_in_progress = FALSE;
+
+    if (g_strategy_exit_log_count < 4u) {
+        ++g_strategy_exit_log_count;
+        line[0] = '\0';
+        str_append(line, (DWORD)sizeof(line), "[RUNTIME] Strategy exit old_state=");
+        append_int(line, (DWORD)sizeof(line), old_state);
+        str_append(line, (DWORD)sizeof(line), profile_ok ? " FRONTEND profile=restored" : " FRONTEND profile=FAILED");
+        str_append(line, (DWORD)sizeof(line), " reset_mode=4 result=");
+        append_int(line, (DWORD)sizeof(line), (LONG)reset_result);
+        str_append(line, (DWORD)sizeof(line), " live=");
+        append_int(line, (DWORD)sizeof(line), live_width);
+        str_append(line, (DWORD)sizeof(line), "x");
+        append_int(line, (DWORD)sizeof(line), live_height);
+        str_append(line, (DWORD)sizeof(line), " expected=");
+        append_int(line, (DWORD)sizeof(line), expected_width);
+        str_append(line, (DWORD)sizeof(line), "x");
+        append_int(line, (DWORD)sizeof(line), expected_height);
+        append_runtime_line(line);
+    }
+
+    if (!live_matches_frontend) {
+        append_runtime_line("[RUNTIME] Strategy exit FRONTEND force-reset FAILED; title may remain on gameplay surface");
+    }
 }
 
 /*
@@ -1539,8 +1947,8 @@ static int __fastcall main_hud_layout_hook(LPVOID self, LPVOID unused_edx, LONG 
     }
 
     /*
-     * 只要这次调用确实带着主 HUD 对象，就更新全局实例指针。
-     * 即使这次是显式坐标布局，也仍然说明这个 self 是当前活着的 HUD。
+     * 只要这次调用带着对象，就缓存“最近一次 HUD 实例”。Strategy enter 时会主动把旧缓存清零，
+     * 所以 Steam delayed apply 不会把主菜单阶段的旧 HUD 当成新地图 HUD 使用。
      */
     if (self) {
         g_main_hud_instance = self;
@@ -1550,20 +1958,33 @@ static int __fastcall main_hud_layout_hook(LPVOID self, LPVOID unused_edx, LONG 
         return g_original_main_hud_layout(self, x, y);
     }
 
+    /* 第一次先让原版按自己的规则完成布局。 */
     result = g_original_main_hud_layout(self, x, y);
 
     /*
-     * test11 的核心时序点：第一次真正的主 HUD 自动布局说明游戏已经离开固定 640x480 的前端/动画阶段。
-     * 如果当前显示对象仍然不是 TargetWidth x TargetHeight，就先切 GAMEPLAY profile，再让游戏自己的
-     * 0x404D30 强制重应用一次当前显示模式。这个调用可能销毁当前 HUD，因此一旦真的发生 Reset，
-     * 必须立即返回，绝不能继续读 self；重建后的新 HUD 会再次进入本 hook 并完成正常居中。
+     * Strategy enter/exit 的原版函数内部可能因为 SetDisplayMode/设备重建临时触发这一布局。
+     * test12 的手工 Reset 路径已经证明“分辨率切换调用栈里继续访问/重排旧 HUD”风险很高，
+     * 所以这段过渡期间只允许原版布局，绝不做 DisplayFix 的平移/JMM。
      */
-    if (activate_gameplay_resolution_if_needed()) {
+    if (g_strategy_transition_in_progress) {
+        return result;
+    }
+
+    /*
+     * 这是 test13 对 test11/test12 失败的关键修正：
+     * FRONTEND 阶段即使出现相同 HUD 类，也绝对不做宽屏 X 偏移，更绝对不触发 Steam full JMM apply。
+     * 只有 0x404A97 的 Strategy 状态机 hook 已经明确切到 GAMEPLAY profile 后，才允许下面的游戏内修复。
+     */
+    if (!g_gameplay_profile_active) {
+        if (g_frontend_hud_skip_log_count < 2u) {
+            ++g_frontend_hud_skip_log_count;
+            append_runtime_line("[RUNTIME] FRONTEND HUD auto-layout: keep original 4:3 layout; no centering/JMM sync");
+        }
         return result;
     }
 
     if (!g_center_main_hud) {
-        /* 即使用户不想居中，GAMEPLAY profile/Steam GUI 修复仍然已经在上面独立完成。 */
+        /* 用户关闭视觉居中时，Steam GUI 同步仍然要在真正 gameplay 中独立工作。 */
         try_steam_delayed_ui_sync(self);
         log_hud_candidate_children(self);
         return result;
@@ -1579,13 +2000,11 @@ static int __fastcall main_hud_layout_hook(LPVOID self, LPVOID unused_edx, LONG 
     }
 
     /*
-     * Steam/ComeOn.dll 环境缺少非 Steam 自然发生的“第二阶段 UI 尺寸应用”。
-     * 这里已经完成了一次真正的主 HUD 自动布局，而且 child 也已经建立，是比 DLL/ASI 初始化时刻
-     * 安全得多的同步触发点。try_steam_delayed_ui_sync() 内部还会再次确认 0x0B/0x0E child、
-     * UI manager 顶层链表以及 one-shot/in-progress 状态；非 Steam 环境会立即返回，完全不改行为。
+     * Steam/ComeOn.dll 环境缺少非 Steam 自然发生的“第二阶段 UI/JMM 应用”。
+     * test10 已经证明，在 HUD/顶层链/资源根成熟后 one-shot 调游戏原版 0x4B35F0 可以修复。
+     * test13 只增加一个先决条件：必须已经由 Strategy 状态机正式进入 GAMEPLAY。
      */
     try_steam_delayed_ui_sync(self);
-
     log_hud_candidate_children(self);
 
     if (g_hud_layout_log_count < 4u) {
@@ -2044,12 +2463,126 @@ static BOOL install_world_mouse_press_hook(const TextRegion* region)
         return FALSE;
     }
 
+    /*
+     * test12 曾从签名开头 `8B 0D <absolute-address>` 解析 world 全局槽并把它当 gameplay gate。
+     * 实机已经证明这个全局槽在主菜单也可能非空，所以 test13 不再读取/使用它。
+     * 这里现在只保留已经实机通过的“0x0B/0x0E 防止世界点击穿透”职责。
+     */
     g_original_world_mouse_press = (FnWorldMousePress)target;
     if (!patch_rel32_call(call_instruction, (LPVOID)&world_mouse_press_hook)) {
         g_original_world_mouse_press = (FnWorldMousePress)0;
         return FALSE;
     }
 
+    return TRUE;
+}
+
+/*
+ * 安装 test15 使用的 Strategy 状态进入/离开 callsite hook。
+ *
+ * 为什么改 callsite 而不是直接改 0x00404A00 整个状态函数：
+ *   - 0x00404A97 只会在“新状态 == 3”分支执行，语义就是 BeforeStrategy；
+ *   - 0x00404A1E 只会在“旧状态 == 3”清理分支执行，语义就是 AfterStrategy；
+ *   - 两个 callsite 都把同一个 self 放在 ECX，桥接非常简单；
+ *   - 只替换 E8 rel32，不改 jump table、不改状态值，也不复制游戏自己的状态机逻辑。
+ *
+ * 安装前还会验证两个原目标函数：
+ *   0x00407000 必须读取 self+0x280、写 self+0x08，然后 call 原版显示模式函数；
+ *   0x00407040 必须是 mov ecx,<global> / jmp <cleanup> 的小尾调用包装。
+ * 任意一步不匹配就整组拒绝安装，不留下“只装一半”的生命周期补丁。
+ */
+static BOOL install_strategy_state_hooks(const TextRegion* region)
+{
+    BYTE* state_function;
+    BYTE* exit_call;
+    BYTE* enter_call;
+    BYTE* enter_target;
+    BYTE* exit_target;
+
+    state_function = find_unique_pattern(region,
+                                         STRATEGY_STATE_TRANSITION_PATTERN,
+                                         STRATEGY_STATE_TRANSITION_MASK,
+                                         (DWORD)sizeof(STRATEGY_STATE_TRANSITION_PATTERN));
+    if (!state_function) {
+        return FALSE;
+    }
+
+    /* 0x404A00 -> 0x404A1E，所以离开 Strategy 的 call 在函数头 +0x1E。 */
+    exit_call = state_function + 0x1Eu;
+
+    /* 0x404A00 -> 0x404A97，所以进入 Strategy 的 call 在函数头 +0x97。 */
+    enter_call = state_function + 0x97u;
+
+    if (exit_call[0] != 0xE8 || enter_call[0] != 0xE8) {
+        return FALSE;
+    }
+
+    exit_target = decode_rel32_target(exit_call);
+    enter_target = decode_rel32_target(enter_call);
+
+    if (!enter_target || !exit_target ||
+        enter_target < region->start || enter_target + 0x20u > region->start + region->size ||
+        exit_target < region->start || exit_target + 0x0Au > region->start + region->size) {
+        return FALSE;
+    }
+
+    /*
+     * 进入函数 0x407000 的已确认开头：
+     *   push esi
+     *   mov  esi,ecx
+     *   push 0
+     *   mov  eax,[esi+0x280]
+     *   push eax
+     *   mov  [esi+0x08],eax
+     *   call 0x404D30
+     *
+     * call 的 rel32 不锁死，只检查稳定 opcode 和字段偏移。
+     */
+    if (enter_target[0] != 0x56 ||
+        enter_target[1] != 0x8B || enter_target[2] != 0xF1 ||
+        enter_target[3] != 0x6A || enter_target[4] != 0x00 ||
+        enter_target[5] != 0x8B || enter_target[6] != 0x86 ||
+        enter_target[7] != 0x80 || enter_target[8] != 0x02 || enter_target[9] != 0x00 || enter_target[10] != 0x00 ||
+        enter_target[11] != 0x50 ||
+        enter_target[12] != 0x89 || enter_target[13] != 0x46 || enter_target[14] != 0x08 ||
+        enter_target[15] != 0xE8) {
+        return FALSE;
+    }
+
+    /* 离开函数 0x407040：mov ecx,<absolute global> / jmp rel32。两个地址都不写死。 */
+    if (exit_target[0] != 0xB9 || exit_target[5] != 0xE9) {
+        return FALSE;
+    }
+
+    /*
+     * test14 依赖 0x407000+3 的 `6A 00`。上面的函数头验证已经确认 enter_target[3]==0x6A、
+     * enter_target[4]==0x00；这里把“00 这个立即数字节”的地址保存下来，进入 Strategy 时临时改成 01。
+     */
+    g_strategy_enter_force_immediate = enter_target + 4u;
+    g_strategy_enter_force_original = enter_target[4];
+
+    g_original_strategy_enter = (FnStrategyStateStep)enter_target;
+    g_original_strategy_exit = (FnStrategyStateStep)exit_target;
+
+    if (!patch_rel32_call(enter_call, (LPVOID)&strategy_enter_hook)) {
+        g_original_strategy_enter = (FnStrategyStateStep)0;
+        g_original_strategy_exit = (FnStrategyStateStep)0;
+        g_strategy_enter_force_immediate = (BYTE*)0;
+        g_strategy_enter_force_original = 0u;
+        return FALSE;
+    }
+
+    if (!patch_rel32_call(exit_call, (LPVOID)&strategy_exit_hook)) {
+        /* 第二条失败时立即把第一条 call 恢复到原目标，绝不留下半安装状态。 */
+        patch_rel32_call(enter_call, (LPVOID)enter_target);
+        g_original_strategy_enter = (FnStrategyStateStep)0;
+        g_original_strategy_exit = (FnStrategyStateStep)0;
+        g_strategy_enter_force_immediate = (BYTE*)0;
+        g_strategy_enter_force_original = 0u;
+        return FALSE;
+    }
+
+    g_strategy_state_hooks_installed = TRUE;
     return TRUE;
 }
 
@@ -2375,7 +2908,7 @@ static DWORD calculate_target_width(DWORD base_height, DWORD aspect_width, DWORD
  *   1. 唯一定位模式派发与两处分辨率映射；
  *   2. 保存当前 EXE 自己的原始立即数；
  *   3. 解析并验证原版显示模式函数 0x404D30；
- *   4. 保存 TargetWidth/TargetHeight，等待主 HUD 出现后才切 GAMEPLAY profile。
+ *   4. 保存 TargetWidth/TargetHeight，等待游戏自己的 Strategy 状态 3 进入 callsite 才切 GAMEPLAY profile。
  *
  * 返回 TRUE 代表这些运行时 profile 的必要结构全部闭合；任意签名缺失/重复就拒绝启用。
  */
@@ -2389,7 +2922,7 @@ static BOOL apply_dynamic_resolution(const TextRegion* region, DWORD target_widt
     /*
      * test11 这里不再“初始化时立刻改宽高”。
      * 我们先把三个唯一签名找出来、保存当前 EXE 的原始立即数，并解析真正的 0x404D30 显示模式函数。
-     * 主菜单/动画阶段保持这些原始字节不变；真正进入游戏后，main HUD hook 才切到 GAMEPLAY profile。
+     * 主菜单/动画阶段保持这些原始字节不变；真正进入 Strategy 状态 3 前，状态机 hook 才切到 GAMEPLAY profile。
      */
     mode = find_unique_pattern(region,
                                RES_MODE_ALL_PATTERN,
@@ -2557,7 +3090,7 @@ static BOOL set_frontend_resolution_profile(void)
 /*
  * 启用真正游戏内的 fixed-Y / auto-X profile。
  * 这里完整复制 test10 已实机通过的目标分辨率与 JMM 路由逻辑，只是把“什么时候写进去”从 ASI 初始化
- * 改成“主 HUD 真正出现以后”。因此输入/HUD/Steam JMM 方案都不需要推翻。
+ * 改成“Strategy 状态 3 正式开始以前”。因此输入/HUD/Steam JMM 方案都不需要推翻。
  */
 static BOOL set_gameplay_resolution_profile(void)
 {
@@ -2621,79 +3154,6 @@ static BOOL set_gameplay_resolution_profile(void)
     }
 
     g_gameplay_profile_active = TRUE;
-    return TRUE;
-}
-
-/*
- * 第一次主 HUD 自动布局时，游戏已经确定“真正进入游戏内”。
- * 如果此时显示对象仍然是前端 640x480/800x600，就复用游戏原版 0x404D30，强制重应用当前模式一次。
- * 因为 GAMEPLAY profile 已经先写入，模式 4/5/6 中任意当前模式都会得到同一个 TargetWidth x TargetHeight。
- *
- * 返回 TRUE 表示这次真的触发了设备/分辨率重建。调用者必须立刻停止继续访问当前 HUD self，
- * 因为原版 SetDisplayMode 可能在内部销毁并重建 UI 对象。
- */
-static BOOL activate_gameplay_resolution_if_needed(void)
-{
-    LONG current_width;
-    LONG current_height;
-    LONG current_mode;
-    int result;
-    char line[320];
-
-    if (!g_resolution_profile_ready || !g_display_mode_apply || g_gameplay_mode_switch_in_progress) {
-        return FALSE;
-    }
-
-    current_width = *(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_WIDTH_OFFSET);
-    current_height = *(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_HEIGHT_OFFSET);
-
-    if (!set_gameplay_resolution_profile()) {
-        return FALSE;
-    }
-
-    /* 已经是目标尺寸时只需要保持 GAMEPLAY profile，不必再次 Reset 设备。 */
-    if ((DWORD)current_width == g_target_width && (DWORD)current_height == g_target_height) {
-        return FALSE;
-    }
-
-    current_mode = *(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_MODE_OFFSET);
-    if (current_mode < 4 || current_mode > 6) {
-        /* 正常兼容样本只会是 4/5/6；异常时退到原生正式存在的 800x600 槽位 5。 */
-        current_mode = 5;
-    }
-
-    line[0] = '\0';
-    str_append(line, (DWORD)sizeof(line), "[RUNTIME] gameplay resolution switch begin current=");
-    append_int(line, (DWORD)sizeof(line), current_width);
-    str_append(line, (DWORD)sizeof(line), "x");
-    append_int(line, (DWORD)sizeof(line), current_height);
-    str_append(line, (DWORD)sizeof(line), " target=");
-    append_int(line, (DWORD)sizeof(line), (LONG)g_target_width);
-    str_append(line, (DWORD)sizeof(line), "x");
-    append_int(line, (DWORD)sizeof(line), (LONG)g_target_height);
-    str_append(line, (DWORD)sizeof(line), " mode=");
-    append_int(line, (DWORD)sizeof(line), current_mode);
-    append_runtime_line(line);
-
-    g_gameplay_mode_switch_in_progress = TRUE;
-    result = g_display_mode_apply(GAME_DISPLAY_MANAGER, current_mode, 1);
-    g_gameplay_mode_switch_in_progress = FALSE;
-
-    line[0] = '\0';
-    str_append(line, (DWORD)sizeof(line), "[RUNTIME] gameplay resolution switch end result=");
-    append_int(line, (DWORD)sizeof(line), result);
-    str_append(line, (DWORD)sizeof(line), " live=");
-    append_int(line, (DWORD)sizeof(line), *(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_WIDTH_OFFSET));
-    str_append(line, (DWORD)sizeof(line), "x");
-    append_int(line, (DWORD)sizeof(line), *(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_HEIGHT_OFFSET));
-    append_runtime_line(line);
-
-    if (!result) {
-        /* 失败时恢复前端 profile，宁可留在原版 4:3，也不让代码处于半修改状态。 */
-        set_frontend_resolution_profile();
-        return FALSE;
-    }
-
     return TRUE;
 }
 
@@ -3105,7 +3565,9 @@ static void try_steam_delayed_ui_sync(LPVOID hud)
     int result;
     char line[896];
 
-    if (!hud || g_steam_ui_sync_done || g_steam_ui_sync_in_progress || g_gameplay_mode_switch_in_progress) {
+    /* test13：前端 HUD 也可能存在，所以 Steam full JMM 只能在 Strategy 已正式进入 gameplay 后运行。 */
+    if (!hud || !g_gameplay_profile_active || g_strategy_transition_in_progress ||
+        g_steam_ui_sync_done || g_steam_ui_sync_in_progress) {
         return;
     }
 
@@ -3503,6 +3965,7 @@ static void initialize_display_fix(void)
     BOOL hud_result = FALSE;
     BOOL global_release_result = FALSE;
     BOOL world_press_result = FALSE;
+    BOOL strategy_state_result = FALSE;
     LONG hud_delta = 0;
 
     /* 用最简单的单次标志防止 DllMain + InitializeASI 重复执行。 */
@@ -3519,7 +3982,7 @@ static void initialize_display_fix(void)
     make_sibling_path(module_path, "DisplayFix.ini", g_ini_path, (DWORD)sizeof(g_ini_path));
     make_sibling_path(module_path, "DisplayFix.log", g_log_path, (DWORD)sizeof(g_log_path));
 
-    log_line("DisplayFix v0.3-test11");
+    log_line("DisplayFix v0.3-test15");
     log_line("Architecture: Win32/x86 ASI, content-signature runtime patch");
 
     if (!resolve_required_apis()) {
@@ -3558,6 +4021,15 @@ static void initialize_display_fix(void)
     log_uint("[INFO] TargetHeight=", config.base_height);
 
     /*
+     * BaseHeight 是内部逻辑高度，不是最终输出清晰度。高于 600 会扩大实际世界 surface / 可见范围，
+     * 老游戏会明显增加绘制和对象处理成本。保留任意值是高级实验能力，但 4K 输出通常仍建议 480/600。
+     */
+    if (config.base_height > 600u) {
+        log_line("[WARN] BaseHeight>600 is advanced world/FOV scaling and can heavily reduce FPS");
+        log_line("[INFO] For 4K output, normally use BaseHeight=480 or 600 and let cnc-ddraw upscale");
+    }
+
+    /*
      * 世界高度现在可以任意调整，但游戏只存在两套已确认 GUI/JMM 基线。
      * 因此与 apply_jmm_layout_selection 使用同一个规则：<600 用 640 参考宽，>=600 用 800。
      * 这个值只决定固定尺寸主 HUD 的居中位置，不会把 BaseHeight 截断回 480/600。
@@ -3591,7 +4063,7 @@ static void initialize_display_fix(void)
     if (resolution_result) {
         log_line("[OK] dynamic-resolution code points resolved; startup/frontend code is left original");
         log_line("[INFO] main menu and fixed-resolution animations keep the game's native 4:3 display lifecycle");
-        log_line("[INFO] gameplay TargetWidth/TargetHeight will be activated only after the main HUD really exists");
+        log_line("[INFO] gameplay TargetWidth/TargetHeight will be activated only by the game's Strategy state transition");
         log_line("[INFO] No 1024x768 menu option is required; the game menu only exposes up to 800x600");
     } else {
         log_line("[FAIL] dynamic-resolution signatures are missing/ambiguous; runtime profile switching disabled");
@@ -3610,9 +4082,9 @@ static void initialize_display_fix(void)
         if (set_frontend_resolution_profile()) {
             log_line("[OK] frontend/animation resolution profile armed: original display/JMM rules preserved");
             if (config.base_height >= 600u) {
-                log_line("[INFO] gameplay profile will map TargetWidth to JMMDL800.txt when HUD appears");
+                log_line("[INFO] gameplay profile will map TargetWidth to JMMDL800.txt when Strategy state 3 begins");
             } else {
-                log_line("[INFO] gameplay profile will map TargetWidth to JMMDL.txt when HUD appears");
+                log_line("[INFO] gameplay profile will map TargetWidth to JMMDL.txt when Strategy state 3 begins");
             }
         } else {
             resolution_result = FALSE;
@@ -3621,6 +4093,21 @@ static void initialize_display_fix(void)
         }
     } else {
         log_line("[FAIL] JMM layout-selector signature is missing/ambiguous; runtime layout profile disabled");
+    }
+
+    /*
+     * test15 继续沿用已经由 test14 实机证明时机正确的 Strategy 状态 3 enter/exit callsite 控制 profile。
+     * 只有 resolution + JMM profile 都完整解析成功才安装，避免状态机触发一个半成品配置。
+     */
+    if (resolution_result && layout_result) {
+        strategy_state_result = install_strategy_state_hooks(&text_region);
+    }
+
+    if (strategy_state_result) {
+        log_line("[OK] Strategy state lifecycle hooks installed: state 3 enter=GAMEPLAY(force reapply), state 3 exit=FRONTEND(force mode 4)");
+        log_line("[INFO] enter: original 0x407000 is forced once; exit: original display mode 4 is forced once after Strategy cleanup");
+    } else if (resolution_result && layout_result) {
+        log_line("[FAIL] Strategy state transition signature/calls are missing or ambiguous; gameplay resolution switching disabled");
     }
 
     /*
@@ -3670,7 +4157,7 @@ static void initialize_display_fix(void)
         } else {
             log_line("[INFO] GUI.CenterMainHUD=0; visual centering disabled, pure HUD diagnostics still installed");
         }
-        log_line("[OK] main HUD lifecycle hooks installed: +0x00 restores frontend profile, +0x58 activates/centers gameplay");
+        log_line("[OK] main HUD hooks installed: FRONTEND keeps original layout; +0x58 centers/syncs only after Strategy GAMEPLAY gate");
         log_line("[OK] main HUD +0x24 structure parsed for confirmed top-button IDs 0x0B/0x0E; +0x24 itself is not hooked");
         log_line("[INFO] edge-anchored top-level UI is intentionally left untouched");
     } else {
@@ -3688,7 +4175,7 @@ static void initialize_display_fix(void)
     }
 
     if (world_press_result) {
-        log_line("[OK] world mouse-press guard installed at 0x473F10 callsite; only 0x0B/0x0E skip world input");
+        log_line("[OK] world mouse-press guard installed for 0x0B/0x0E click-through protection only");
         log_line("[INFO] original 0x4B44F0 UI press dispatch is left completely untouched (test7 regression removed)");
     } else {
         log_line("[FAIL] world mouse-press callsite validation failed; click-through protection skipped");
@@ -3702,8 +4189,9 @@ static void initialize_display_fix(void)
     }
 
     /*
-     * 初始化日志写盘。test11 不在 DLL/ASI 初始化阶段扩大主菜单/动画分辨率，也不主动重播 GUI/JMM；
-     * 主 HUD 出现后才切 GAMEPLAY profile，Steam 专用 JMM 同步仍只会在 HUD 真正成熟后触发一次。
+     * 初始化日志写盘。test15 仍不在 DLL/ASI 初始化阶段扩大主菜单/动画分辨率，也不主动重播 GUI/JMM；
+     * 只有游戏自己的 Strategy 状态 3 进入 callsite 才切 GAMEPLAY profile，Steam 专用 JMM 同步还要继续
+     * 等 HUD / 顶层 UI / 资源根成熟，并且必须确认当前已经是 GAMEPLAY profile。
      * 普通地图 WORLD press / GLOBAL release 的高频诊断
      * 已关闭，只有顶部按钮真正被拦截/兜底和 Steam one-shot 原版 JMM 应用才写运行时日志，减少性能干扰。
      */

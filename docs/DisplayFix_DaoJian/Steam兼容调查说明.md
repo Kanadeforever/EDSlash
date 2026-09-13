@@ -1,4 +1,24 @@
-# Steam 兼容调查说明
+﻿# Steam 兼容调查说明（截至 v0.3-test15）
+
+## v0.3-test15 生命周期更新（Steam test10 稳定路径不变）
+
+Steam 专项的稳定结论仍然是 test10：`ComeOn.dll` 环境缺少非 Steam 自然发生的后续完整 JMM apply，因此在 HUD、顶层 UI 与资源根成熟后 one-shot 调用原版 `0x004B35F0(0,W,H)`。
+
+从 test11 到 test15 修改的都是**什么时候进入/离开 GAMEPLAY profile**，不是重新设计 Steam JMM：
+
+- test11 HUD gate：失败；
+- test12 world gate：失败；
+- test13 Strategy gate：进入时机正确；
+- test14 force=1：实机确认进入游戏 live 能真正达到目标；
+- test15：只新增 Strategy exit 后恢复原版 mode 4 Surface。
+
+`g_strategy_transition_in_progress` 会在进入/退出显示设备重建调用栈中禁止 HUD 平移和 Steam delayed JMM，避免对半析构/半重建 UI 操作。真正进入 GAMEPLAY 后仍沿用 test10 one-shot。
+
+注意：test10 历史通过样本曾得到 `child_layout_changed=1`；在较低 BaseHeight 或已经处于正确坐标时，完整 JMM apply 也可能返回成功但 before/after 不变。判断重点应是 `result=1 / done=1` 与最终 GUI 正确，而不是把 `child_layout_changed=1` 当所有配置的硬性条件。
+
+---
+
+## test11 基线正文（历史保留，当前结论以上方增补为准）
 
 ## 文件关系
 

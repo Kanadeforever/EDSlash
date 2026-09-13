@@ -1,84 +1,86 @@
-# DisplayFix_DaoJian 构建说明
+﻿# DisplayFix_DaoJian 构建说明
 
 ## 仓库目录
 
-```text
-source\DisplayFix_DaoJian  src\DisplayFix.c
-  template\DisplayFix.ini
-  toolserify_build.py
-  toolserify_compatibility.py
-  toolserify_compatibility.bat
-  tools\工具详细说明.md
-  build.bat
-  readme.md
-```
-
-独立永久字体修复位于 `source\FontFix_DaoJian\`；项目文档位于 `docs\DisplayFix_DaoJian\`。
-
-发行 `release\` 严格只有：
+本项目从 test11 起固定使用以下目录结构，后续版本不得自行改名或增加根目录散文件：
 
 ```text
-DisplayFix.asi
-DisplayFix.ini
+source\
+  DisplayFix_DaoJian\
+    src\DisplayFix.c
+    template\DisplayFix.ini
+    tools\verify_build.py
+    tools\verify_compatibility.py
+    tools\verify_compatibility.bat
+    tools\工具详细说明.md
+    build.bat
+    readme.md
+  FontFix_DaoJian\
+    apply_dpi_font_fix.py
+    apply_fix.bat
+
+docs\
+  DisplayFix_DaoJian\
+    完整接档说明.md
+    逆向工程知识库.md
+    使用与测试说明.md
+    前端动画与主菜单研究说明.md
+    Steam兼容调查说明.md
+    宽高比与HUD研究说明.md
+    字体修复工具说明.md
+
+release\
+  DisplayFix.asi
+  DisplayFix.ini
 ```
+
+`readme.md` 是用户明确要求保留的文档文件名例外。`release\` 必须严格只有 ASI + INI，不能复制 docs、工具或源码进去。
 
 ## 工具链
 
-需要 Windows 下可执行的 x64 宿主 LLVM/Clang、`lld-link` 和 Python 3。构建不联网。
+需要 Windows 可执行的 x64 宿主 LLVM/Clang、`lld-link` 和 Python 3；构建不联网。
 
-`build.bat` 编译器搜索严格精简为：
+`build.bat` 搜索顺序：
 
 1. PATH 中的 `clang.exe`；
-2. `%ProgramFiles%\LLVMin`；
-3. `vswhere` 返回的最新 Visual Studio `VC\Tools\Llvmdin`。
+2. `%ProgramFiles%\LLVM\bin`；
+3. `vswhere` 返回的最新 Visual Studio `VC\Tools\Llvm\x64\bin`。
 
-不递归搜索 Visual Studio，不使用 ARM64 LLVM，不使用 `LLVM_HOME/LLVM_PATH`。`clang.exe` 与 `lld-link.exe` 必须来自同一目录，并在编译前执行 `--version` 验证当前宿主可以运行。
+禁止 `where /r` 递归搜索，禁止误选 ARM64 LLVM。`clang.exe` 与 `lld-link.exe` 必须来自同一目录，并在编译前运行 `--version`。
 
-BAT 固定 UTF-8 BOM + CRLF；所有有正文的 `REM`/`echo` 行末尾保留两个半角空格。
+BAT 固定 UTF-8 BOM + CRLF；所有有正文的 `REM` / `echo` 行末尾保留两个半角空格。
 
 ## 从零构建
 
-双击 `build.bat`。脚本会：
+`source\DisplayFix_DaoJian\build.bat` 会：
 
-1. 清理 `_build` 和仓库 `release`；
-2. 用 `clang -target i686-pc-windows-msvc` 编译 `src\DisplayFix.c`；
-3. 用 `lld-link /nodefaultlib /machine:x86` 链接 ASI；
-4. 复制 `template\DisplayFix.ini`；
-5. 调 `toolserify_build.py` 检查 PE32/i386、DLL、入口、`InitializeASI`、Import Directory=0、INI、BAT规则；
-6. 强制检查 `release` 只有 ASI + INI。
+1. 删除旧 `_build` 与仓库 `release`；
+2. `clang -target i686-pc-windows-msvc` 编译 `src\DisplayFix.c`；
+3. `lld-link /nodefaultlib /machine:x86` 生成 `DisplayFix.asi`；
+4. 复制唯一配置模板；
+5. 运行 `tools\verify_build.py`；
+6. 强制确认 `release` 最终只有两个文件。
 
-## v0.3-test11 当前代码架构
+## v0.3-test15 当前架构
 
-本版保留已经通过的字体、输入、HUD、Steam test10 JMM 修复，并新增 FRONTEND/GAMEPLAY 两套运行时代码 profile：
-
-- 前端/启动动画/主菜单保持原版固定 640x480 4:3 生命周期；
-- 主 HUD 真正出现后才写入 `TargetWidth x BaseHeight` 并必要时调用原版 `0x00404D30` 重应用当前显示模式；
-- HUD 析构时只恢复 FRONTEND profile，不在析构里粗暴强制 640x480 Reset；
-- Steam 进入游戏后仍保留 test10 one-shot 完整 `0x004B35F0`。
-
-这是为了解决旧版高 BaseHeight 时“主菜单只在左上角、其余黑屏并可能出现旧 surface 黄色残影”的问题。
-
-**test11 的前端/动画 profile 尚未实机通过，不能视为稳定基线。**
+- 字体：继续使用已实机通过的 96 DPI 运行时修复；
+- 前端：保持原版 mode 4 / 640x480；
+- gameplay gate：使用 `0x00404A00` Strategy state=3，不再使用 HUD/world 对象；
+- 进入游戏：临时把 `0x00407000` 的 force 0 改为 1，让原版 `0x00404D30` 真正重建目标宽高；
+- 退出游戏：先执行原版 Strategy 清理，再恢复 FRONTEND profile，并以 `mode=4, force=1` 重建原版前端 Surface；
+- Steam：继续使用 test10 delayed full `0x004B35F0`；
+- HUD/输入：继续使用已经通过的根节点居中、0x0B/0x0E fallback 和 world press 防穿透。
 
 ## 关键回归红线
 
-后续任何修改不得破坏：
+不得破坏：96 DPI、BaseHeight 读取、普通地图左键、Alt+F4、右侧鼠标技能、0x0B/0x0E 点击与防穿透、主 HUD 居中、Steam test10 JMM 路径。
 
-- 96 DPI 字体修复；
-- BaseHeight 正确读取；
-- 普通地图左键；
-- Alt+F4；
-- 右侧鼠标技能设置按钮；
-- 属性/道具 0x0B/0x0E 点击与防穿透；
-- 主 HUD 居中；
-- Steam test10 `child_layout_changed=1` 的最终 GUI。
+## v0.3-test15 当前成品验证
 
-详见 `docs\DisplayFix_DaoJian\完整接档说明.md` 与 `逆向工程知识库.md`。
+- ASI SHA-256：`2f4b982148d3f110fb3508e33e666efed9b22e3f097308a5233d4c874d492831`
+- PE32 / i386 / DLL / `InitializeASI` / Import Directory=0：通过；
+- 当前 DPI 修复 EXE 与历史 480P/540P/720P/768P/900P/1080P EXE：全部通过兼容验证；
+- 新增验证：原版前端 `0x004053D8 -> mode 4 -> 0x00404D30` 与 Strategy enter `0x0040700F -> 0x00404D30` 交叉一致；
+- test15 尚未实机，不能写成稳定版。
 
-## v0.3-test11 当前成品验证
-
-- ASI SHA-256：`945ed2958f1c2ddafc416049ce69859f95abb80ea72dd8e043ffa213a7702ccb`
-- PE32 / i386 / DLL / `InitializeASI` / Import Directory=0 全通过。
-- 非 Steam、Steam、永久 DPI 字体版、480P~1080P 历史改版全部通过当前内容签名检查。
-- test11 新增的 `0x00404D30` 显示模式函数和 HUD `+0x00` destructor 结构均通过。
-- 前端/动画双 profile 尚待实机，不得把静态通过写成实机通过。
+详细累计历史见 `docs\DisplayFix_DaoJian\完整接档说明.md` 和 `逆向工程知识库.md`。

@@ -5,21 +5,26 @@ DisplayFix：ComeOn.exe 兼容性只读检查工具。
 这个工具只读取 EXE，不写入任何字节，也不会生成补丁版 EXE。DisplayFix 不再用整个文件的
 SHA-256 白名单锁版本，而是检查运行时真正依赖的机器码、调用关系和 vtable 结构是否仍然成立。
 
-v0.3-test11 除了保留字体、动态分辨率、JMM、HUD、顶部按钮和输入链验证，还新增两项前端生命周期证据：
+v0.3-test15 在 test14 已经闭合的 Strategy enter / force=1 证据之上，新增“原版前端 mode 4”交叉验证：
 
-1. 从唯一的 0x00404D7A 风格分辨率派发签名向前 0x4A 字节，必须能验证到原版 0x00404D30
-   风格显示模式函数头。test11 在主 HUD 真正出现后会复用这个函数，从原生前端 640x480/800x600
-   切到 TargetWidth x BaseHeight；不能只靠“减一个地址常数”猜函数。
-2. 主 HUD vtable +0x00 必须仍然指向已确认的 scalar deleting destructor 形状
-   `56 8B F1 E8 ...`。test11 在 HUD 生命周期结束时通过这一槽恢复 FRONTEND profile，使返回菜单时
-   原游戏自己的 640x480 请求不再被 GAMEPLAY profile 改写。
+1. 0x00404A00 风格状态切换函数必须唯一存在；
+2. “离开旧状态 3”的 callsite 必须解码到 0x00407040 风格清理包装函数；
+3. “进入新状态 3 / BeforeStrategy”的 callsite 必须解码到 0x00407000 风格函数；
+4. 进入函数必须以 `6A 00` 压入 force=0、读取 self+0x280、写 self+0x08，并立即 call 原版显示模式函数；
+5. 原版 0x00404D30 必须存在“当前 mode 相同 + force=0 -> 直接返回”的早退结构；
+6. 原游戏启动前端必须存在 `push 0 / push 4 / mov ecx,ebp / mov [ebp+8],4 / call 0x00404D30` 结构，
+   而且这条 CALL 必须和 Strategy enter 内部 CALL 精确落到同一个显示模式函数。
+
+test14 实机已经证明：Strategy enter 用 force=1 后 live 能正确切到目标宽高；失败只发生在退出时，
+因为“恢复 FRONTEND 代码 profile”不会自动重建已经存在的宽屏 surface。test15 因此在原版 Strategy 清理完成后，
+恢复前端立即数，再复用同一个原版显示模式函数以 mode=4 / force=1 重建真正的前端 surface。
 
 同时继续验证：
 - 字体 DPI 原始/已修复状态；
 - 两处分辨率映射与 JMM 选择器；
 - 0x4087A0 -> 0x4B35F0 以及 test10 Steam delayed JMM 所需的资源路径构造链；
 - 主 HUD +0x24 的真实 0x0B/0x0E 窗口分支与 +0x58 布局关系；
-- test8 世界输入 0x4060EB -> 0x473F10；
+- test8 世界输入 0x4060EB -> 0x473F10（只做点击防穿透，不再承担 gameplay 判定）；
 - 全局 release 0x406086 -> 0x4B4560。
 
 工具只报告兼容/不兼容，不运行游戏。代码注释故意写得很细，方便以后减少重复反编译。
@@ -133,6 +138,49 @@ JMM_APPLY_CALLSITE_MASK = "xxxxxxxxxxxxxxxxx????x????x"
 
 # 0x004B35F0 函数头。调用点解析出来的目标必须以这一串开始。
 JMM_LOAD_FUNCTION_HEAD = bytes.fromhex("81 EC 00 01 00 00 53 55 56 57 68")
+
+
+# test13：0x00404A00 风格高层状态切换函数头，并覆盖“离开旧状态 3”的清理分支。
+# jump table 地址、两个 E8 rel32 和日志函数 E8 都用 ? 通配。
+STRATEGY_STATE_TRANSITION = bytes([
+    0x56,
+    0x8B, 0xF1,
+    0x8B, 0x46, 0x0C,
+    0x83, 0xC0, 0xFE,
+    0x83, 0xF8, 0x04,
+    0x77, 0x42,
+    0xFF, 0x24, 0x85, 0, 0, 0, 0,
+    0x8B, 0xCE,
+    0xE8, 0, 0, 0, 0,
+    0x8B, 0xCE,
+    0xE8, 0, 0, 0, 0,
+    0x68, 0xF4, 0x4D, 0x54, 0x00,
+    0x68, 0xD0, 0x5D, 0x54, 0x00,
+    0xE8, 0, 0, 0, 0,
+    0x83, 0xC4, 0x08,
+    0xEB, 0x19,
+])
+STRATEGY_STATE_TRANSITION_MASK = "xxxxxxxxxxxxxxxxx????xxx????xxx????xxxxxxxxxxx????xxxxx"
+
+
+# test15：原游戏启动前端的 mode 4 显示模式应用。
+#
+# 0x004053D8 一带已静态确认：
+#   push ebx              ; 当前启动路径里 ebx=0，也就是 force=0
+#   push 4                ; 原版标题/前端明确请求 mode 4
+#   mov  ecx,ebp
+#   mov  [ebp+0x08],4
+#   call 0x00404D30
+#
+# E8 的 rel32 会随代码布局变化，所以 4 字节位移使用通配；其余 opcode/常量都要求完全一致。
+FRONTEND_MODE4_APPLY = bytes([
+    0x53,
+    0x6A, 0x04,
+    0x8B, 0xCD,
+    0xC7, 0x45, 0x08, 0x04, 0x00, 0x00, 0x00,
+    0xE8, 0x00, 0x00, 0x00, 0x00,
+])
+FRONTEND_MODE4_APPLY_MASK = "xxxxxxxxxxxxx????"
 
 
 # 0x004060D6 一带：UI manager 的按下分派已经返回 0，主循环准备把同一次按下交给世界输入。
@@ -302,6 +350,26 @@ def find_masked(data: bytes, pattern: bytes, mask: str) -> list[int]:
     return hits
 
 
+def find_all(data: bytes, pattern: bytes) -> list[int]:
+    """返回 pattern 在 data 中所有不重叠命中的起始偏移。
+
+    这是一个通用的精确字节搜索辅助函数。当前 test14 主线主要使用通配签名搜索，
+    保留这个函数只是方便以后对绝对地址写入/读取做额外交叉验证。
+    """
+
+    hits: list[int] = []
+    start = 0
+
+    while True:
+        pos = data.find(pattern, start)
+        if pos < 0:
+            break
+        hits.append(pos)
+        start = pos + len(pattern)
+
+    return hits
+
+
 def require_unique(name: str, hits: list[int]) -> int:
     """要求签名恰好命中一次，并返回唯一文件偏移。"""
 
@@ -342,9 +410,9 @@ def verify_one(path: Path) -> list[str]:
 
     mode_off = require_unique("分辨率模式派发", find_masked(text_data, RES_MODE, RES_MODE_MASK))
 
-    # test11 需要在“主 HUD 真正出现后”复用原版 SetDisplayMode 包装函数，把前端 640x480 切成
-    # DisplayFix 的游戏内目标。因此除了模式派发签名唯一，还必须验证 mode_off 前 0x4A 字节确实
-    # 是 0x404D30 风格函数头，避免仅凭固定差值误认函数。
+    # test13 不再主动调用这个函数，但游戏自己的 0x407000 Strategy-enter 函数会立即 call 它。
+    # 因此仍然必须验证 mode_off 前 0x4A 字节确实是原版 0x404D30 风格函数头，后面还会把
+    # Strategy-enter 内部的 CALL 目标与这里解析出的地址做交叉验证。
     if mode_off < 0x4A:
         raise RuntimeError("分辨率模式派发前空间不足，无法解析原版显示模式函数。")
     display_mode_off = mode_off - 0x4A
@@ -355,6 +423,107 @@ def verify_one(path: Path) -> list[str]:
     ):
         raise RuntimeError("分辨率模式派发没有位于已确认的原版 SetDisplayMode 包装函数内。")
     display_mode_va = image_base + text_rva + display_mode_off
+
+    # test14/test15 都依赖原版 0x404D30 的“同 mode + force=0 早退”语义。
+    # 0x404D4D 开始应为：
+    #   cmp [esi+0x04],eax
+    #   jne ...
+    #   mov ecx,[esp+0x1C]   ; 第二参数 force
+    #   test ecx,ecx
+    #   je  ...              ; force=0 时直接跳到函数收尾
+    early_return = text_data[display_mode_off + 0x1D : display_mode_off + 0x2A]
+    if len(early_return) < 13 or not (
+        early_return[0:3] == bytes.fromhex("39 46 04")
+        and early_return[3:5] == bytes.fromhex("75 0C")
+        and early_return[5:9] == bytes.fromhex("8B 4C 24 1C")
+        and early_return[9:11] == bytes.fromhex("85 C9")
+        and early_return[11:13] == bytes.fromhex("0F 84")
+    ):
+        raise RuntimeError("原版显示模式函数缺少 test14 依赖的同-mode/force=0 早退结构。")
+
+    # ---------------------------------------------------------------------------------------------
+    # test15：游戏自己的 Strategy 状态进入/离开证据 + 临时 force 参数入口。
+    #
+    # 状态切换函数唯一命中后：
+    #   +0x1E 是“离开旧状态 3”时 call 0x407040；
+    #   +0x97 是“新状态 3 / BeforeStrategy”时 call 0x407000。
+    #
+    # 进入函数本身必须把 self+0x280 的显示模式写到 self+0x08，然后立即 call 我们上面已经解析的
+    # 原版显示模式函数。这样才能证明 test15 仍借用游戏真实 Strategy 进入时刻，而不是换一个猜测 gate。
+    # ---------------------------------------------------------------------------------------------
+    strategy_off = require_unique(
+        "Strategy 高层状态切换函数",
+        find_masked(text_data, STRATEGY_STATE_TRANSITION, STRATEGY_STATE_TRANSITION_MASK),
+    )
+    strategy_va = image_base + text_rva + strategy_off
+
+    strategy_exit_call_file = raw_pointer + strategy_off + 0x1E
+    strategy_enter_call_file = raw_pointer + strategy_off + 0x97
+    strategy_exit_call_va = strategy_va + 0x1E
+    strategy_enter_call_va = strategy_va + 0x97
+
+    if data[strategy_exit_call_file] != 0xE8:
+        raise RuntimeError("Strategy 状态函数 +0x1E 不是离开状态 3 的 E8 CALL。")
+    if data[strategy_enter_call_file] != 0xE8:
+        raise RuntimeError("Strategy 状态函数 +0x97 不是进入状态 3 的 E8 CALL。")
+
+    strategy_exit_va = rel32_target(strategy_exit_call_va, data, strategy_exit_call_file)
+    strategy_enter_va = rel32_target(strategy_enter_call_va, data, strategy_enter_call_file)
+    strategy_exit_file = va_to_file_offset(strategy_exit_va, image_base, sections)
+    strategy_enter_file = va_to_file_offset(strategy_enter_va, image_base, sections)
+
+    strategy_enter_head = data[strategy_enter_file : strategy_enter_file + 20]
+    if len(strategy_enter_head) < 20 or not (
+        strategy_enter_head[0:5] == bytes.fromhex("56 8B F1 6A 00")
+        and strategy_enter_head[5:11] == bytes.fromhex("8B 86 80 02 00 00")
+        and strategy_enter_head[11] == 0x50
+        and strategy_enter_head[12:15] == bytes.fromhex("89 46 08")
+        and strategy_enter_head[15] == 0xE8
+    ):
+        raise RuntimeError(
+            f"Strategy enter 目标 0x{strategy_enter_va:08X} 不符合已确认 0x407000 结构。"
+        )
+
+    # 0x407000 +0x0F 的 E8 必须精确回到同一个 0x404D30 显示模式函数。
+    strategy_display_call_file = strategy_enter_file + 0x0F
+    strategy_display_call_va = strategy_enter_va + 0x0F
+    strategy_display_target = rel32_target(strategy_display_call_va, data, strategy_display_call_file)
+    if strategy_display_target != display_mode_va:
+        raise RuntimeError(
+            "Strategy enter 内部显示模式 CALL 与分辨率模式函数交叉验证失败："
+            f"target=0x{strategy_display_target:08X}, expected=0x{display_mode_va:08X}。"
+        )
+
+    strategy_exit_head = data[strategy_exit_file : strategy_exit_file + 10]
+    if len(strategy_exit_head) < 10 or not (strategy_exit_head[0] == 0xB9 and strategy_exit_head[5] == 0xE9):
+        raise RuntimeError(
+            f"Strategy exit 目标 0x{strategy_exit_va:08X} 不符合已确认 0x407040 尾调用包装结构。"
+        )
+
+    # ---------------------------------------------------------------------------------------------
+    # test15 新增：原游戏“标题/前端就是 mode 4”的独立证据。
+    #
+    # 这条签名不参与运行时 patch，只用于防止我们错误地把某个历史兼容 EXE 的前端语义也假定成 640x480。
+    # 命中以后，再把最后的 E8 CALL 解出来，并要求它和上面解析的 0x404D30 是同一个函数。
+    # 这样 test15 的 exit `mode=4, force=1` 就不是凭经验写死，而是由当前 EXE 自己的启动路径证明。
+    # ---------------------------------------------------------------------------------------------
+    frontend_mode4_off = require_unique(
+        "原版前端 mode 4 应用",
+        find_masked(text_data, FRONTEND_MODE4_APPLY, FRONTEND_MODE4_APPLY_MASK),
+    )
+    frontend_mode4_va = image_base + text_rva + frontend_mode4_off
+    frontend_mode4_call_file = raw_pointer + frontend_mode4_off + 0x0C
+    frontend_mode4_call_va = frontend_mode4_va + 0x0C
+    frontend_mode4_target = rel32_target(
+        frontend_mode4_call_va,
+        data,
+        frontend_mode4_call_file,
+    )
+    if frontend_mode4_target != display_mode_va:
+        raise RuntimeError(
+            "原版前端 mode 4 CALL 与显示模式函数交叉验证失败："
+            f"target=0x{frontend_mode4_target:08X}, expected=0x{display_mode_va:08X}。"
+        )
 
     map1_off = require_unique("第一处分辨率映射", find_masked(text_data, RES_MAP1, RES_MAP1_MASK))
     map2_off = require_unique("第二处分辨率映射", find_masked(text_data, RES_MAP2, RES_MAP2_MASK))
@@ -376,7 +545,7 @@ def verify_one(path: Path) -> list[str]:
     # ---------------------------------------------------------------------------------------------
     # 0x4087A0 风格 GUI/JMM 分辨率应用包装函数。
     #
-    # v0.3-test11 继续把这条包装函数作为 Steam delayed JMM apply 的关键结构证据：
+    # v0.3-test14 继续把这条包装函数作为 Steam delayed JMM apply 的关键结构证据：
     #   1. 先要求整个包装函数签名唯一；
     #   2. 包装函数 +16 必须仍能解析出 UI manager，+21 必须是 E8；
     #   3. 解码 rel32 后，目标必须落在 PE 中并匹配 0x4B35F0 已确认函数头；
@@ -439,6 +608,10 @@ def verify_one(path: Path) -> list[str]:
     if data[world_press_call_file] != 0xE8:
         raise RuntimeError("世界鼠标按下 callsite +21 不是 E8 CALL。")
     world_press_target_va = rel32_target(world_press_call_va, data, world_press_call_file)
+
+    # test13 明确不再把 callsite 开头的 world_global 当 gameplay gate。
+    # 用户 test12 实机已经证明该对象在主菜单也可能存在；这里仅验证 test8 已通过的世界点击目标函数。
+
     world_press_target_file = va_to_file_offset(world_press_target_va, image_base, sections)
     world_press_head = data[world_press_target_file : world_press_target_file + 26]
     if len(world_press_head) < 26 or not (
@@ -476,9 +649,8 @@ def verify_one(path: Path) -> list[str]:
     # ---------------------------------------------------------------------------------------------
     # vtable +0x00：主 HUD scalar deleting destructor。
     #
-    # test11 用它把运行时代码 profile 从 GAMEPLAY 恢复为 FRONTEND，保证返回主菜单/动画后
-    # 原游戏下一次 640x480 请求不会继续被 TargetWidth/TargetHeight 截走。
-    # 原版函数头必须是 push esi / mov esi,ecx / call <real dtor>。
+    # test13 仍 hook 这一槽，但只用于清掉最近 HUD 实例缓存；它不再决定 FRONTEND/GAMEPLAY。
+    # 原版函数头仍必须是 push esi / mov esi,ecx / call <real dtor>，保证缓存清理桥接调用约定正确。
     # ---------------------------------------------------------------------------------------------
     destructor_slot_va = vtable_va + 0x00
     destructor_slot_file_offset = va_to_file_offset(destructor_slot_va, image_base, sections)
@@ -584,18 +756,23 @@ def verify_one(path: Path) -> list[str]:
         f"SHA-256={hashlib.sha256(data).hexdigest()}",
         font_state,
         f"分辨率模式派发 VA=0x{image_base + text_rva + mode_off:08X}",
-        f"原版显示模式函数 VA=0x{display_mode_va:08X}（test11 前端/游戏内 profile 生命周期切换）",
+        f"原版显示模式函数 VA=0x{display_mode_va:08X}（由 Strategy enter 原版流程调用）",
+        f"Strategy 状态切换 VA=0x{strategy_va:08X}，enter call -> 0x{strategy_enter_va:08X}，exit call -> 0x{strategy_exit_va:08X}",
+        f"Strategy enter 内部显示模式 CALL -> 0x{strategy_display_target:08X}（与原版显示模式函数交叉一致）",
+        f"Strategy enter force 参数机器码=6A {strategy_enter_head[4]:02X}（test14/test15 进入游戏时临时改为 01 后恢复）",
+        "原版显示模式函数已确认存在：同 mode ID 且 force=0 时早退；进入/退出都需要在对应时刻强制重应用",
+        f"原版前端 mode 4 应用 VA=0x{frontend_mode4_va:08X} -> 0x{frontend_mode4_target:08X}（与显示模式函数交叉一致）",
         f"当前内部/扩展分支={hidden_width}x{hidden_height}",
         f"第一处分辨率映射 VA=0x{image_base + text_rva + map1_off:08X}",
         f"第二处分辨率映射 VA=0x{image_base + text_rva + map2_off:08X}",
         f"JMM 布局选择器 VA=0x{image_base + text_rva + jmm_off:08X}",
         f"GUI/JMM 分辨率应用包装 VA=0x{jmm_apply_va:08X} -> JMM/UI 广播 0x{jmm_load_va:08X}（test10 Steam delayed JMM 上下文）",
         f"JMM 资源路径构造 VA=0x{jmm_path_builder_va:08X} -> 资源根缓冲区 0x{resource_root_va:08X}",
-        f"世界鼠标按下 callsite VA=0x{world_press_va:08X} -> 0x{world_press_target_va:08X}（仅 0x0B/0x0E 点击穿透保护）",
+        f"世界鼠标按下 callsite VA=0x{world_press_va:08X} -> 0x{world_press_target_va:08X}（仅点击穿透保护，不参与 gameplay gate）",
         f"全局鼠标释放 callsite VA=0x{global_release_va:08X} -> 0x{global_release_target_va:08X}（顶部窗口 fallback）",
         f"主 HUD 根类构造 VA=0x{hud_va:08X}",
         f"主 HUD vtable=0x{vtable_va:08X}",
-        f"vtable+0x00 -> 0x{destructor_slot_target:08X}（test11 前端 profile 恢复点）",
+        f"vtable+0x00 -> 0x{destructor_slot_target:08X}（test15 仅清理 HUD 实例缓存，不参与 profile 生命周期）",
         f"vtable+0x24 -> 0x{event_slot_target:08X}（顶部按钮 0x0B/0x0E 原版窗口开关已验证）",
         f"ID 0x0B target global=0x{target_global_0b_a:08X}",
         f"ID 0x0E target global=0x{target_global_0e_a:08X}",

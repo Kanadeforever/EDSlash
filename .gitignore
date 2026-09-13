@@ -1,5 +1,6 @@
 # 自定义
 release/
+__pycache__/
 
 # Prerequisites
 *.d

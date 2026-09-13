@@ -1,4 +1,35 @@
-# 宽高比与 HUD 研究说明
+﻿# 宽高比与 HUD 研究说明（截至 v0.3-test15）
+
+## v0.3-test15 当前宽高比 / HUD 结论
+
+HUD 本身不是 test14 返回标题错误的根因。test14 已证明进入游戏 live 能正确变成目标宽高；失败发生在退出时“只恢复代码 profile，没有重建 Surface”。因此 test15 保留所有既有 HUD/输入稳定算法，只修显示生命周期。
+
+### 当前游戏内公式
+
+```text
+TargetHeight = BaseHeight
+TargetWidth  = round(BaseHeight × AspectWidth / AspectHeight)
+```
+
+推荐 fixed-Y 基准：480 或 600。`BaseHeight=1080` 在 16:9 下是真正 1920x1080 内部世界，用户已实机观察到严重 FPS 下跌；它不是 4K 输出模式。
+
+### 生命周期
+
+- FRONTEND：不做主 HUD 宽屏平移，不做 gameplay Steam JMM；原版 mode 4 640x480。
+- GAMEPLAY：Strategy state=3 后才允许 HUD 居中和 Steam delayed JMM。
+- EXIT：test15 在原版 Strategy 清理完成后强制恢复 mode 4，再交给新前端 UI 自己创建/布局。
+
+### 稳定红线
+
+- 底部主 HUD 只移动根节点；
+- 小地图/右侧顶层 UI 继续贴边；
+- 0x0B / 0x0E 顶部按钮使用 global release fallback；
+- world press 只负责防点击穿透；
+- 永久禁止再次包装 `0x004B44F0`。
+
+---
+
+## test11 基线正文（历史保留，当前结论以上方增补为准）
 
 ## fixed-Y / auto-X 的游戏内目标
 
