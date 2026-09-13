@@ -1,6 +1,6 @@
-﻿# Steam 兼容调查说明（截至 v0.3-test15）
+# Steam 兼容调查说明（截至 v0.3 封版）
 
-## v0.3-test15 生命周期更新（Steam test10 稳定路径不变）
+## v0.3 封版生命周期结论（Steam test10 稳定路径不变）
 
 Steam 专项的稳定结论仍然是 test10：`ComeOn.dll` 环境缺少非 Steam 自然发生的后续完整 JMM apply，因此在 HUD、顶层 UI 与资源根成熟后 one-shot 调用原版 `0x004B35F0(0,W,H)`。
 
@@ -10,7 +10,7 @@ Steam 专项的稳定结论仍然是 test10：`ComeOn.dll` 环境缺少非 Steam
 - test12 world gate：失败；
 - test13 Strategy gate：进入时机正确；
 - test14 force=1：实机确认进入游戏 live 能真正达到目标；
-- test15：只新增 Strategy exit 后恢复原版 mode 4 Surface。
+- test15：Strategy exit 后恢复原版 mode 4 Surface；**BaseHeight=480 实机通过，v0.3 以此封版**。
 
 `g_strategy_transition_in_progress` 会在进入/退出显示设备重建调用栈中禁止 HUD 平移和 Steam delayed JMM，避免对半析构/半重建 UI 操作。真正进入 GAMEPLAY 后仍沿用 test10 one-shot。
 
@@ -113,9 +113,9 @@ after 0x0E: 1316,993...
 
 代码通过 `g_gameplay_mode_switch_in_progress` / `g_steam_ui_sync_in_progress` 防止两套重建互相递归。
 
-## 当前 Steam 待办
+## 当前 Steam 状态与后续项
 
-- v0.3-test11 前端/主菜单 4:3 profile 仍需 Steam 实机验证；
-- test10 游戏内 GUI 不得回归；
-- Steam 帧数/游戏速度偏低是下一高优先级专项；
-- 当前 `AspectRatio=Auto` 仍读取显示器比例，不跟随 cnc-ddraw 自定义客户区，暂缓。
+- v0.3 的两阶段生命周期已在 Steam/ComeOn.dll 环境、`BaseHeight=480` 实机闭合：进入 `854x480`，退出强制回原版 `640x480`；
+- test10 游戏内 GUI 路径保持有效；本次 480 日志为 `result=1 / done=1 / child_layout_changed=0`，用户确认整体可用，因此 `child_layout_changed` 不作为硬性通过条件；
+- Steam 帧数/游戏速度偏低仍是独立后续专项，v0.3 不在没有证据时 patch ComeOn.dll 计时器；
+- `AspectRatio=Auto` 仍读取显示器比例，不跟随 cnc-ddraw 自定义客户区，继续暂缓。

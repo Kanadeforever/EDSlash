@@ -1,8 +1,8 @@
-﻿# 宽高比与 HUD 研究说明（截至 v0.3-test15）
+# 宽高比与 HUD 研究说明（截至 v0.3 封版）
 
-## v0.3-test15 当前宽高比 / HUD 结论
+## v0.3 封版宽高比 / HUD 结论
 
-HUD 本身不是 test14 返回标题错误的根因。test14 已证明进入游戏 live 能正确变成目标宽高；失败发生在退出时“只恢复代码 profile，没有重建 Surface”。因此 test15 保留所有既有 HUD/输入稳定算法，只修显示生命周期。
+HUD 本身不是 test14 返回标题错误的根因。test15 保留所有既有 HUD/输入稳定算法，只修显示生命周期，并已在 `BaseHeight=480` 实机通过：进入 `854x480`、退出回 `640x480`，HUD/输入链可用。v0.3 直接以该实现封版。
 
 ### 当前游戏内公式
 
@@ -17,7 +17,7 @@ TargetWidth  = round(BaseHeight × AspectWidth / AspectHeight)
 
 - FRONTEND：不做主 HUD 宽屏平移，不做 gameplay Steam JMM；原版 mode 4 640x480。
 - GAMEPLAY：Strategy state=3 后才允许 HUD 居中和 Steam delayed JMM。
-- EXIT：test15 在原版 Strategy 清理完成后强制恢复 mode 4，再交给新前端 UI 自己创建/布局。
+- EXIT：test15 在原版 Strategy 清理完成后强制恢复 mode 4，再交给新前端 UI 自己创建/布局；该路径已实机通过。
 
 ### 稳定红线
 
@@ -93,4 +93,4 @@ v0.3-test11 改成 FRONTEND/GAMEPLAY 双 profile：前端恢复原版代码规�
 
 Steam/ComeOn.dll 缺少非 Steam 自然发生的一轮完整 JMM apply。test10 已实机通过：等 HUD、顶层 UI、资源根成熟后 one-shot 调 `0x004B35F0(0,W,H)`，日志 `result=1 / done=1 / child_layout_changed=1`，最终 GUI 位置正确。
 
-v0.3-test11 必须保持这条路径不回归。
+v0.3 封版继续保持这条 Steam test10 路径不回归。

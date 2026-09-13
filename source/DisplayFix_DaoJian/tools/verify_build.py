@@ -10,7 +10,8 @@ DisplayFix 构建结果检查工具。
 3. 必须有非零入口点；
 4. 必须导出 InitializeASI，兼容会主动调用该入口的 ASI Loader；
 5. 当前架构故意不让 ASI 自己带 Windows DLL 导入表，因此 Import Directory 必须为 0；
-6. 同目录的 DisplayFix.ini 必须存在，并且 [Display] 不能因为 UTF-8 BOM 落在文件第一节而失效。
+6. 同目录的 DisplayFix.ini 必须存在、能以 UTF-8 解析，并且正式成品禁止 UTF-8 BOM；
+7. 仓库内源码、脚本、配置和 Markdown 文本统一禁止 UTF-8 BOM，BAT 额外必须是 CRLF。
 
 代码里的每一步都写了较细的中文说明，方便以后换编译器或接档时核对。
 """
@@ -161,12 +162,14 @@ def validate_asi(asi_path: Path) -> list[str]:
 
 def validate_ini(ini_path: Path) -> list[str]:
     """
-    检查发行 INI 的最小结构。
+    检查发行 INI 的最小结构，并强制禁止 UTF-8 BOM。
 
-    Windows 的 GetPrivateProfile* A 系列接口并不可靠识别 UTF-8 BOM。
-    如果 BOM 后面立刻就是 [Display]，第一节可能完全读不到，BaseHeight 就会静默回退默认 480。
-    当前模板在真正 [Display] 之前固定放一行 ASCII 说明，因此即使某个编辑器以后重新加 BOM，
-    受影响的也只是第一行说明，而不是配置节本身。
+    Windows 的 GetPrivateProfile* A 系列接口对 UTF-8 BOM 的兼容性不可靠，本项目早期已经实机遇到
+    第一节 [Display] 因 BOM 而读取异常的问题。最终封版规则因此不再“依赖保护行容忍 BOM”，而是更直接：
+    正式模板和 release 配置都必须是 UTF-8 无 BOM。
+
+    第一行仍保留纯 ASCII 说明，是为了让文件结构一眼可辨，也给用户以后手工编辑时多一层防误操作余量；
+    但它不再意味着项目允许 BOM 存在。
     """
 
     if not ini_path.is_file():
@@ -174,18 +177,17 @@ def validate_ini(ini_path: Path) -> list[str]:
 
     data = ini_path.read_bytes()
 
-    # utf-8-sig 会自动去掉可选 BOM；中文注释只用于人看，真正的节名和键名仍然全部是 ASCII。
+    if data.startswith(b"\xEF\xBB\xBF"):
+        raise RuntimeError("DisplayFix.ini 禁止 UTF-8 BOM；请保存为 UTF-8 无 BOM。")
+
     try:
-        text = data.decode("utf-8-sig")
+        text = data.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise RuntimeError(f"DisplayFix.ini 不是有效 UTF-8：{exc}") from exc
 
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-
-    # 第一行必须是保护性说明，第二个有效结构才允许进入 [Display]。
-    # 这样用户的编辑器即便重新加 UTF-8 BOM，也不会再破坏 [Display]。
     if not lines or not lines[0].startswith("; DisplayFix configuration."):
-        raise RuntimeError("DisplayFix.ini 第一行缺少 BOM 保护说明，可能再次导致 [Display] 第一节读取失败。")
+        raise RuntimeError("DisplayFix.ini 第一行缺少固定 ASCII 配置说明。")
 
     required = ("[Display]", "BaseHeight=", "AspectRatio=", "[Font]", "FixDPI=", "[GUI]", "CenterMainHUD=")
     for marker in required:
@@ -193,8 +195,8 @@ def validate_ini(ini_path: Path) -> list[str]:
             raise RuntimeError(f"DisplayFix.ini 缺少必要内容：{marker}")
 
     return [
-        "DisplayFix.ini UTF-8 可解析",
-        "[Display] 前存在 BOM 保护行",
+        "DisplayFix.ini UTF-8 无 BOM",
+        "[Display] 前存在固定 ASCII 说明行",
         "BaseHeight / AspectRatio / FixDPI / CenterMainHUD 键存在",
     ]
 
@@ -214,13 +216,14 @@ def validate_build_bat(build_bat: Path) -> list[str]:
 
     raw = build_bat.read_bytes()
 
-    # BAT 必须保持 UTF-8 BOM + CRLF，这是本项目统一的 Windows 脚本格式。
-    if not raw.startswith(b"\xEF\xBB\xBF"):
-        raise RuntimeError("build.bat 必须使用 UTF-8 BOM。")
+    # 用户实机确认：即使首行先执行 chcp 65001，带 BOM 的 BAT 在本机 CMD 仍会乱码。
+    # 因此封版规则明确反过来：BAT 必须是 UTF-8 无 BOM + CRLF。
+    if raw.startswith(b"\xEF\xBB\xBF"):
+        raise RuntimeError("build.bat 禁止 UTF-8 BOM；请保存为 UTF-8 无 BOM。")
     if b"\r\n" not in raw or raw.replace(b"\r\n", b"").find(b"\n") != -1:
         raise RuntimeError("build.bat 必须统一使用 CRLF 换行。")
 
-    text = raw.decode("utf-8-sig")
+    text = raw.decode("utf-8")
     lower = text.lower()
 
     if "where /r" in lower:
@@ -243,11 +246,44 @@ def validate_build_bat(build_bat: Path) -> list[str]:
             )
 
     return [
-        "build.bat UTF-8 BOM + CRLF",
+        "build.bat UTF-8 无 BOM + CRLF",
         "未使用 where /r 递归扫描 LLVM",
         "Visual Studio 回退固定为 Llvm\\x64\\bin",
         "所有有正文的 REM/echo 行末尾均有两个半角空格",
     ]
+
+
+def validate_repository_bom_free(package_root: Path) -> list[str]:
+    """
+    扫描仓库内所有人类可编辑文本，确认没有任何 UTF-8 BOM。
+
+    用户已经把“BOM 必须消失”定为项目硬规则，所以这里不只检查 build.bat。
+    只扫描明确属于文本的扩展名，避免把 ASI 等二进制文件误当文本。
+    """
+
+    text_suffixes = {".bat", ".ini", ".md", ".py", ".c", ".h", ".cpp", ".txt"}
+    checked = 0
+
+    for top_name in ("source", "docs", "release"):
+        top = package_root / top_name
+        if not top.exists():
+            continue
+        for path in top.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in text_suffixes:
+                continue
+            checked += 1
+            data = path.read_bytes()
+            if data.startswith(b"\xEF\xBB\xBF"):
+                raise RuntimeError(f"禁止 UTF-8 BOM：{path}")
+            if path.suffix.lower() == ".bat":
+                if b"\r\n" not in data or data.replace(b"\r\n", b"").find(b"\n") != -1:
+                    raise RuntimeError(f"BAT 必须统一使用 CRLF：{path}")
+                try:
+                    data.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise RuntimeError(f"BAT 不是有效 UTF-8：{path}: {exc}") from exc
+
+    return [f"仓库文本 UTF-8 BOM=0（已检查 {checked} 个文本文件）"]
 
 def main() -> int:
     """命令行入口。成功返回 0，失败返回 1。"""
@@ -275,12 +311,17 @@ def main() -> int:
         build_bat = Path(__file__).resolve().parents[1] / "build.bat"
         build_lines = validate_build_bat(build_bat)
 
+        package_root = Path(__file__).resolve().parents[3]
+        bom_lines = validate_repository_bom_free(package_root)
+
         print(f"[验证目标] {asi_path}")
         for line in lines:
             print(f"[通过] {line}")
         for line in ini_lines:
             print(f"[通过] {line}")
         for line in build_lines:
+            print(f"[通过] {line}")
+        for line in bom_lines:
             print(f"[通过] {line}")
         print(f"[通过] 配置文件：{ini_path.name}")
         return 0

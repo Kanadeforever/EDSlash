@@ -1,4 +1,4 @@
-﻿# DisplayFix_DaoJian 构建说明
+# DisplayFix_DaoJian 构建说明
 
 ## 仓库目录
 
@@ -48,7 +48,7 @@ release\
 
 禁止 `where /r` 递归搜索，禁止误选 ARM64 LLVM。`clang.exe` 与 `lld-link.exe` 必须来自同一目录，并在编译前运行 `--version`。
 
-BAT 固定 UTF-8 BOM + CRLF；所有有正文的 `REM` / `echo` 行末尾保留两个半角空格。
+BAT 固定 **UTF-8 无 BOM + CRLF**；即使首行已有 `chcp 65001 >nul` 也禁止 BOM。所有有正文的 `REM` / `echo` 行末尾保留两个半角空格。源码、配置、Markdown 等仓库文本也统一 UTF-8 无 BOM。
 
 ## 从零构建
 
@@ -61,7 +61,7 @@ BAT 固定 UTF-8 BOM + CRLF；所有有正文的 `REM` / `echo` 行末尾保留�
 5. 运行 `tools\verify_build.py`；
 6. 强制确认 `release` 最终只有两个文件。
 
-## v0.3-test15 当前架构
+## v0.3 封版架构（test15 实机通过）
 
 - 字体：继续使用已实机通过的 96 DPI 运行时修复；
 - 前端：保持原版 mode 4 / 640x480；
@@ -75,12 +75,16 @@ BAT 固定 UTF-8 BOM + CRLF；所有有正文的 `REM` / `echo` 行末尾保留�
 
 不得破坏：96 DPI、BaseHeight 读取、普通地图左键、Alt+F4、右侧鼠标技能、0x0B/0x0E 点击与防穿透、主 HUD 居中、Steam test10 JMM 路径。
 
-## v0.3-test15 当前成品验证
+## v0.3 封版验证
 
-- ASI SHA-256：`2f4b982148d3f110fb3508e33e666efed9b22e3f097308a5233d4c874d492831`
+- ASI SHA-256：`edfc6b2e4e06211d161f49289b13b40effc75c7c596d17c45786973adc512e2e`
 - PE32 / i386 / DLL / `InitializeASI` / Import Directory=0：通过；
 - 当前 DPI 修复 EXE 与历史 480P/540P/720P/768P/900P/1080P EXE：全部通过兼容验证；
 - 新增验证：原版前端 `0x004053D8 -> mode 4 -> 0x00404D30` 与 Strategy enter `0x0040700F -> 0x00404D30` 交叉一致；
-- test15 尚未实机，不能写成稳定版。
+- test15 `BaseHeight=480 / AspectRatio=Auto` 已实机通过并作为 v0.3 封版基线：
+  - 进入 Strategy：`live=854x480 expected=854x480 force=1`；
+  - 返回标题：`reset_mode=4 result=1 live=640x480 expected=640x480`；
+  - 标题/主菜单恢复原生 4:3，游戏内 HUD/输入/Steam JMM 路径可用。
+- v0.3 不再扩大 patch 范围；后续同引擎外传适配以本版本为参照。
 
 详细累计历史见 `docs\DisplayFix_DaoJian\完整接档说明.md` 和 `逆向工程知识库.md`。

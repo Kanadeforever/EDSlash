@@ -1,11 +1,11 @@
-﻿/*
+/*
  * DisplayFix.c
  *
  * 《刀剑封魔录》ComeOn.exe 显示修复 ASI 插件。
- * 当前版本：v0.3-test15
+ * 当前版本：v0.3（封版；基于 test15 实机通过）
  *
  * ----------------------------------------------------------------------------------------------
- * v0.3-test15 的核心目标：保留 test14 已实机通过的“进入游戏切宽屏”，并恢复原游戏真正的标题 640x480 生命周期。
+ * v0.3 封版沿用 test15 已实机通过的最终方案：进入游戏切宽屏，退出 Strategy 后恢复原游戏真正的标题 640x480 生命周期。
  * ----------------------------------------------------------------------------------------------
  *
  * test14 的实机结果已经把问题进一步拆开：
@@ -106,7 +106,7 @@
  *   - 字体创建路径固定 96 DPI，解决 Windows 125% 等缩放下字体裁切，同时不改变整个进程 DPI；
  *   - TargetWidth 按宽高比自动计算；
  *   - v0.2-test1 的底部主 HUD 根节点水平居中；边缘 UI（小地图/右侧按钮）继续贴边；
- *   - INI 第一节 BOM 防护；
+ *   - INI 第一行 ASCII 保护注释；正式源码/配置/脚本统一 UTF-8 无 BOM；
  *   - 机器码/上下文签名验证，不用整个 EXE SHA-256 锁死兼容版本。
  *
  * 重要测试状态：
@@ -116,7 +116,9 @@
  *   - test13：Strategy gate 时机正确，但原版 0x407000 以 force=0 重应用相同 mode ID，实际 live 仍停在 640x480，实机失败；
  *   - test14：Strategy enter force=1 实机成功，进入游戏 live 已正确变成目标宽高；但退出只恢复代码 profile，
  *             没有把 live surface 强制重建回 640x480，因此返回标题后仍停留宽屏，实机失败；
- *   - test15：保留 test14 的进入路径；离开 Strategy 后强制恢复原版 mode 4 前端 surface，待实机验收。
+ *   - test15：保留 test14 的进入路径；离开 Strategy 后强制恢复原版 mode 4 前端 surface，BaseHeight=480 实机通过；
+ *             进入日志 live=854x480 / expected=854x480 / force=1，退出日志 live=640x480 / expected=640x480。
+ *   - v0.3：不再扩大运行时修改范围，直接以 test15 的实机通过代码封版。
  *
  * 代码里的注释故意写得非常细，目标是让只学过一天编程的人也能顺着看懂每一步。
  */
@@ -3982,7 +3984,7 @@ static void initialize_display_fix(void)
     make_sibling_path(module_path, "DisplayFix.ini", g_ini_path, (DWORD)sizeof(g_ini_path));
     make_sibling_path(module_path, "DisplayFix.log", g_log_path, (DWORD)sizeof(g_log_path));
 
-    log_line("DisplayFix v0.3-test15");
+    log_line("DisplayFix v0.3");
     log_line("Architecture: Win32/x86 ASI, content-signature runtime patch");
 
     if (!resolve_required_apis()) {
@@ -4189,7 +4191,7 @@ static void initialize_display_fix(void)
     }
 
     /*
-     * 初始化日志写盘。test15 仍不在 DLL/ASI 初始化阶段扩大主菜单/动画分辨率，也不主动重播 GUI/JMM；
+     * 初始化日志写盘。v0.3 封版仍不在 DLL/ASI 初始化阶段扩大主菜单/动画分辨率，也不主动重播 GUI/JMM；
      * 只有游戏自己的 Strategy 状态 3 进入 callsite 才切 GAMEPLAY profile，Steam 专用 JMM 同步还要继续
      * 等 HUD / 顶层 UI / 资源根成熟，并且必须确认当前已经是 GAMEPLAY profile。
      * 普通地图 WORLD press / GLOBAL release 的高频诊断
