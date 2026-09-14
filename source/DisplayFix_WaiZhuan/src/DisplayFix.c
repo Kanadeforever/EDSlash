@@ -2,7 +2,30 @@
  * DisplayFix.c
  *
  * 《刀剑封魔录外传：上古传说》ComeOn.exe 显示修复 ASI 插件。
- * 当前版本：v0.1-clean1（以 test2 为代码基线，仅移植 test4 已实机通过的 Steam ResJM 多语言兜底）
+ * 当前版本：v0.2.0（正式封版：clean1 稳定基线 + Steam CreateWindowExA class-atom 兼容修复）
+ *
+ * v0.2-test1 与 v0.2-test2 的组合实机结果把问题进一步缩小：
+ *   - test1：全局 USER32!CreateWindowExA Hook 仍存在，但 callback 在调用原函数后立即返回，OpenGL 成功；
+ *   - test2：只禁止 EDIT 的 SetWindowLongA/WndProc 子类化，其余 callback 逻辑恢复，OpenGL 再次崩溃。
+ *
+ * 因此“EDIT 自定义 WndProc”已经被排除为唯一根因；真正有问题的是 callback 在 SetWindowLongA 之前执行的部分。
+ * 重新逐条反汇编后发现一个非常具体的 Win32 兼容性错误：callback 从 hook-context +0x2C 取出
+ * CreateWindowExA 的 lpClassName，然后直接把它当作 char* 解引用并与字符串 "EDIT" 比较。
+ *
+ * 但 Win32 明确允许 lpClassName 不是字符串指针，而是 MAKEINTATOM(atom)：这时高 16 位为 0，低 16 位
+ * 是窗口类 ATOM。原 ComeOn.dll callback 只检查 lpClassName != NULL，没有检查“是不是 ATOM”，因此遇到
+ * 这类合法调用时会把例如 0x0000C0xx 当作内存地址读第一个字符，直接触发访问异常。
+ * 用户实机日志已经确认该 guard 在 Steam + cnc-ddraw OpenGL 启动过程中命中 3 次，最后一次 atom 为 0xC1F2；
+ * 因此这条非法解引用与 OpenGL 崩溃的因果链已经由 A/B + 动态命中闭合。
+ *
+ * v0.2.0 不禁 EDIT 子类化，也不 neutralize 整个 callback。它只在 callback 真正开始读取 class 名之前
+ * 加一层合法 Win32 语义保护：
+ *   - lpClassName == NULL：沿原来“无后处理”语义直接收尾；
+ *   - 0 < lpClassName < 0x10000：判定为 MAKEINTATOM，直接跳过 ComeOn.dll 的字符串比较/EDIT 后处理；
+ *   - lpClassName >= 0x10000：继续执行 ComeOn.dll 原始的 "EDIT" 比较、HWND 记录和 WndProc 子类化。
+ *
+ * 这样全局 CreateWindowExA Hook、普通字符串类名、SteamAPI、多语言和官方 EDIT 功能都尽量保持原样；
+ * 只修 ComeOn.dll 对 CreateWindowExA 合法 ATOM 参数的不安全解引用。
  *
  * 外传 v0.1-test1 已由用户实机确认：非 Steam 版的标题 4:3、进入游戏宽屏、GUI/HUD 居中、
  * 右侧 6 个菜单按钮、高 DPI 字体与返回主菜单恢复 4:3 均正常；Steam 版顺带测试也确认绝大多数功能正常。
@@ -152,6 +175,8 @@ typedef char*               LPSTR;
 typedef void*               LPVOID;
 typedef const void*         LPCVOID;
 typedef unsigned long*      LPDWORD;
+typedef void*               HWND;
+typedef DWORD               SIZE_T;
 
 /*
  * Win32 的 POINT 就是两个 32 位有符号整数：x 和 y。
@@ -780,6 +805,165 @@ static BOOL patch_u32(BYTE* address, DWORD value)
     return patch_bytes(address, bytes, 4u);
 }
 
+/* ============================================================================================== */
+/* 7A. Steam ComeOn.dll CreateWindowExA class-atom 兼容修复（v0.2.0 正式封版）                              */
+/* ============================================================================================== */
+
+/*
+ * 这是 v0.2.0 Steam/OpenGL 兼容修复最重要的两个回跳地址。
+ *
+ * ComeOn.dll 的 CreateWindowExA callback 在 RVA 0x2830 开始。调用完 Hook 引擎保存的原始
+ * CreateWindowExA 后，RVA 0x2841 起会处理 lpClassName：
+ *
+ *   0x2841  mov ecx,[esi+2C]    ; ecx = lpClassName
+ *   0x2844  add esp,8
+ *   0x2847  mov [esi+20],eax    ; 保存刚创建出的 HWND
+ *   0x284A  test ecx,ecx
+ *   0x284C  je 0x28A1
+ *   0x284E  mov edx,"EDIT"
+ *   0x2854  mov bl,[ecx]        ; 这里直接解引用 lpClassName
+ *
+ * Win32 允许 lpClassName 是 MAKEINTATOM(atom)，此时数值位于 0x00000001~0x0000FFFF，
+ * 根本不是可读字符串地址。Steam ComeOn.dll 只检查 NULL，却没有检查 class atom。
+ *
+ * 我们把 0x2841 的前 6 字节改成 JMP 到下面这个 ASI 内 trampoline；trampoline 会完整重放被覆盖的
+ * `mov ecx,[esi+2C] / add esp,8 / mov [esi+20],eax`，然后只多做一个 `< 0x10000` 判断：
+ *   - NULL 或 class atom：直接跳到 0x28A1，完全等价于“这个窗口不是 EDIT，不做 ComeOn 后处理”；
+ *   - 普通字符串指针：跳回 0x284E，后面的官方 "EDIT" 比较和 SetWindowLongA 全部照旧。
+ *
+ * 这种做法比 test1 的“整个 callback 提前 return”窄得多，也比 test2 的“禁用 EDIT WndProc”更符合
+ * CreateWindowExA API 本身的合法参数语义。
+ */
+static BYTE* g_steam_createwindow_string_continue = (BYTE*)0;
+static BYTE* g_steam_createwindow_callback_end = (BYTE*)0;
+static volatile DWORD g_steam_class_atom_bypass_count = 0u;
+static volatile DWORD g_steam_last_class_atom = 0u;
+static BOOL g_steam_class_atom_runtime_logged = FALSE;
+
+/*
+ * 这是一个纯 x86 小跳板，所以使用 __declspec(naked)：编译器不会自动生成 push ebp / mov ebp,esp 等
+ * 函数序言，也不会改变 ComeOn.dll callback 原来的栈布局。
+ *
+ * 对初学者来说可以把它理解成“我们临时把游戏代码拐进来检查一下 class 参数，然后再送回原来的路”。
+ * 这里绝不能调用普通 C 函数、写日志或分配内存，因为 CreateWindowExA 本身可能在系统/渲染器初始化的
+ * 很早阶段调用；额外 Win32 调用可能递归创建窗口，反而制造新的时序问题。
+ */
+__declspec(naked) static void steam_createwindow_class_atom_guard(void)
+{
+    __asm {
+        /* 重放被我们 6 字节 JMP 覆盖的第一条原指令：从 Hook context 取 lpClassName。 */
+        mov ecx, dword ptr [esi+2Ch]
+
+        /* 重放原 callback 对 original-forward helper 两个参数的栈清理。 */
+        add esp, 8
+
+        /* 原版随后会把真正 CreateWindowExA 的返回值 HWND 保存到 context+0x20；这里不能漏掉。 */
+        mov dword ptr [esi+20h], eax
+
+        /* NULL 原本就会直接跳到 callback 收尾；保持完全相同的行为。 */
+        test ecx, ecx
+        jz class_is_not_string
+
+        /*
+         * MAKEINTATOM 的定义就是“高 16 位为 0，低 16 位保存 atom”。
+         * 在 32 位进程里等价于无符号值 < 0x10000。
+         */
+        cmp ecx, 10000h
+        jae class_is_string
+
+        /*
+         * 命中合法 class atom。只记录两个普通 DWORD，不做任何 Win32/API 调用。
+         * 等游戏真正进入 Strategy 后，普通 C 代码再把计数写进日志，避免这里递归。
+         */
+        inc dword ptr [g_steam_class_atom_bypass_count]
+        mov dword ptr [g_steam_last_class_atom], ecx
+
+class_is_not_string:
+        /* 跳到 ComeOn.dll callback 自己的 pop esi / pop ebp / ret 8 收尾。 */
+        jmp dword ptr [g_steam_createwindow_callback_end]
+
+class_is_string:
+        /* 普通字符串类名完全回到官方 0x284E，从 "EDIT" 比较开始继续。 */
+        jmp dword ptr [g_steam_createwindow_string_continue]
+    }
+}
+
+/*
+ * 安装 class-atom guard。
+ * 返回 TRUE 表示机器码结构与 Steam 2.01 样本完全匹配并且 JMP 已成功写入。
+ * 该修复已经由用户实机完成闭环：test2 只禁 EDIT WndProc 仍崩，test3 只增加 atom guard 后成功；
+ * 进入游戏后的日志又实际记录到 3 次 class atom 命中，因此 v0.2.0 将其作为正式兼容修复保留。
+ */
+static BOOL install_steam_createwindow_class_atom_guard(HMODULE steam_module)
+{
+    BYTE* steam_base;
+    BYTE* callback_head;
+    BYTE* patch_site;
+    BYTE replacement[6];
+    DWORD displacement;
+    DWORD i;
+    static const BYTE expected_callback_head[17] = {
+        0x55,0x8B,0xEC,0x8B,0x45,0x08,0x56,0x8B,0x75,0x0C,0x56,0x50,0xE8,0xFF,0xEC,0xFF,0xFF
+    };
+    static const BYTE expected_patch_site[6] = {
+        0x8B,0x4E,0x2C,             /* mov ecx,[esi+2C] */
+        0x83,0xC4,0x08              /* add esp,8        */
+    };
+
+    if (!steam_module) {
+        return FALSE;
+    }
+
+    steam_base = (BYTE*)steam_module;
+    callback_head = steam_base + 0x2830u;
+    patch_site = steam_base + 0x2841u;
+
+    /* 先确认整个 callback 函数头仍然是我们已经逆向闭合的 Steam 2.01 版本。 */
+    for (i = 0u; i < (DWORD)sizeof(expected_callback_head); ++i) {
+        if (callback_head[i] != expected_callback_head[i]) {
+            return FALSE;
+        }
+    }
+
+    /*
+     * 如果这里已经是跳向我们的 guard，说明 InitializeASI/DllMain 重复进入；直接视为成功。
+     * 不能再次根据已经改过的机器码计算第二层 trampoline。
+     */
+    if (patch_site[0] == 0xE9u) {
+        LONG existing_displacement = (LONG)read_u32(patch_site + 1u);
+        BYTE* existing_target = patch_site + 5 + existing_displacement;
+
+        if (existing_target == (BYTE*)&steam_createwindow_class_atom_guard) {
+            return TRUE;
+        }
+        return FALSE;
+    }
+
+    /* 机器码不完全匹配就不写，避免误伤其它 ComeOn.dll 版本。 */
+    for (i = 0u; i < (DWORD)sizeof(expected_patch_site); ++i) {
+        if (patch_site[i] != expected_patch_site[i]) {
+            return FALSE;
+        }
+    }
+
+    /*
+     * 继续地址和收尾地址都是 ComeOn.dll 内 RVA，因此用当前实际模块基址计算，天然兼容 ASLR。
+     * 0x284E = 官方开始比较 "EDIT" 的位置；0x28A1 = 官方 callback 统一收尾。
+     */
+    g_steam_createwindow_string_continue = steam_base + 0x284Eu;
+    g_steam_createwindow_callback_end = steam_base + 0x28A1u;
+
+    /*
+     * 构造标准 x86 `E9 rel32`，第 6 字节用 NOP 填掉，因为原来两条指令一共正好 6 字节。
+     * 32 位进程里 rel32 可以覆盖整个 4GB 虚拟地址空间的模块间跳转。
+     */
+    replacement[0] = 0xE9u;
+    displacement = (DWORD)((BYTE*)&steam_createwindow_class_atom_guard - (patch_site + 5u));
+    write_u32_raw(replacement + 1u, displacement);
+    replacement[5] = 0x90u;
+
+    return patch_bytes(patch_site, replacement, (DWORD)sizeof(replacement));
+}
 
 /*
  * 读取 E8 rel32 / E9 rel32 这类“相对地址指令”的真正目标地址。
@@ -2002,6 +2186,20 @@ static void __fastcall strategy_enter_hook(LPVOID self, LPVOID unused_edx)
      * 注意，这一步只改“同一个 mode ID 对应什么宽高”，不会改变 self+0x280 里的 mode ID 本身。
      */
     profile_ok = set_gameplay_resolution_profile();
+
+    /*
+     * class-atom guard 自身不能在 CreateWindowExA 回调里直接写文件日志，否则可能递归进入窗口/系统初始化。
+     * 到 Strategy 入口时系统已经稳定，所以在这里把累计命中数一次性写出来。
+     */
+    if (!g_steam_class_atom_runtime_logged && g_steam_class_atom_bypass_count > 0u) {
+        line[0] = '\0';
+        str_append(line, (DWORD)sizeof(line), "[RUNTIME] Steam CreateWindowExA class-atom guard hit count=");
+        append_int(line, (DWORD)sizeof(line), (LONG)g_steam_class_atom_bypass_count);
+        str_append(line, (DWORD)sizeof(line), " last_atom=");
+        append_hex32(line, (DWORD)sizeof(line), (DWORD)g_steam_last_class_atom);
+        append_runtime_line(line);
+        g_steam_class_atom_runtime_logged = TRUE;
+    }
 
     if (g_strategy_enter_log_count < 4u) {
         ++g_strategy_enter_log_count;
@@ -4287,6 +4485,7 @@ static void initialize_display_fix(void)
     BOOL global_release_result = FALSE;
     BOOL world_press_result = FALSE;
     BOOL strategy_state_result = FALSE;
+    BOOL steam_class_atom_guard_installed = FALSE;
     LONG hud_delta = 0;
 
     /* 用最简单的单次标志防止 DllMain + InitializeASI 重复执行。 */
@@ -4303,7 +4502,7 @@ static void initialize_display_fix(void)
     make_sibling_path(module_path, "DisplayFix.ini", g_ini_path, (DWORD)sizeof(g_ini_path));
     make_sibling_path(module_path, "DisplayFix.log", g_log_path, (DWORD)sizeof(g_log_path));
 
-    log_line("DisplayFix WaiZhuan v0.1-clean1");
+    log_line("DisplayFix WaiZhuan v0.2.0");
     log_line("Architecture: Win32/x86 ASI, content-signature runtime patch");
 
     if (!resolve_required_apis()) {
@@ -4462,23 +4661,32 @@ static void initialize_display_fix(void)
     jmm_context_result = resolve_jmm_context(&text_region, (BYTE**)0);
 
     if (GAME_GetModuleHandleA && GAME_GetModuleHandleA("ComeOn.dll")) {
+        HMODULE steam_module = GAME_GetModuleHandleA("ComeOn.dll");
+
         /*
-         * clean1 的总体运行逻辑严格回到 v0.1-test2。
-         * 唯一例外是：把 test4 已由用户实机确认有效的 ResJM.Lib 多语言最终兜底单独移植回来。
-         *
-         * 注意这里安装语言 shim 后，仍然把 g_steam_environment 设回 FALSE，保持 test2 原本的
-         * “成熟 GAMEPLAY HUD 阶段再 late-detect Steam delayed-JMM 路径”行为不变。
-         * 也就是说 clean1 没有偷偷带回 test3~test9 的任何其它 Steam 实验。
+         * v0.2.0 以 clean1 为稳定基线并正式封版：
+         *   - test4 已实机通过的 ResJM.Lib 多语言兜底继续保留；
+         *   - test3~test9 的 DirectShow/影片实验仍然全部不回归；
+         *   - 全局 USER32!CreateWindowExA Hook、官方 EDIT WndProc 子类化、Steam/语言功能全部继续保留；
+         *   - Steam/OpenGL 只保留已实机闭环的 MAKEINTATOM(lpClassName) 安全修复。
          */
         if (install_steam_resjm_language_shim(&text_region)) {
             log_line("[OK] Steam multilingual ResJM.Lib CreateFileA fallback installed");
         } else {
-            log_line("[WARN] Steam ResJM.Lib fallback signature not ready/matched; no other Steam experiment is installed");
+            log_line("[WARN] Steam ResJM.Lib fallback signature not ready/matched");
+        }
+
+        steam_class_atom_guard_installed = install_steam_createwindow_class_atom_guard(steam_module);
+        if (steam_class_atom_guard_installed) {
+            log_line("[OK] Steam ComeOn.dll CreateWindowExA class-atom compatibility fix installed; official EDIT handling remains intact");
+            log_line("[INFO] Steam OpenGL compatibility fix only bypasses unsafe ComeOn.dll string parsing for NULL/MAKEINTATOM class names");
+        } else {
+            log_line("[FAIL] Steam CreateWindowExA callback atom-guard signature did not match; ComeOn.dll callback remains original");
         }
 
         g_steam_environment = FALSE;
-        log_line("[INFO] WaiZhuan Steam/ComeOn.dll detected; clean1 otherwise keeps the original test2 Steam timing");
-        log_line("[INFO] No test3-test9 DirectShow/OpenGL/MovieManager/watchdog/teardown experiment is active");
+        log_line("[INFO] WaiZhuan Steam/ComeOn.dll detected; stable display/HUD timing remains unchanged");
+        log_line("[INFO] launcher-controlled Steam opening movie is outside DisplayFix scope; no historical movie experiment is active");
     } else {
         g_steam_environment = FALSE;
         log_line("[INFO] WaiZhuan non-Steam environment detected");

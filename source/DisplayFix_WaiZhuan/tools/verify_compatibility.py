@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-DisplayFix_WaiZhuan：外传 ComeOn.exe 兼容性只读检查工具。
+DisplayFix_WaiZhuan：外传 ComeOn.exe / Steam ComeOn.dll 兼容性只读检查工具。
 
-这个工具只读取 EXE，不写入任何字节，也不会生成补丁版 EXE。DisplayFix 不再用整个文件的
+这个工具只读取 EXE/DLL，不写入任何字节，也不会生成补丁文件。DisplayFix 不再用整个文件的
 SHA-256 白名单锁版本，而是检查运行时真正依赖的机器码、调用关系和 vtable 结构是否仍然成立。
 
-v0.1-clean1 以 v0.1-test2 的纯净代码结构为基线，并额外验证 test4 已实机通过的 ResJM.Lib CreateFileA 调用点；其余 test3-test9 影片/OpenGL 实验不属于当前运行基线。
+v0.2.0 以 clean1/test2 的稳定代码结构为基线，并额外做两类封版验证：
+- EXE：继续验证 test4 已实机通过的 ResJM.Lib CreateFileA 调用点；
+- Steam ComeOn.dll：验证 CreateWindowExA callback 的 EDIT 子类化链，尤其是 RVA 0x2889 的 JNE +0x16 与随后 SetWindowLongA 结构。
+其余 test3-test9 影片/OpenGL 实验不属于当前运行基线。
 
 v0.1-test2 继续以本传 v0.3 的最终结构为参考，但所有关键地址/调用链都重新从外传 EXE 验证。test15 在 test14 已经闭合的 Strategy enter / force=1 证据之上，新增“原版前端 mode 4”交叉验证：
 
@@ -816,15 +819,165 @@ def verify_one(path: Path) -> list[str]:
     ]
 
 
+
 # -------------------------------------------------------------------------------------------------
-# 5. 命令行入口
+# 5. Steam ComeOn.dll 专项验证（v0.2.0 正式封版）
+# -------------------------------------------------------------------------------------------------
+
+def rva_to_file_offset(
+    rva: int,
+    sections: list[tuple[str, int, int, int, int]],
+) -> int:
+    """把 DLL/EXE 的 RVA 转成文件偏移，不依赖首选 ImageBase。"""
+
+    for _name, section_rva, virtual_size, raw_size, raw_pointer in sections:
+        covered = max(virtual_size, raw_size)
+        if section_rva <= rva < section_rva + covered:
+            return raw_pointer + (rva - section_rva)
+
+    raise RuntimeError(f"RVA 0x{rva:08X} 不属于任何已知 PE Section。")
+
+
+def require_bytes_at_rva(
+    data: bytes,
+    sections: list[tuple[str, int, int, int, int]],
+    rva: int,
+    expected: bytes,
+    name: str,
+) -> None:
+    """
+    要求某个固定 RVA 的文件字节完全匹配。
+
+    ComeOn.dll 本轮不是靠模糊猜测 patch 任意相似代码，而是建立在已经反汇编闭合的 Steam 2.01 DLL 上。
+    因此对 callback/初始化片段使用固定 RVA + 精确字节，比只搜一个很短的 opcode 串更能防止误适配。
+    """
+
+    file_offset = rva_to_file_offset(rva, sections)
+    actual = data[file_offset : file_offset + len(expected)]
+    if actual != expected:
+        raise RuntimeError(
+            f"{name} RVA 0x{rva:08X} 字节不符合已确认 Steam ComeOn.dll。"
+        )
+
+
+def verify_steam_dll(path: Path) -> list[str]:
+    """
+    验证 Steam ComeOn.dll 中 v0.2.0 正式版真正依赖的 CreateWindowExA callback 结构。
+
+    本函数不要求整个 DLL SHA-256 永远固定；SHA 只作为报告信息。
+    当前兼容门槛是：CreateFileA 多语言 Hook、CreateWindowExA callback、对 lpClassName 的直接字符串解引用，
+    以及后续官方 EDIT 子类化链都仍然与已经逆向闭合的 Steam 2.01 样本一致。
+    """
+
+    data = path.read_bytes()
+    image_base, sections = parse_pe(data)
+
+    # 当前已确认 Steam 2.01 ComeOn.dll 的首选基址是 0x10000000。
+    # 运行时允许 ASLR 搬家；这里检查的是磁盘结构，所以首选基址仍应和逆向样本一致。
+    if image_base != 0x10000000:
+        raise RuntimeError(
+            f"Steam ComeOn.dll ImageBase=0x{image_base:08X}，不是已确认的 0x10000000。"
+        )
+
+    # 多语言配置字段必须存在。它们能证明当前文件仍然包含我们已经实机验证过的语言子系统。
+    for text in ("local_config", "current_language", "chs"):
+        encoded = text.encode("utf-16le") + b"\x00\x00"
+        if encoded not in data:
+            raise RuntimeError(f"Steam ComeOn.dll 缺少 UTF-16 多语言标记：{text}")
+
+    # CreateWindowExA callback 会只针对 class == "EDIT" 安装自定义 WndProc。
+    if b"EDIT\x00" not in data:
+        raise RuntimeError('Steam ComeOn.dll 缺少 CreateWindowExA callback 使用的 "EDIT" 类名。')
+
+    # RVA 0x54E8：先安装游戏 CreateFileA Hook（长度 7，callback RVA 0x3E30）。
+    # 这部分必须继续存在，因为 v0.2.0 明确保留官方多语言逻辑。
+    require_bytes_at_rva(
+        data,
+        sections,
+        0x54E8,
+        bytes.fromhex(
+            "FF D7 8B 80 E4 11 15 00 50 68 30 3E 00 10 53 6A 07 E8 02 C0 FF FF"
+        ),
+        "CreateFileA 官方多语言 Hook 安装块",
+    )
+
+    # RVA 0x54FE：紧接着把 USER32!CreateWindowExA 交给同一个 Hook 引擎，覆盖长度 12，callback RVA 0x2830。
+    require_bytes_at_rva(
+        data,
+        sections,
+        0x54FE,
+        bytes.fromhex(
+            "8B 0D 54 51 01 10 51 68 30 28 00 10 53 6A 0C E8 EE BF FF FF"
+        ),
+        "CreateWindowExA 全局 Hook 安装块",
+    )
+
+    # callback 函数头必须先把 Hook 上下文交给 0x1540 original-forward helper。
+    require_bytes_at_rva(
+        data,
+        sections,
+        0x2830,
+        bytes.fromhex("55 8B EC 8B 45 08 56 8B 75 0C 56 50 E8 FF EC FF FF"),
+        "CreateWindowExA callback 函数头",
+    )
+
+    # callback post-create 起点是 test3 的真正补丁位置。
+    # 这里先从 context+0x2C 取 lpClassName，只检查 NULL，随后就直接把它当 char* 与 "EDIT" 比较。
+    # Win32 允许 lpClassName 是 MAKEINTATOM，因此这条原始路径存在把低地址 atom 当指针解引用的风险。
+    require_bytes_at_rva(
+        data,
+        sections,
+        0x2841,
+        bytes.fromhex(
+            "8B 4E 2C 83 C4 08 89 46 20 85 C9 74 53 BA 08 52 01 10 53 8A 19"
+        ),
+        "CreateWindowExA callback lpClassName 直接字符串解析入口",
+    )
+
+    # v0.2.0 会在运行时把 RVA 0x2841 的前 6 字节改跳 ASI guard；磁盘原文件必须保持原始结构。
+    # 后面的 EDIT 子类化则必须继续存在，因为正式版不再像 test2 那样禁用官方 WndProc。
+    require_bytes_at_rva(
+        data,
+        sections,
+        0x2889,
+        bytes.fromhex("75 16 8B 4E 48 68 A0 26 00 10 6A FC 51 FF 15 64 51 01 10"),
+        "EDIT WndProc 子类化条件分支与 SetWindowLongA 调用",
+    )
+
+    # RVA 0x287E~0x28A5 是最关键的 EDIT 子类化证据：保存 HWND、读取自定义 WndProc 0x26A0、
+    # SetWindowLongA(..., GWL_WNDPROC=-4, ...)，最后保存旧 WndProc。
+    require_bytes_at_rva(
+        data,
+        sections,
+        0x287E,
+        bytes.fromhex(
+            "A3 A8 F6 01 10 39 0D A4 F6 01 10 75 16 8B 4E 48 "
+            "68 A0 26 00 10 6A FC 51 FF 15 64 51 01 10 A3 A4 F6 01 10 5E 5D C2 08 00"
+        ),
+        "EDIT WndProc 子类化块",
+    )
+
+    return [
+        f"SHA-256={hashlib.sha256(data).hexdigest()}",
+        "Steam ComeOn.dll PE32/i386 结构通过",
+        "官方 CreateFileA 多语言 Hook 安装块仍存在（保留）",
+        "USER32!CreateWindowExA 全局 Hook 安装块仍存在：callback RVA=0x2830, overwrite=12",
+        'CreateWindowExA callback 的 EDIT -> SetWindowLongA(GWL_WNDPROC) 子类化链已确认',
+        "RVA 0x2841 原始 lpClassName 路径会在只检查 NULL 后直接解引用 class 参数",
+        "RVA 0x2889 原始 EDIT WndProc 子类化块仍完整存在（v0.2.0 保留）",
+        "v0.2.0 可在 0x2841 前置 class-atom guard，同时保留普通字符串类名与官方 EDIT 处理",
+    ]
+
+
+# -------------------------------------------------------------------------------------------------
+# 6. 命令行入口
 # -------------------------------------------------------------------------------------------------
 
 def main() -> int:
-    """接受一个或多个 EXE；全部通过返回 0，有任何一个失败返回 1。"""
+    """接受一个或多个 ComeOn.exe / ComeOn.dll；全部通过返回 0，有任何一个失败返回 1。"""
 
     if len(sys.argv) < 2:
-        print("用法：python verify_compatibility.py <ComeOn.exe> [更多 ComeOn 改版.exe ...]")
+        print("用法：python verify_compatibility.py <ComeOn.exe 或 Steam ComeOn.dll> [更多文件 ...]")
         return 1
 
     failed = False
@@ -834,7 +987,12 @@ def main() -> int:
         print(f"\n[验证目标] {path}")
 
         try:
-            lines = verify_one(path)
+            # Steam DLL 和游戏 EXE 依赖的是两套完全不同的证据。
+            # 只按扩展名分流，避免把 DLL 的代码误送进 EXE HUD/Strategy 验证器。
+            if path.suffix.lower() == ".dll":
+                lines = verify_steam_dll(path)
+            else:
+                lines = verify_one(path)
             for line in lines:
                 print(f"[通过] {line}")
         except Exception as exc:

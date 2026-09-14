@@ -12,8 +12,9 @@ DisplayFix 构建结果检查工具。
 5. 当前架构故意不让 ASI 自己带 Windows DLL 导入表，因此 Import Directory 必须为 0；
 6. 同目录的 DisplayFix.ini 必须存在、能以 UTF-8 解析，并且正式成品禁止 UTF-8 BOM；
 7. 仓库内源码、脚本、配置和 Markdown 文本统一禁止 UTF-8 BOM，BAT 额外必须是 CRLF；
-8. clean1 必须只保留 test4 已实机通过的 ResJM.Lib 多语言调用点 shim；
-9. clean1 必须明确不含 test3-test9 的 DirectShow/OpenGL/MovieManager/watchdog/teardown/worker 隔离运行代码。
+8. v0.2.0 必须继续保留 clean1 的 test4 ResJM.Lib 多语言调用点 shim；
+9. v0.2.0 只允许保留已实机闭环的 ComeOn.dll CreateWindowExA class-atom 安全 guard；
+10. test3-test9 的 DirectShow/OpenGL/MovieManager/watchdog/teardown/worker 历史失败代码不得回到当前运行路径。
 
 代码里的每一步都写了较细的中文说明，方便以后换编译器或接档时核对。
 """
@@ -330,16 +331,23 @@ def validate_font_display_independence(source_path: Path) -> list[str]:
     return ["Font.FixDPI 与 Display.Enable 初始化顺序独立（字体先执行，Display gate 后判断）"]
 
 
-def validate_clean1_steam_scope(source_path: Path) -> list[str]:
+def validate_v020_stable_steam_scope(source_path: Path) -> list[str]:
     """
-    检查 v0.1-clean1 的 Steam 代码边界。
+    检查 v0.2.0 正式封版的 Steam/OpenGL 最小修复边界。
 
-    clean1 的目的不是继续实验 Steam 图形链，而是得到一个可长期工作的纯净基线：
-    - 主体严格来自 v0.1-test2；
-    - 只移植 test4 已由用户实机确认成功的 ResJM.Lib 多语言最终兜底；
-    - test3~test9 的影片/OpenGL实验全部不在当前运行源码中。
+    已有实机证据：
+    - test1 只 neutralize callback 后处理时 OpenGL 成功；
+    - test2 只禁止 EDIT WndProc 子类化时 OpenGL 重新崩溃。
 
-    这里用稳定源码锚点做防回归检查，避免以后整理代码时把失败实验误带回来。
+    正式版必须恢复官方 EDIT 处理，只修 CreateWindowExA callback 对 lpClassName 的 API 语义错误：
+    lpClassName 可以是字符串，也可以是高 16 位为 0 的 class atom。ComeOn.dll 原 callback 会直接解引用它。
+
+    当前允许的新增改动只有：
+    - RVA 0x2841 的 6 字节入口改成 E9 rel32 + NOP；
+    - ASI naked trampoline 重放原指令；
+    - NULL / lpClassName < 0x10000 时跳到 RVA 0x28A1；
+    - 普通字符串类名跳回 RVA 0x284E，官方 EDIT 比较和 SetWindowLongA 必须完整保留；
+    - 仅记录 atom 命中计数，不在窗口回调中调用 Win32/日志函数。
     """
 
     if not source_path.is_file():
@@ -348,21 +356,45 @@ def validate_clean1_steam_scope(source_path: Path) -> list[str]:
     text = source_path.read_text(encoding="utf-8")
 
     required = (
-        "DisplayFix WaiZhuan v0.1-clean1",
+        "DisplayFix WaiZhuan v0.2.0",
         "install_steam_resjm_language_shim",
         "steam_create_file_a_shim",
         'str_equal_icase(base_name, "ResJM.Lib")',
         "CREATE_FILE_CALL_PATTERN",
         "0xFF,0x15,0xE4,0x11,0x55,0x00",
         "Steam multilingual ResJM.Lib CreateFileA fallback installed",
-        "No test3-test9 DirectShow/OpenGL/MovieManager/watchdog/teardown experiment is active",
+        "steam_createwindow_class_atom_guard",
+        "install_steam_createwindow_class_atom_guard",
+        "steam_base + 0x2841u",
+        "steam_base + 0x284Eu",
+        "steam_base + 0x28A1u",
+        "cmp ecx, 10000h",
+        "g_steam_class_atom_bypass_count",
+        "Steam ComeOn.dll CreateWindowExA class-atom compatibility fix installed; official EDIT handling remains intact",
+        "launcher-controlled Steam opening movie is outside DisplayFix scope; no historical movie experiment is active",
     )
     for marker in required:
         if marker not in text:
-            raise RuntimeError(f"clean1 缺少必要源码锚点：{marker}")
+            raise RuntimeError(f"v0.2.0 缺少必要源码锚点：{marker}")
 
-    # 这些名字分别对应 test4~test9 的影片实验入口。clean1 不允许任何一个重新成为可执行源码。
-    forbidden = (
+    # test1 过宽隔离与 test2 错误收缩都必须离开当前运行源码。
+    forbidden_old_scope = (
+        "find_steam_createwindow_hook_object",
+        "neutralize_steam_createwindow_callback",
+        "restore_existing_steam_edit_subclass",
+        "isolate_steam_createwindow_hook",
+        "disable_steam_edit_wndproc_subclass",
+        "g_CreateWindowExA_address",
+        "g_VirtualQuery",
+        "MEMORY_BASIC_INFORMATION32",
+        "replacement = 0xEBu",
+    )
+    for marker in forbidden_old_scope:
+        if marker in text:
+            raise RuntimeError(f"v0.2.0 仍残留 test1/test2 旧隔离代码：{marker}")
+
+    # test3~test9 的旧影片/OpenGL实验入口继续禁止回归。
+    forbidden_history = (
         "install_steam_movie_aspect_patch",
         "start_steam_movie_window_watchdog",
         "install_steam_original_movie_hooks",
@@ -372,20 +404,25 @@ def validate_clean1_steam_scope(source_path: Path) -> list[str]:
         "terminate_running_steam_movie_workers",
         "steam_movie_quarantine_watch_thread",
     )
-    for marker in forbidden:
+    for marker in forbidden_history:
         if marker in text:
-            raise RuntimeError(f"clean1 混入了历史失败影片实验代码：{marker}")
+            raise RuntimeError(f"v0.2.0 混入了历史失败影片实验代码：{marker}")
 
-    # test4 的正确方案必须改低层 CALL，而不是把 Steam DLL 还要读取的 CreateFileA IAT 改成 shim。
+    # 官方 EDIT 逻辑必须仍然留在 ComeOn.dll 原始路径；当前源码不能再主动禁 SetWindowLongA。
+    if "official EDIT handling remains intact" not in text:
+        raise RuntimeError("v0.2.0 没有明确保留官方 EDIT WndProc 路径。")
+
+    # 语言兜底仍然只能改游戏低层 CALL，不能改写 CreateFileA IAT。
     if "g_steam_create_file_callsite" not in text:
-        raise RuntimeError("clean1 缺少 CreateFileA 调用点记录。")
+        raise RuntimeError("v0.2.0 缺少 ResJM CreateFileA 调用点记录。")
     if "GAME_CreateFileA =" in text or "GAME_CREATE_FILE_IAT_ADDRESS" in text:
-        raise RuntimeError("clean1 疑似重新尝试改写 CreateFileA IAT；当前只允许调用点 shim。")
+        raise RuntimeError("v0.2.0 疑似重新尝试改写 CreateFileA IAT；当前只允许低层调用点 shim。")
 
     return [
-        "clean1 Steam 范围正确：test2 主体 + test4 ResJM.Lib 语言兜底",
-        "test3-test9 DirectShow/OpenGL/MovieManager/watchdog/teardown/worker 实验代码未进入当前运行源码",
-        "CreateFileA IAT 保持原样，语言兜底只改低层调用点",
+        "v0.2.0 封版范围正确：clean1/test2 主体 + test4 ResJM 语言兜底 + 已闭环的 CreateWindowExA class-atom guard",
+        "ComeOn.dll 全局 CreateWindowExA Hook 与官方 EDIT WndProc 路径均保留",
+        "只对 NULL/MAKEINTATOM 类名跳过 ComeOn.dll 的字符串解引用与 EDIT 后处理",
+        "test1/test2 旧隔离代码及 test3-test9 影片失败实验均未回到当前运行源码",
     ]
 
 def main() -> int:
@@ -421,8 +458,8 @@ def main() -> int:
         source_path = Path(__file__).resolve().parents[1] / "src" / "DisplayFix.c"
         independence_lines = validate_font_display_independence(source_path)
 
-        # v0.1-clean1 新增：锁定“test2 主体 + test4 语言兜底、没有其它 Steam 实验”的纯净边界。
-        clean1_lines = validate_clean1_steam_scope(source_path)
+        # v0.2.0：只允许保留已实机闭环的 CreateWindowExA class-atom 安全修复，不再禁用官方 EDIT WndProc。
+        stable_scope_lines = validate_v020_stable_steam_scope(source_path)
 
         print(f"[验证目标] {asi_path}")
         for line in lines:
@@ -435,7 +472,7 @@ def main() -> int:
             print(f"[通过] {line}")
         for line in independence_lines:
             print(f"[通过] {line}")
-        for line in clean1_lines:
+        for line in stable_scope_lines:
             print(f"[通过] {line}")
         print(f"[通过] 配置文件：{ini_path.name}")
         return 0

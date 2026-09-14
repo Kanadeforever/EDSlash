@@ -29,8 +29,8 @@ TargetWidth = round(BaseHeight × AspectWidth / AspectHeight)
 
 当前插件只移动底部主 HUD 根节点；小地图和边缘顶层 UI 保持贴边。用户在 v0.1-test1 已实机确认 GUI/HUD 居中、右侧 6 个菜单按钮和返回标题行为正常。
 
-## clean1 边界
+## clean1 / v0.2.0 边界
 
-clean1 的 HUD、输入、Strategy、JMM、fixed-Y 分辨率代码完全回到 test2。唯一新增运行逻辑是 Steam `ResJM.Lib` 文件打开兜底，与 HUD/宽屏无关。
+clean1 的 HUD、输入、Strategy、JMM、fixed-Y 分辨率代码完全保持不变。`v0.2-test1` 的 callback neutralize 已实机让 OpenGL 成功；`v0.2-test2` 只禁 EDIT WndProc 后仍崩；`v0.2-test3` 已实机闭环 class atom 根因；正式版 `v0.2.0` 原样保留该修复，不改 HUD/分辨率链。
 
-因此如果 clean1 出现 HUD/输入回归，应视为打包/移植错误，而不是 Steam OpenGL 调查的预期变化。
+这项 Steam 专项不修改 HUD vtable、Strategy gate、JMM 选择器或宽高比算法。若出现 HUD/输入/Strategy 回归，应视为 ComeOn.dll EDIT 子类化依赖或打包错误，不能把它当成宽屏算法的预期变化。
