@@ -7,7 +7,7 @@ cd /d "%~dp0"
 REM 仓库根目录：本脚本位于 source\DisplayFix_WaiZhuan，因此向上两级。  
 set "PROJECT_ROOT=%~dp0..\.."
 set "BUILD_DIR=%~dp0_build"
-set "RELEASE_DIR=%PROJECT_ROOT%\release"
+set "RELEASE_DIR=%PROJECT_ROOT%\release\WaiZhuan"
 set "LLVM_BIN="
 
 REM 每次都从干净的临时目录和 release 开始，避免旧产物混入本次结果。  
