@@ -11,7 +11,9 @@ DisplayFix 构建结果检查工具。
 4. 必须导出 InitializeASI，兼容会主动调用该入口的 ASI Loader；
 5. 当前架构故意不让 ASI 自己带 Windows DLL 导入表，因此 Import Directory 必须为 0；
 6. 同目录的 DisplayFix.ini 必须存在、能以 UTF-8 解析，并且正式成品禁止 UTF-8 BOM；
-7. 仓库内源码、脚本、配置和 Markdown 文本统一禁止 UTF-8 BOM，BAT 额外必须是 CRLF。
+7. 仓库内源码、脚本、配置和 Markdown 文本统一禁止 UTF-8 BOM，BAT 额外必须是 CRLF；
+8. clean1 必须只保留 test4 已实机通过的 ResJM.Lib 多语言调用点 shim；
+9. clean1 必须明确不含 test3-test9 的 DirectShow/OpenGL/MovieManager/watchdog/teardown/worker 隔离运行代码。
 
 代码里的每一步都写了较细的中文说明，方便以后换编译器或接档时核对。
 """
@@ -327,6 +329,65 @@ def validate_font_display_independence(source_path: Path) -> list[str]:
 
     return ["Font.FixDPI 与 Display.Enable 初始化顺序独立（字体先执行，Display gate 后判断）"]
 
+
+def validate_clean1_steam_scope(source_path: Path) -> list[str]:
+    """
+    检查 v0.1-clean1 的 Steam 代码边界。
+
+    clean1 的目的不是继续实验 Steam 图形链，而是得到一个可长期工作的纯净基线：
+    - 主体严格来自 v0.1-test2；
+    - 只移植 test4 已由用户实机确认成功的 ResJM.Lib 多语言最终兜底；
+    - test3~test9 的影片/OpenGL实验全部不在当前运行源码中。
+
+    这里用稳定源码锚点做防回归检查，避免以后整理代码时把失败实验误带回来。
+    """
+
+    if not source_path.is_file():
+        raise RuntimeError(f"缺少主源码：{source_path}")
+
+    text = source_path.read_text(encoding="utf-8")
+
+    required = (
+        "DisplayFix WaiZhuan v0.1-clean1",
+        "install_steam_resjm_language_shim",
+        "steam_create_file_a_shim",
+        'str_equal_icase(base_name, "ResJM.Lib")',
+        "CREATE_FILE_CALL_PATTERN",
+        "0xFF,0x15,0xE4,0x11,0x55,0x00",
+        "Steam multilingual ResJM.Lib CreateFileA fallback installed",
+        "No test3-test9 DirectShow/OpenGL/MovieManager/watchdog/teardown experiment is active",
+    )
+    for marker in required:
+        if marker not in text:
+            raise RuntimeError(f"clean1 缺少必要源码锚点：{marker}")
+
+    # 这些名字分别对应 test4~test9 的影片实验入口。clean1 不允许任何一个重新成为可执行源码。
+    forbidden = (
+        "install_steam_movie_aspect_patch",
+        "start_steam_movie_window_watchdog",
+        "install_steam_original_movie_hooks",
+        "suppress_steam_movie_export",
+        "install_steam_opengl_safe_teardown",
+        "install_steam_movie_hard_quarantine",
+        "terminate_running_steam_movie_workers",
+        "steam_movie_quarantine_watch_thread",
+    )
+    for marker in forbidden:
+        if marker in text:
+            raise RuntimeError(f"clean1 混入了历史失败影片实验代码：{marker}")
+
+    # test4 的正确方案必须改低层 CALL，而不是把 Steam DLL 还要读取的 CreateFileA IAT 改成 shim。
+    if "g_steam_create_file_callsite" not in text:
+        raise RuntimeError("clean1 缺少 CreateFileA 调用点记录。")
+    if "GAME_CreateFileA =" in text or "GAME_CREATE_FILE_IAT_ADDRESS" in text:
+        raise RuntimeError("clean1 疑似重新尝试改写 CreateFileA IAT；当前只允许调用点 shim。")
+
+    return [
+        "clean1 Steam 范围正确：test2 主体 + test4 ResJM.Lib 语言兜底",
+        "test3-test9 DirectShow/OpenGL/MovieManager/watchdog/teardown/worker 实验代码未进入当前运行源码",
+        "CreateFileA IAT 保持原样，语言兜底只改低层调用点",
+    ]
+
 def main() -> int:
     """命令行入口。成功返回 0，失败返回 1。"""
 
@@ -360,6 +421,9 @@ def main() -> int:
         source_path = Path(__file__).resolve().parents[1] / "src" / "DisplayFix.c"
         independence_lines = validate_font_display_independence(source_path)
 
+        # v0.1-clean1 新增：锁定“test2 主体 + test4 语言兜底、没有其它 Steam 实验”的纯净边界。
+        clean1_lines = validate_clean1_steam_scope(source_path)
+
         print(f"[验证目标] {asi_path}")
         for line in lines:
             print(f"[通过] {line}")
@@ -370,6 +434,8 @@ def main() -> int:
         for line in bom_lines:
             print(f"[通过] {line}")
         for line in independence_lines:
+            print(f"[通过] {line}")
+        for line in clean1_lines:
             print(f"[通过] {line}")
         print(f"[通过] 配置文件：{ini_path.name}")
         return 0

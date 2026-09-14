@@ -4,31 +4,33 @@
 
 目标宽度：
 
-`TargetWidth = round(BaseHeight × AspectWidth / AspectHeight)`
+```text
+TargetWidth = round(BaseHeight × AspectWidth / AspectHeight)
+```
 
 并向上调整为偶数宽度。
 
-推荐：
+典型值：
 
 - 480 + 16:9 → 854×480
 - 600 + 16:9 → 1068×600
 
-BaseHeight 越高，真正看到的世界范围越大，内部 Surface 和对象处理负担也越高。因此 1080 这类值是实际内部世界放大，不只是“输出 1080p”。
+`BaseHeight>600` 会真正扩大内部世界/FOV与 Surface，不只是提高最终输出像素，因此可能明显降低性能。
 
-## HUD
+## HUD 已确认结构
 
-外传主 HUD 的构造、vtable、通用布局结构已经与本传 v0.3 对应：
-
-- 构造 `0x004D70A3`
+- 主 HUD 构造 `0x004D70A3`
 - vtable `0x00553B34`
-- 布局 `vtable+0x58 -> 0x004C5F00`
+- layout `vtable+0x58 -> 0x004C5F00`
+- active query `0x004C5100`
+- world press `0x0040CFE6 -> 0x00482790`
+- global release `0x0040CF80 -> 0x004C7930`
+- 顶部真实 control ID：`0x0B / 0x0E`
 
-当前插件只移动底部主 HUD 根节点；小地图和边缘顶层 UI 继续贴边。
+当前插件只移动底部主 HUD 根节点；小地图和边缘顶层 UI 保持贴边。用户在 v0.1-test1 已实机确认 GUI/HUD 居中、右侧 6 个菜单按钮和返回标题行为正常。
 
-v0.1-test1 用户实机确认：
+## clean1 边界
 
-- 游戏内 GUI 居中正常；
-- 右侧 6 个菜单按钮正常；
-- Steam 日志显示 0x0B / 0x0E 的 world-press 防穿透与 global-release 路径正常触发。
+clean1 的 HUD、输入、Strategy、JMM、fixed-Y 分辨率代码完全回到 test2。唯一新增运行逻辑是 Steam `ResJM.Lib` 文件打开兜底，与 HUD/宽屏无关。
 
-因此 HUD / 输入迁移已经从“静态闭合”升级为“实机通过基线”。v0.1-test2 不修改这些路径，只修配置开关之间的耦合。
+因此如果 clean1 出现 HUD/输入回归，应视为打包/移植错误，而不是 Steam OpenGL 调查的预期变化。

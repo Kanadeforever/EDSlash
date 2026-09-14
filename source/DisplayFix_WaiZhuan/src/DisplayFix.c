@@ -2,7 +2,7 @@
  * DisplayFix.c
  *
  * 《刀剑封魔录外传：上古传说》ComeOn.exe 显示修复 ASI 插件。
- * 当前版本：v0.1-test2（修复 Font.FixDPI 与 Display.Enable 错误耦合）
+ * 当前版本：v0.1-clean1（以 test2 为代码基线，仅移植 test4 已实机通过的 Steam ResJM 多语言兜底）
  *
  * 外传 v0.1-test1 已由用户实机确认：非 Steam 版的标题 4:3、进入游戏宽屏、GUI/HUD 居中、
  * 右侧 6 个菜单按钮、高 DPI 字体与返回主菜单恢复 4:3 均正常；Steam 版顺带测试也确认绝大多数功能正常。
@@ -1467,6 +1467,292 @@ static BOOL g_center_main_hud = TRUE;
  *   - ComeOn.dll 是否真的已经装进当前进程，比“文件来自哪个发行渠道”更准确。
  */
 static BOOL g_steam_environment = FALSE;
+
+
+/* ============================================================================================== */
+/* Steam 多语言 ResJM.Lib 最终兜底（从 v0.1-test4 单独移植；不包含任何影片/OpenGL 实验代码）              */
+/* ============================================================================================== */
+
+/*
+ * 这一小段是 clean1 唯一从 test2 之后版本带回来的运行时代码。
+ * 用户已经在 Steam 版实机确认：目录里没有裸 `ResJM.Lib`，而是四个语言文件：
+ *   ResJM.Lib.chs  简体中文
+ *   ResJM.Lib.cht  繁体中文
+ *   ResJM.Lib.eng  英文
+ *   ResJM.Lib.jpn  日文
+ *
+ * test4 的窄 CreateFileA 调用点 shim 成功解决了“找不到 ResJM.Lib”的弹窗，因此 clean1 只保留这一项。
+ * test3~test9 的 delayed-JMM 改写、DirectShow、ActiveMovie、MovieManager、teardown、worker/export 等
+ * 所有实验运行代码一律没有移植回来，避免继续污染当前纯净基线。
+ */
+static BYTE* g_steam_create_file_callsite = (BYTE*)0;
+static BOOL g_steam_resjm_shim_installed = FALSE;
+static DWORD g_steam_resjm_runtime_log_count = 0u;
+
+/*
+ * 返回完整路径中“最后一个文件名”的起点。
+ * 例如：
+ *   F:\\Game\\ResJM.Lib
+ * 会返回指向 `ResJM.Lib` 的位置。
+ *
+ * 这里只在原字符串中移动指针，不申请新内存，也不会修改原路径。
+ */
+static const char* path_basename(const char* path)
+{
+    const char* name = path;
+    DWORD i = 0u;
+
+    if (!path) {
+        return (const char*)0;
+    }
+
+    while (path[i] != '\0') {
+        if (path[i] == '\\' || path[i] == '/') {
+            name = path + i + 1u;
+        }
+        ++i;
+    }
+
+    return name;
+}
+
+/*
+ * Steam/启动器写入 ComeOn.ini 的语言值可能是短码，也可能是较长的人类可读名称。
+ * 游戏目录真正使用的文件后缀只有 chs / cht / eng / jpn 四种，所以这里把常见别名统一到这四个值。
+ *
+ * 返回 TRUE 代表已经成功识别并写入 output；
+ * 返回 FALSE 代表无法识别，调用者会使用 ComeOn.dll 原本的默认值 chs。
+ */
+static BOOL normalize_steam_language(const char* input, char* output, DWORD output_size)
+{
+    const char* normalized = (const char*)0;
+
+    if (!output || output_size < 4u) {
+        return FALSE;
+    }
+    output[0] = '\0';
+
+    if (!input || input[0] == '\0') {
+        return FALSE;
+    }
+
+    if (str_equal_icase(input, "chs") || str_equal_icase(input, "schinese") ||
+        str_equal_icase(input, "zh-cn") || str_equal_icase(input, "zh_cn") ||
+        str_equal_icase(input, "simplified_chinese")) {
+        normalized = "chs";
+    } else if (str_equal_icase(input, "cht") || str_equal_icase(input, "tchinese") ||
+               str_equal_icase(input, "zh-tw") || str_equal_icase(input, "zh_tw") ||
+               str_equal_icase(input, "traditional_chinese")) {
+        normalized = "cht";
+    } else if (str_equal_icase(input, "eng") || str_equal_icase(input, "english") ||
+               str_equal_icase(input, "en")) {
+        normalized = "eng";
+    } else if (str_equal_icase(input, "jpn") || str_equal_icase(input, "japanese") ||
+               str_equal_icase(input, "ja")) {
+        normalized = "jpn";
+    }
+
+    if (!normalized) {
+        return FALSE;
+    }
+
+    str_copy(output, output_size, normalized);
+    return TRUE;
+}
+
+/*
+ * 读取 Steam 版 ComeOn.dll 同目录下的 ComeOn.ini。
+ * 已有逆向证据表明 ComeOn.dll 自己读取：
+ *
+ *   [local_config]
+ *   current_language=chs
+ *
+ * clean1 不创建第二套语言配置，而是直接复用同一个文件和同一个默认值。
+ */
+static void read_steam_current_language(HMODULE steam_module, char* output, DWORD output_size)
+{
+    char dll_path[1024];
+    char ini_path[1024];
+    char raw_language[64];
+
+    if (!output || output_size == 0u) {
+        return;
+    }
+
+    /* ComeOn.dll 自己的默认语言就是简体中文 chs。 */
+    str_copy(output, output_size, "chs");
+
+    if (!steam_module || !g_GetPrivateProfileStringA) {
+        return;
+    }
+
+    dll_path[0] = '\0';
+    ini_path[0] = '\0';
+    raw_language[0] = '\0';
+
+    if (GAME_GetModuleFileNameA(steam_module, dll_path, (DWORD)sizeof(dll_path)) == 0u) {
+        return;
+    }
+
+    make_sibling_path(dll_path, "ComeOn.ini", ini_path, (DWORD)sizeof(ini_path));
+    g_GetPrivateProfileStringA("local_config",
+                               "current_language",
+                               "chs",
+                               raw_language,
+                               (DWORD)sizeof(raw_language),
+                               ini_path);
+
+    if (!normalize_steam_language(raw_language, output, output_size)) {
+        str_copy(output, output_size, "chs");
+    }
+}
+
+/*
+ * Steam-only CreateFileA 最终兜底。
+ *
+ * 安全边界非常窄：只有路径最后的文件名“恰好”等于 `ResJM.Lib` 时才进行语言后缀尝试。
+ * 因此：
+ *   - `ResJM.Lib.chs` 等已经带语言后缀的请求不会再次被追加；
+ *   - 其它 .lib、贴图、音频、存档、配置都完全不受影响；
+ *   - 非 Steam 环境根本不会安装这个 shim。
+ *
+ * 这里也不覆盖游戏的 CreateFileA IAT。ComeOn.dll 仍可按自己的方式处理 CreateFileA；
+ * DisplayFix 只改游戏低层文件包装器中的一条 CALL，避免两个 Hook 互相踩踏。
+ */
+static HANDLE __stdcall steam_create_file_a_shim(LPCSTR name,
+                                                   DWORD access,
+                                                   DWORD share,
+                                                   LPVOID security,
+                                                   DWORD creation,
+                                                   DWORD flags,
+                                                   HANDLE template_file)
+{
+    const char* base_name;
+    FnCreateFileA real_create_file;
+
+    /*
+     * 每次都从游戏原始 IAT 读取当前 CreateFileA 地址。
+     * 我们从不把 0x005511E4 改成自己的函数，所以这里不会递归调用自己。
+     */
+    real_create_file = GAME_CreateFileA;
+    if (!real_create_file) {
+        return INVALID_HANDLE_VALUE;
+    }
+
+    base_name = path_basename(name);
+
+    if (base_name && str_equal_icase(base_name, "ResJM.Lib")) {
+        HMODULE steam_module = GAME_GetModuleHandleA ? GAME_GetModuleHandleA("ComeOn.dll") : (HMODULE)0;
+        char language[16];
+        char localized_path[1200];
+        HANDLE localized_file;
+
+        language[0] = '\0';
+        localized_path[0] = '\0';
+
+        /*
+         * 把裸文件名变成当前语言对应的真实磁盘文件名，例如：
+         *   ResJM.Lib  ->  ResJM.Lib.chs
+         */
+        read_steam_current_language(steam_module, language, (DWORD)sizeof(language));
+        str_copy(localized_path, (DWORD)sizeof(localized_path), name);
+        str_append(localized_path, (DWORD)sizeof(localized_path), ".");
+        str_append(localized_path, (DWORD)sizeof(localized_path), language);
+
+        localized_file = real_create_file(localized_path,
+                                          access,
+                                          share,
+                                          security,
+                                          creation,
+                                          flags,
+                                          template_file);
+
+        /* 日志最多写四次，足够诊断，同时避免文件系统调用频繁刷日志。 */
+        if (g_steam_resjm_runtime_log_count < 4u) {
+            char line[1400];
+            line[0] = '\0';
+            str_copy(line, (DWORD)sizeof(line), "[RUNTIME] Steam raw ResJM.Lib redirect -> ");
+            str_append(line, (DWORD)sizeof(line), localized_path);
+            str_append(line,
+                       (DWORD)sizeof(line),
+                       (localized_file != INVALID_HANDLE_VALUE)
+                           ? " result=OK"
+                           : " result=FAILED; raw fallback follows");
+            append_runtime_line(line);
+            ++g_steam_resjm_runtime_log_count;
+        }
+
+        if (localized_file != INVALID_HANDLE_VALUE) {
+            return localized_file;
+        }
+    }
+
+    /*
+     * 如果未来官方目录重新出现裸 ResJM.Lib，或者语言后缀文件缺失，就保留原始请求作为最终回退。
+     */
+    return real_create_file(name, access, share, security, creation, flags, template_file);
+}
+
+/*
+ * 安装 ResJM 兜底时只改一条经过内容签名确认的低层 CreateFileA 调用。
+ * 原指令是 6 字节：
+ *   FF 15 E4 11 55 00       call dword ptr [0x005511E4]
+ *
+ * clean1 改成：
+ *   E8 xx xx xx xx          call steam_create_file_a_shim
+ *   90                      nop
+ *
+ * 指令长度保持 6 字节，不移动后面的任何游戏代码。
+ */
+static BOOL install_steam_resjm_language_shim(const TextRegion* exe_text)
+{
+    static const BYTE CREATE_FILE_CALL_PATTERN[] = {
+        0xFF,0x75,0xF0,
+        0xFF,0x75,0xF4,
+        0xFF,0x75,0x08,
+        0xFF,0x15,0xE4,0x11,0x55,0x00,
+        0x8B,0xF0,
+        0x3B,0xF7,
+        0x75,0x14,
+        0xFF,0x15,0xF0,0x11,0x55,0x00
+    };
+    static const char CREATE_FILE_CALL_MASK[] = "xxxxxxxxxxxxxxxxxxxxxxxxxxx";
+    BYTE* match;
+    BYTE* callsite;
+    BYTE replacement[6];
+    DWORD displacement;
+
+    if (g_steam_resjm_shim_installed) {
+        return TRUE;
+    }
+    if (!exe_text) {
+        return FALSE;
+    }
+
+    match = find_unique_pattern(exe_text,
+                                CREATE_FILE_CALL_PATTERN,
+                                CREATE_FILE_CALL_MASK,
+                                (DWORD)sizeof(CREATE_FILE_CALL_PATTERN));
+    if (!match) {
+        return FALSE;
+    }
+
+    /* Pattern 第 9 字节正好是那条 6 字节 CreateFileA 间接 CALL。 */
+    callsite = match + 9u;
+
+    replacement[0] = 0xE8;
+    displacement = (DWORD)((BYTE*)&steam_create_file_a_shim - (callsite + 5u));
+    write_u32_raw(replacement + 1u, displacement);
+    replacement[5] = 0x90;
+
+    if (!patch_bytes(callsite, replacement, (DWORD)sizeof(replacement))) {
+        return FALSE;
+    }
+
+    g_steam_create_file_callsite = callsite;
+    g_steam_resjm_shim_installed = TRUE;
+    return TRUE;
+}
 
 /*
  * Steam GUI 修复只允许成功执行一次。
@@ -4017,7 +4303,7 @@ static void initialize_display_fix(void)
     make_sibling_path(module_path, "DisplayFix.ini", g_ini_path, (DWORD)sizeof(g_ini_path));
     make_sibling_path(module_path, "DisplayFix.log", g_log_path, (DWORD)sizeof(g_log_path));
 
-    log_line("DisplayFix WaiZhuan v0.1-test2");
+    log_line("DisplayFix WaiZhuan v0.1-clean1");
     log_line("Architecture: Win32/x86 ASI, content-signature runtime patch");
 
     if (!resolve_required_apis()) {
@@ -4177,16 +4463,22 @@ static void initialize_display_fix(void)
 
     if (GAME_GetModuleHandleA && GAME_GetModuleHandleA("ComeOn.dll")) {
         /*
-         * 外传 Steam 版仍然不是当前非 Steam 主线的正式验收对象。
-         * test1 用户顺带实机发现：D3D9 后端下大部分 DisplayFix 功能实际上已经可用，而且成熟 HUD 阶段
-         * 的 try_steam_delayed_ui_sync() 会再次检测 ComeOn.dll，并进入继承自本传的 delayed JMM 路径。
+         * clean1 的总体运行逻辑严格回到 v0.1-test2。
+         * 唯一例外是：把 test4 已由用户实机确认有效的 ResJM.Lib 多语言最终兜底单独移植回来。
          *
-         * 这里继续先把 g_steam_environment 置为 FALSE，不提前改变原有时序；真正到 GAMEPLAY HUD 成熟以后，
-         * try_steam_delayed_ui_sync() 再按原逻辑 late-detect。这样 test2 只修 Display/Font 配置耦合，不把
-         * Steam 兼容也偷偷变成第二个实验变量。日志也改成准确描述“暂定 / 延后检测”，不再宣称完全禁用。
+         * 注意这里安装语言 shim 后，仍然把 g_steam_environment 设回 FALSE，保持 test2 原本的
+         * “成熟 GAMEPLAY HUD 阶段再 late-detect Steam delayed-JMM 路径”行为不变。
+         * 也就是说 clean1 没有偷偷带回 test3~test9 的任何其它 Steam 实验。
          */
+        if (install_steam_resjm_language_shim(&text_region)) {
+            log_line("[OK] Steam multilingual ResJM.Lib CreateFileA fallback installed");
+        } else {
+            log_line("[WARN] Steam ResJM.Lib fallback signature not ready/matched; no other Steam experiment is installed");
+        }
+
         g_steam_environment = FALSE;
-        log_line("[INFO] WaiZhuan Steam/ComeOn.dll detected; Steam path remains provisional and is re-detected only at mature GAMEPLAY HUD");
+        log_line("[INFO] WaiZhuan Steam/ComeOn.dll detected; clean1 otherwise keeps the original test2 Steam timing");
+        log_line("[INFO] No test3-test9 DirectShow/OpenGL/MovieManager/watchdog/teardown experiment is active");
     } else {
         g_steam_environment = FALSE;
         log_line("[INFO] WaiZhuan non-Steam environment detected");

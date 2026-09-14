@@ -5,6 +5,8 @@ DisplayFix_WaiZhuan：外传 ComeOn.exe 兼容性只读检查工具。
 这个工具只读取 EXE，不写入任何字节，也不会生成补丁版 EXE。DisplayFix 不再用整个文件的
 SHA-256 白名单锁版本，而是检查运行时真正依赖的机器码、调用关系和 vtable 结构是否仍然成立。
 
+v0.1-clean1 以 v0.1-test2 的纯净代码结构为基线，并额外验证 test4 已实机通过的 ResJM.Lib CreateFileA 调用点；其余 test3-test9 影片/OpenGL 实验不属于当前运行基线。
+
 v0.1-test2 继续以本传 v0.3 的最终结构为参考，但所有关键地址/调用链都重新从外传 EXE 验证。test15 在 test14 已经闭合的 Strategy enter / force=1 证据之上，新增“原版前端 mode 4”交叉验证：
 
 1. 0x00404A00 风格状态切换函数必须唯一存在；
@@ -105,6 +107,21 @@ RES_MAP2 = bytes([
     0x68, 0x80, 0x02, 0x00, 0x00,
 ])
 RES_MAP2_MASK = "xxxxxxxxxxxxxxx????xxxxxxxxxxxxxxx????x????xxxxxxxxxxxx"
+
+# v0.1-clean1：Steam 多语言兜底依赖的低层 CreateFileA 调用上下文。
+# 关键指令是中间的 `FF 15 E4 11 55 00`，也就是通过游戏 IAT 0x005511E4 调用 CreateFileA。
+# clean1 只把这一条 6 字节 CALL 等长改成 rel32 CALL + NOP，不修改 IAT 本身。
+RESJM_CREATEFILE_CALL = bytes([
+    0xFF,0x75,0xF0,
+    0xFF,0x75,0xF4,
+    0xFF,0x75,0x08,
+    0xFF,0x15,0xE4,0x11,0x55,0x00,
+    0x8B,0xF0,
+    0x3B,0xF7,
+    0x75,0x14,
+    0xFF,0x15,0xF0,0x11,0x55,0x00,
+])
+RESJM_CREATEFILE_CALL_MASK = "x" * len(RESJM_CREATEFILE_CALL)
 
 # 0x4B363B 一带 JMM 布局文件选择器。
 # JMMDL.txt 的绝对字符串地址用 ? 通配，避免把资源地址误当成兼容门槛。
@@ -754,6 +771,14 @@ def verify_one(path: Path) -> list[str]:
         raise RuntimeError("ID 0x0B 与 0x0E 分支使用的 active 查询函数不同。")
 
 
+    # clean1 额外确认 Steam 多语言最终兜底所依赖的 CreateFileA 调用上下文仍然唯一存在。
+    # 这里只读验证 EXE，不修改任何字节。真正的 ASI 运行时补丁只在检测到 ComeOn.dll 的 Steam 环境安装。
+    resjm_call_off = require_unique(
+        "ResJM.Lib CreateFileA 调用上下文",
+        find_masked(text_data, RESJM_CREATEFILE_CALL, RESJM_CREATEFILE_CALL_MASK),
+    )
+    resjm_call_va = image_base + text_rva + resjm_call_off + 9
+
     # 读出当前内部/隐藏分支宽高，便于识别这是原版还是哪一种外部宽屏改版。
     hidden_width = u32(text_data, mode_off + 17)
     hidden_height = u32(text_data, mode_off + 27)
@@ -776,6 +801,7 @@ def verify_one(path: Path) -> list[str]:
         f"JMM 布局选择器 VA=0x{image_base + text_rva + jmm_off:08X}",
         f"GUI/JMM 分辨率应用包装 VA=0x{jmm_apply_va:08X} -> JMM/UI 广播 0x{jmm_load_va:08X}（test10 Steam delayed JMM 上下文）",
         f"JMM 资源路径构造 VA=0x{jmm_path_builder_va:08X} -> 资源根缓冲区 0x{resource_root_va:08X}",
+        f"ResJM.Lib CreateFileA 低层 CALL VA=0x{resjm_call_va:08X}（clean1 语言兜底依赖；IAT 0x005511E4 保持原样）",
         f"世界鼠标按下 callsite VA=0x{world_press_va:08X} -> 0x{world_press_target_va:08X}（仅点击穿透保护，不参与 gameplay gate）",
         f"全局鼠标释放 callsite VA=0x{global_release_va:08X} -> 0x{global_release_target_va:08X}（顶部窗口 fallback）",
         f"主 HUD 根类构造 VA=0x{hud_va:08X}",
