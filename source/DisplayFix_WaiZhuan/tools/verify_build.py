@@ -12,9 +12,10 @@ DisplayFix 构建结果检查工具。
 5. 当前架构故意不让 ASI 自己带 Windows DLL 导入表，因此 Import Directory 必须为 0；
 6. 同目录的 DisplayFix.ini 必须存在、能以 UTF-8 解析，并且正式成品禁止 UTF-8 BOM；
 7. 仓库内源码、脚本、配置和 Markdown 文本统一禁止 UTF-8 BOM，BAT 额外必须是 CRLF；
-8. v0.2.0 必须继续保留 clean1 的 test4 ResJM.Lib 多语言调用点 shim；
-9. v0.2.0 只允许保留已实机闭环的 ComeOn.dll CreateWindowExA class-atom 安全 guard；
-10. test3-test9 的 DirectShow/OpenGL/MovieManager/watchdog/teardown/worker 历史失败代码不得回到当前运行路径。
+8. v0.2.1 必须继续保留 v0.2.0 的 test4 ResJM.Lib 多语言调用点 shim；
+9. v0.2.1 必须继续保留 v0.2.0 已实机闭环的 ComeOn.dll CreateWindowExA class-atom 安全 guard；
+10. test3-test9 的 DirectShow/OpenGL/MovieManager/watchdog/teardown/worker 历史失败代码不得回到当前运行路径；
+11. v0.2.1 的 DisplayFix.log 运行日志必须使用简体中文等级和正文，不能残留旧版英文日志标签。
 
 代码里的每一步都写了较细的中文说明，方便以后换编译器或接档时核对。
 """
@@ -25,6 +26,9 @@ from pathlib import Path
 
 # hashlib 只用来计算 SHA-256，方便把最终二进制指纹写进测试记录。
 import hashlib
+
+# re 用来只提取 C 源码里的字符串字面量，避免把历史注释里的英文旧日志误判为运行日志。
+import re
 
 # struct 用来按“小端整数”读取 PE 文件头。
 # x86 Windows PE 本来就是小端格式。
@@ -236,6 +240,12 @@ def validate_build_bat(build_bat: Path) -> list[str]:
     if "vc\\tools\\llvm\\x64\\bin" not in lower:
         raise RuntimeError("build.bat 必须显式保留 Visual Studio Llvm\\x64\\bin 回退路径。")
 
+    # v0.3.2 / v0.2.1 开始，DisplayFix.log 使用中文 UTF-8 窄字符串。
+    # 源码本身又按项目规则禁止 BOM，因此这里显式要求 clang 固定输入与执行字符集为 UTF-8，
+    # 防止不同 Windows 系统代码页把中文字符串编译成不同字节。
+    if "-finput-charset=utf-8" not in lower or "-fexec-charset=utf-8" not in lower:
+        raise RuntimeError("build.bat 必须显式指定 -finput-charset=UTF-8 和 -fexec-charset=UTF-8。")
+
     # 用户明确要求：所有有正文的 REM / echo 行末尾必须保留两个半角空格。
     for line_number, line in enumerate(text.splitlines(), start=1):
         stripped = line.lstrip()
@@ -252,6 +262,7 @@ def validate_build_bat(build_bat: Path) -> list[str]:
         "build.bat UTF-8 无 BOM + CRLF",
         "未使用 where /r 递归扫描 LLVM",
         "Visual Studio 回退固定为 Llvm\\x64\\bin",
+        "clang 输入/执行字符集固定为 UTF-8",
         "所有有正文的 REM/echo 行末尾均有两个半角空格",
     ]
 
@@ -331,15 +342,15 @@ def validate_font_display_independence(source_path: Path) -> list[str]:
     return ["Font.FixDPI 与 Display.Enable 初始化顺序独立（字体先执行，Display gate 后判断）"]
 
 
-def validate_v020_stable_steam_scope(source_path: Path) -> list[str]:
+def validate_v021_stable_steam_scope(source_path: Path) -> list[str]:
     """
-    检查 v0.2.0 正式封版的 Steam/OpenGL 最小修复边界。
+    检查 v0.2.1 继续继承的 v0.2.0 Steam/OpenGL 最小修复边界。
 
     已有实机证据：
     - test1 只 neutralize callback 后处理时 OpenGL 成功；
     - test2 只禁止 EDIT WndProc 子类化时 OpenGL 重新崩溃。
 
-    正式版必须恢复官方 EDIT 处理，只修 CreateWindowExA callback 对 lpClassName 的 API 语义错误：
+    v0.2.1 只改日志，运行逻辑必须继续恢复官方 EDIT 处理，并只修 CreateWindowExA callback 对 lpClassName 的 API 语义错误：
     lpClassName 可以是字符串，也可以是高 16 位为 0 的 class atom。ComeOn.dll 原 callback 会直接解引用它。
 
     当前允许的新增改动只有：
@@ -356,13 +367,13 @@ def validate_v020_stable_steam_scope(source_path: Path) -> list[str]:
     text = source_path.read_text(encoding="utf-8")
 
     required = (
-        "DisplayFix WaiZhuan v0.2.0",
+        "DisplayFix 外传 v0.2.1",
         "install_steam_resjm_language_shim",
         "steam_create_file_a_shim",
         'str_equal_icase(base_name, "ResJM.Lib")',
         "CREATE_FILE_CALL_PATTERN",
         "0xFF,0x15,0xE4,0x11,0x55,0x00",
-        "Steam multilingual ResJM.Lib CreateFileA fallback installed",
+        "Steam多语言 ResJM.Lib CreateFileA 兜底已安装",
         "steam_createwindow_class_atom_guard",
         "install_steam_createwindow_class_atom_guard",
         "steam_base + 0x2841u",
@@ -370,12 +381,12 @@ def validate_v020_stable_steam_scope(source_path: Path) -> list[str]:
         "steam_base + 0x28A1u",
         "cmp ecx, 10000h",
         "g_steam_class_atom_bypass_count",
-        "Steam ComeOn.dll CreateWindowExA class-atom compatibility fix installed; official EDIT handling remains intact",
-        "launcher-controlled Steam opening movie is outside DisplayFix scope; no historical movie experiment is active",
+        "Steam ComeOn.dll CreateWindowExA 类Atom兼容修复已安装；官方EDIT处理保持完整",
+        "Steam启动器控制的开场动画不属于DisplayFix职责；当前未启用任何历史影片实验",
     )
     for marker in required:
         if marker not in text:
-            raise RuntimeError(f"v0.2.0 缺少必要源码锚点：{marker}")
+            raise RuntimeError(f"v0.2.1 缺少必要源码锚点：{marker}")
 
     # test1 过宽隔离与 test2 错误收缩都必须离开当前运行源码。
     forbidden_old_scope = (
@@ -391,7 +402,7 @@ def validate_v020_stable_steam_scope(source_path: Path) -> list[str]:
     )
     for marker in forbidden_old_scope:
         if marker in text:
-            raise RuntimeError(f"v0.2.0 仍残留 test1/test2 旧隔离代码：{marker}")
+            raise RuntimeError(f"v0.2.1 仍残留 test1/test2 旧隔离代码：{marker}")
 
     # test3~test9 的旧影片/OpenGL实验入口继续禁止回归。
     forbidden_history = (
@@ -406,24 +417,59 @@ def validate_v020_stable_steam_scope(source_path: Path) -> list[str]:
     )
     for marker in forbidden_history:
         if marker in text:
-            raise RuntimeError(f"v0.2.0 混入了历史失败影片实验代码：{marker}")
+            raise RuntimeError(f"v0.2.1 混入了历史失败影片实验代码：{marker}")
 
     # 官方 EDIT 逻辑必须仍然留在 ComeOn.dll 原始路径；当前源码不能再主动禁 SetWindowLongA。
-    if "official EDIT handling remains intact" not in text:
-        raise RuntimeError("v0.2.0 没有明确保留官方 EDIT WndProc 路径。")
+    if "官方EDIT处理保持完整" not in text:
+        raise RuntimeError("v0.2.1 没有明确保留官方 EDIT WndProc 路径。")
 
     # 语言兜底仍然只能改游戏低层 CALL，不能改写 CreateFileA IAT。
     if "g_steam_create_file_callsite" not in text:
-        raise RuntimeError("v0.2.0 缺少 ResJM CreateFileA 调用点记录。")
+        raise RuntimeError("v0.2.1 缺少 ResJM CreateFileA 调用点记录。")
     if "GAME_CreateFileA =" in text or "GAME_CREATE_FILE_IAT_ADDRESS" in text:
-        raise RuntimeError("v0.2.0 疑似重新尝试改写 CreateFileA IAT；当前只允许低层调用点 shim。")
+        raise RuntimeError("v0.2.1 疑似重新尝试改写 CreateFileA IAT；当前只允许低层调用点 shim。")
 
     return [
-        "v0.2.0 封版范围正确：clean1/test2 主体 + test4 ResJM 语言兜底 + 已闭环的 CreateWindowExA class-atom guard",
+        "v0.2.1 运行范围正确：v0.2.0 稳定逻辑完整保留，仅日志中文化",
         "ComeOn.dll 全局 CreateWindowExA Hook 与官方 EDIT WndProc 路径均保留",
         "只对 NULL/MAKEINTATOM 类名跳过 ComeOn.dll 的字符串解引用与 EDIT 后处理",
         "test1/test2 旧隔离代码及 test3-test9 影片失败实验均未回到当前运行源码",
     ]
+
+
+def validate_chinese_runtime_logging(source_path: Path, expected_version: str) -> list[str]:
+    """
+    检查真正编译进 ASI 的 C 字符串字面量是否已经完成日志中文化。
+
+    这里故意只分析双引号字符串，不直接搜索整个源码：历史研究注释里需要保留旧版英文日志，
+    如果直接全文查 `[RUNTIME]` 会把正确保留的历史证据误报成回归。
+
+    当前规则：
+    1. 正式版本标题必须存在；
+    2. 新日志必须至少包含 [成功]/[信息]/[失败]/[运行] 四类中文等级；
+    3. 任何会编译进二进制的旧 [OK]/[INFO]/[WARN]/[FAIL]/[RUNTIME] 标签都禁止存在。
+    """
+
+    if not source_path.is_file():
+        raise RuntimeError(f"缺少主源码：{source_path}")
+
+    text = source_path.read_text(encoding="utf-8")
+    literals = re.findall(r'"((?:[^"\\]|\\.)*)"', text)
+
+    if expected_version not in literals:
+        raise RuntimeError(f"缺少当前中文日志版本标题：{expected_version}")
+
+    joined = "\n".join(literals)
+    for marker in ("[成功]", "[信息]", "[失败]", "[运行]"):
+        if marker not in joined:
+            raise RuntimeError(f"中文日志缺少等级标记：{marker}")
+
+    forbidden = ("[OK]", "[INFO]", "[WARN]", "[FAIL]", "[RUNTIME]")
+    for marker in forbidden:
+        if marker in joined:
+            raise RuntimeError(f"运行时字符串仍残留旧版英文日志标签：{marker}")
+
+    return ["DisplayFix.log 运行时字符串已全面中文化，旧英文日志标签=0"]
 
 def main() -> int:
     """命令行入口。成功返回 0，失败返回 1。"""
@@ -447,7 +493,7 @@ def main() -> int:
 
         ini_lines = validate_ini(ini_path)
 
-        # build.bat 与本工具固定同属 source\\DisplayFix_DaoJian；这里顺便验证构建脚本自身。
+        # build.bat 与本工具固定同属 source\\DisplayFix_WaiZhuan；这里顺便验证构建脚本自身。
         build_bat = Path(__file__).resolve().parents[1] / "build.bat"
         build_lines = validate_build_bat(build_bat)
 
@@ -456,10 +502,11 @@ def main() -> int:
 
         # v0.1-test2 新增：确保字体修复永远先于 Display.Enable 的提前退出。
         source_path = Path(__file__).resolve().parents[1] / "src" / "DisplayFix.c"
+        logging_lines = validate_chinese_runtime_logging(source_path, "DisplayFix 外传 v0.2.1")
         independence_lines = validate_font_display_independence(source_path)
 
-        # v0.2.0：只允许保留已实机闭环的 CreateWindowExA class-atom 安全修复，不再禁用官方 EDIT WndProc。
-        stable_scope_lines = validate_v020_stable_steam_scope(source_path)
+        # v0.2.1：继续只允许已实机闭环的 CreateWindowExA class-atom 安全修复；本轮只改日志。
+        stable_scope_lines = validate_v021_stable_steam_scope(source_path)
 
         print(f"[验证目标] {asi_path}")
         for line in lines:
@@ -473,6 +520,8 @@ def main() -> int:
         for line in independence_lines:
             print(f"[通过] {line}")
         for line in stable_scope_lines:
+            print(f"[通过] {line}")
+        for line in logging_lines:
             print(f"[通过] {line}")
         print(f"[通过] 配置文件：{ini_path.name}")
         return 0

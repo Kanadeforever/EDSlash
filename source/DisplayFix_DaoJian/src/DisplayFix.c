@@ -2,7 +2,18 @@
  * DisplayFix.c
  *
  * 《刀剑封魔录》ComeOn.exe 显示修复 ASI 插件。
- * 当前版本：v0.3.1（v0.3 封版后的配置解耦修正版）
+ * 当前版本：v0.3.2（v0.3.1 稳定运行逻辑不变，仅把 DisplayFix.log 全面中文化）
+ *
+ * v0.3.2 不修改任何地址、签名、Hook、HUD、输入、Steam JMM、Strategy 生命周期或 INI 语义。
+ * 本轮唯一运行时变化是日志文本：
+ *   - 日志等级统一由 [OK]/[INFO]/[WARN]/[FAIL]/[RUNTIME] 改成 [成功]/[信息]/[警告]/[失败]/[运行]；
+ *   - 初始化、分辨率、HUD、输入、Steam/JMM 诊断字段全部改为简体中文；
+ *   - 关键技术名（Strategy、FRONTEND、GAMEPLAY、JMM、HUD、Steam、ComeOn.dll、配置键名）保留英文，
+ *     这样既方便中文阅读，也方便继续和逆向地址、源码变量及历史日志对应。
+ *
+ * 日志文件仍然是 UTF-8 无 BOM。build.bat 显式指定 UTF-8 源码/执行字符集，保证中文窄字符串
+ * 以 UTF-8 字节写入 DisplayFix.log，不依赖 Windows 当前 ANSI 代码页。
+ *
  *
  * v0.3.1 只修复一个已经由外传移植测试反向发现、随后确认本传同样存在的配置层问题：
  *   - 旧版在 [Display] Enable=0 时，会在初始化早期直接 return；
@@ -41,8 +52,8 @@
  * ----------------------------------------------------------------------------------------------
  *
  * test13 的实机日志新增了一条决定性证据：
- *   [RUNTIME] Strategy enter state=3 GAMEPLAY profile=ready
- *   [RUNTIME] Strategy enter original apply finished live=640x480
+ *   [运行] Strategy进入 状态=3 GAMEPLAY配置=就绪
+ *   [运行] Strategy进入 原版应用完成 实际=640x480
  *
  * 这说明 test13 的 Strategy gate 本身已经命中正确时机，但 0x00407000 调 0x00404D30 时传入 force=0。
  * 原版 0x00404D30 会先比较 self+0x04 的“当前 mode ID”和这次请求的 mode ID；二者相同且 force=0 时，
@@ -132,6 +143,7 @@
  *             进入日志 live=854x480 / expected=854x480 / force=1，退出日志 live=640x480 / expected=640x480。
  *   - v0.3：不再扩大运行时修改范围，直接以 test15 的实机通过代码封版。
  *   - v0.3.1：仅修正 Font.FixDPI 与 Display.Enable 的错误耦合；其它 v0.3 运行时路径保持不变。
+ *   - v0.3.2：只把 DisplayFix.log 全面中文化；不改变任何已实机通过的运行逻辑。
  *
  * 代码里的注释故意写得非常细，目标是让只学过一天编程的人也能顺着看懂每一步。
  */
@@ -1562,21 +1574,21 @@ static void append_child_brief(char* line, DWORD line_size, LPVOID child)
     DWORD control_id;
 
     if (!child) {
-        str_append(line, line_size, "none");
+        str_append(line, line_size, "无");
         return;
     }
 
     control_id = *(DWORD*)((BYTE*)child + UI_OBJECT_CONTROL_ID);
 
-    str_append(line, line_size, "ptr=");
+    str_append(line, line_size, "指针=");
     append_hex32(line, line_size, (DWORD)child);
-    str_append(line, line_size, " id=");
+    str_append(line, line_size, " ID=");
     append_hex32(line, line_size, control_id);
-    str_append(line, line_size, " active=");
+    str_append(line, line_size, " 激活=");
     append_int(line, line_size, child_active_for_diagnostic(child) ? 1 : 0);
 
     if (read_child_rect(child, &rect)) {
-        str_append(line, line_size, " rect=");
+        str_append(line, line_size, " 矩形=");
         append_int(line, line_size, rect.left);
         str_append(line, line_size, ",");
         append_int(line, line_size, rect.top);
@@ -1585,7 +1597,7 @@ static void append_child_brief(char* line, DWORD line_size, LPVOID child)
         str_append(line, line_size, ",");
         append_int(line, line_size, rect.bottom);
     } else {
-        str_append(line, line_size, " rect=invalid");
+        str_append(line, line_size, " 矩形=无效");
     }
 }
 
@@ -1609,7 +1621,7 @@ static void log_hud_candidate_children(LPVOID self)
         if (control_id >= 0x09u && control_id <= 0x10u) {
             char line[384];
             line[0] = '\0';
-            str_append(line, (DWORD)sizeof(line), "[RUNTIME] HUD candidate ");
+            str_append(line, (DWORD)sizeof(line), "[运行] HUD候选 ");
             append_child_brief(line, (DWORD)sizeof(line), child);
             append_runtime_line(line);
         }
@@ -1711,13 +1723,13 @@ static void __fastcall strategy_enter_hook(LPVOID self, LPVOID unused_edx)
     if (g_strategy_enter_log_count < 4u) {
         ++g_strategy_enter_log_count;
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[RUNTIME] Strategy enter state=");
+        str_append(line, (DWORD)sizeof(line), "[运行] Strategy进入 状态=");
         if (self) {
             append_int(line, (DWORD)sizeof(line), *(LONG*)((BYTE*)self + 0x0Cu));
         } else {
             append_int(line, (DWORD)sizeof(line), -1);
         }
-        str_append(line, (DWORD)sizeof(line), profile_ok ? " GAMEPLAY profile=ready" : " GAMEPLAY profile=FAILED");
+        str_append(line, (DWORD)sizeof(line), profile_ok ? " GAMEPLAY配置=就绪" : " GAMEPLAY配置=失败");
         append_runtime_line(line);
     }
 
@@ -1747,7 +1759,7 @@ static void __fastcall strategy_enter_hook(LPVOID self, LPVOID unused_edx)
      * 这里立刻回退 FRONTEND profile，让游戏至少保持原生 4:3 可玩，而不是产生 test13 那种 GUI 大错位。
      */
     if (profile_ok && !force_patch_ok) {
-        append_runtime_line("[RUNTIME] Strategy enter force-reapply patch FAILED; fall back to FRONTEND profile");
+        append_runtime_line("[运行] Strategy进入：强制重应用补丁失败；回退到FRONTEND配置");
         set_frontend_resolution_profile();
         profile_ok = FALSE;
     }
@@ -1767,7 +1779,7 @@ static void __fastcall strategy_enter_hook(LPVOID self, LPVOID unused_edx)
     if (force_patch_ok) {
         force_restore_ok = patch_bytes(g_strategy_enter_force_immediate, &g_strategy_enter_force_original, 1u);
         if (!force_restore_ok) {
-            append_runtime_line("[RUNTIME] Strategy enter force-reapply restore FAILED; 0x407000 remains force=1");
+            append_runtime_line("[运行] Strategy进入：强制重应用字节恢复失败；0x407000仍保持强制=1");
         }
     }
 
@@ -1780,19 +1792,19 @@ static void __fastcall strategy_enter_hook(LPVOID self, LPVOID unused_edx)
         (*(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_HEIGHT_OFFSET) == (LONG)g_target_height);
 
     line[0] = '\0';
-    str_append(line, (DWORD)sizeof(line), "[RUNTIME] Strategy enter original apply finished live=");
+    str_append(line, (DWORD)sizeof(line), "[运行] Strategy进入 原版应用完成 实际=");
     append_int(line, (DWORD)sizeof(line), *(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_WIDTH_OFFSET));
     str_append(line, (DWORD)sizeof(line), "x");
     append_int(line, (DWORD)sizeof(line), *(LONG*)((BYTE*)GAME_DISPLAY_MANAGER + DISPLAY_CURRENT_HEIGHT_OFFSET));
-    str_append(line, (DWORD)sizeof(line), " expected=");
+    str_append(line, (DWORD)sizeof(line), " 目标=");
     append_int(line, (DWORD)sizeof(line), (LONG)g_target_width);
     str_append(line, (DWORD)sizeof(line), "x");
     append_int(line, (DWORD)sizeof(line), (LONG)g_target_height);
-    str_append(line, (DWORD)sizeof(line), force_patch_ok ? " force=1" : " force=0");
+    str_append(line, (DWORD)sizeof(line), force_patch_ok ? " 强制=1" : " 强制=0");
     append_runtime_line(line);
 
     if (profile_ok && !live_matches_target) {
-        append_runtime_line("[RUNTIME] Strategy enter live-size mismatch; disable GAMEPLAY HUD/JMM and restore FRONTEND code profile");
+        append_runtime_line("[运行] Strategy进入：实际分辨率与目标不符；禁用GAMEPLAY HUD/JMM并恢复FRONTEND代码配置");
         set_frontend_resolution_profile();
     }
 }
@@ -1922,16 +1934,16 @@ static void __fastcall strategy_exit_hook(LPVOID self, LPVOID unused_edx)
     if (g_strategy_exit_log_count < 4u) {
         ++g_strategy_exit_log_count;
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[RUNTIME] Strategy exit old_state=");
+        str_append(line, (DWORD)sizeof(line), "[运行] Strategy退出 原状态=");
         append_int(line, (DWORD)sizeof(line), old_state);
-        str_append(line, (DWORD)sizeof(line), profile_ok ? " FRONTEND profile=restored" : " FRONTEND profile=FAILED");
-        str_append(line, (DWORD)sizeof(line), " reset_mode=4 result=");
+        str_append(line, (DWORD)sizeof(line), profile_ok ? " FRONTEND配置=已恢复" : " FRONTEND配置=失败");
+        str_append(line, (DWORD)sizeof(line), " 重置模式=4 结果=");
         append_int(line, (DWORD)sizeof(line), (LONG)reset_result);
-        str_append(line, (DWORD)sizeof(line), " live=");
+        str_append(line, (DWORD)sizeof(line), " 实际=");
         append_int(line, (DWORD)sizeof(line), live_width);
         str_append(line, (DWORD)sizeof(line), "x");
         append_int(line, (DWORD)sizeof(line), live_height);
-        str_append(line, (DWORD)sizeof(line), " expected=");
+        str_append(line, (DWORD)sizeof(line), " 目标=");
         append_int(line, (DWORD)sizeof(line), expected_width);
         str_append(line, (DWORD)sizeof(line), "x");
         append_int(line, (DWORD)sizeof(line), expected_height);
@@ -1939,7 +1951,7 @@ static void __fastcall strategy_exit_hook(LPVOID self, LPVOID unused_edx)
     }
 
     if (!live_matches_frontend) {
-        append_runtime_line("[RUNTIME] Strategy exit FRONTEND force-reset FAILED; title may remain on gameplay surface");
+        append_runtime_line("[运行] Strategy退出：FRONTEND强制重置失败；标题界面可能仍停留在游戏内Surface");
     }
 }
 
@@ -1993,7 +2005,7 @@ static int __fastcall main_hud_layout_hook(LPVOID self, LPVOID unused_edx, LONG 
     if (!g_gameplay_profile_active) {
         if (g_frontend_hud_skip_log_count < 2u) {
             ++g_frontend_hud_skip_log_count;
-            append_runtime_line("[RUNTIME] FRONTEND HUD auto-layout: keep original 4:3 layout; no centering/JMM sync");
+            append_runtime_line("[运行] FRONTEND HUD自动布局：保持原版4:3布局；不执行居中/JMM同步");
         }
         return result;
     }
@@ -2026,13 +2038,13 @@ static int __fastcall main_hud_layout_hook(LPVOID self, LPVOID unused_edx, LONG 
         char line[320];
         ++g_hud_layout_log_count;
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[RUNTIME] HUD layout self=");
+        str_append(line, (DWORD)sizeof(line), "[运行] HUD布局 对象=");
         append_hex32(line, (DWORD)sizeof(line), (DWORD)self);
-        str_append(line, (DWORD)sizeof(line), " root=");
+        str_append(line, (DWORD)sizeof(line), " 根坐标=");
         append_int(line, (DWORD)sizeof(line), *(LONG*)((BYTE*)self + UI_OBJECT_X_OFFSET));
         str_append(line, (DWORD)sizeof(line), ",");
         append_int(line, (DWORD)sizeof(line), *(LONG*)((BYTE*)self + UI_OBJECT_Y_OFFSET));
-        str_append(line, (DWORD)sizeof(line), " delta=");
+        str_append(line, (DWORD)sizeof(line), " 偏移=");
         append_int(line, (DWORD)sizeof(line), center_delta);
         append_runtime_line(line);
     }
@@ -2048,10 +2060,10 @@ static void append_candidates_at_point(char* line, DWORD line_size, LPVOID self,
     LPVOID child;
     BOOL found = FALSE;
 
-    str_append(line, line_size, " contains=");
+    str_append(line, line_size, " 包含=");
 
     if (!self) {
-        str_append(line, line_size, "none");
+        str_append(line, line_size, "无");
         return;
     }
 
@@ -2067,14 +2079,14 @@ static void append_candidates_at_point(char* line, DWORD line_size, LPVOID self,
             found = TRUE;
             str_append(line, line_size, "[");
             append_hex32(line, line_size, control_id);
-            str_append(line, line_size, child_active_for_diagnostic(child) ? " active]" : " inactive]");
+            str_append(line, line_size, child_active_for_diagnostic(child) ? " 激活]" : " 未激活]");
         }
 
         child = *(LPVOID*)((BYTE*)child + UI_OBJECT_NEXT_OFFSET);
     }
 
     if (!found) {
-        str_append(line, line_size, "none");
+        str_append(line, line_size, "无");
     }
 }
 
@@ -2112,17 +2124,17 @@ static void append_ui_target_brief(char* line, DWORD line_size, LPVOID object)
     HudRect rect;
 
     if (!object) {
-        str_append(line, line_size, "none");
+        str_append(line, line_size, "无");
         return;
     }
 
-    str_append(line, line_size, "ptr=");
+    str_append(line, line_size, "指针=");
     append_hex32(line, line_size, (DWORD)object);
-    str_append(line, line_size, " active=");
+    str_append(line, line_size, " 激活=");
     append_int(line, line_size, ui_object_active_for_diagnostic(object) ? 1 : 0);
 
     if (read_child_rect(object, &rect)) {
-        str_append(line, line_size, " rect=");
+        str_append(line, line_size, " 矩形=");
         append_int(line, line_size, rect.left);
         str_append(line, line_size, ",");
         append_int(line, line_size, rect.top);
@@ -2131,7 +2143,7 @@ static void append_ui_target_brief(char* line, DWORD line_size, LPVOID object)
         str_append(line, line_size, ",");
         append_int(line, line_size, rect.bottom);
     } else {
-        str_append(line, line_size, " rect=invalid");
+        str_append(line, line_size, " 矩形=无效");
     }
 }
 
@@ -2281,15 +2293,15 @@ static void __fastcall world_mouse_press_hook(LPVOID self, LPVOID unused_edx,
         char line[640];
         ++g_world_press_log_count;
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[RUNTIME] WORLD press arg=");
+        str_append(line, (DWORD)sizeof(line), "[运行] 世界鼠标按下 参数坐标=");
         append_int(line, (DWORD)sizeof(line), mouse_x);
         str_append(line, (DWORD)sizeof(line), ",");
         append_int(line, (DWORD)sizeof(line), mouse_y);
-        str_append(line, (DWORD)sizeof(line), " top_id=");
+        str_append(line, (DWORD)sizeof(line), " 顶层ID=");
         append_hex32(line, (DWORD)sizeof(line), hit_id);
-        str_append(line, (DWORD)sizeof(line), " child=");
+        str_append(line, (DWORD)sizeof(line), " 子控件=");
         append_child_brief(line, (DWORD)sizeof(line), hit_child);
-        str_append(line, (DWORD)sizeof(line), " block_world=");
+        str_append(line, (DWORD)sizeof(line), " 阻止世界输入=");
         append_int(line, (DWORD)sizeof(line), block_world ? 1 : 0);
         append_runtime_line(line);
     }
@@ -2396,26 +2408,26 @@ static int __fastcall ui_manager_mouse_release_hook(LPVOID self, LPVOID unused_e
         char line[1024];
         ++g_global_release_log_count;
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[RUNTIME] GLOBAL release arg=");
+        str_append(line, (DWORD)sizeof(line), "[运行] 全局鼠标释放 参数坐标=");
         append_int(line, (DWORD)sizeof(line), mouse_x);
         str_append(line, (DWORD)sizeof(line), ",");
         append_int(line, (DWORD)sizeof(line), mouse_y);
-        str_append(line, (DWORD)sizeof(line), " test=");
+        str_append(line, (DWORD)sizeof(line), " 测试坐标=");
         append_int(line, (DWORD)sizeof(line), test_x);
         str_append(line, (DWORD)sizeof(line), ",");
         append_int(line, (DWORD)sizeof(line), test_y);
-        str_append(line, (DWORD)sizeof(line), have_cursor ? " cursor=ok" : " cursor=fallback-arg");
-        str_append(line, (DWORD)sizeof(line), " top_id=");
+        str_append(line, (DWORD)sizeof(line), have_cursor ? " 光标=可用" : " 光标=回退到参数");
+        str_append(line, (DWORD)sizeof(line), " 顶层ID=");
         append_hex32(line, (DWORD)sizeof(line), hit_id);
-        str_append(line, (DWORD)sizeof(line), " child=");
+        str_append(line, (DWORD)sizeof(line), " 子控件=");
         append_child_brief(line, (DWORD)sizeof(line), hit_child);
-        str_append(line, (DWORD)sizeof(line), " target_before=");
+        str_append(line, (DWORD)sizeof(line), " 目标前=");
         append_ui_target_brief(line, (DWORD)sizeof(line), target_before);
-        str_append(line, (DWORD)sizeof(line), " target_after=");
+        str_append(line, (DWORD)sizeof(line), " 目标后=");
         append_ui_target_brief(line, (DWORD)sizeof(line), target_after);
-        str_append(line, (DWORD)sizeof(line), " original_result=");
+        str_append(line, (DWORD)sizeof(line), " 原版结果=");
         append_int(line, (DWORD)sizeof(line), original_result);
-        str_append(line, (DWORD)sizeof(line), " fallback=");
+        str_append(line, (DWORD)sizeof(line), " 兜底=");
         append_int(line, (DWORD)sizeof(line), fallback_used ? 1 : 0);
         append_runtime_line(line);
     }
@@ -2764,46 +2776,46 @@ static void __fastcall main_hud_event_hook(LPVOID self, LPVOID unused_edx,
     if (should_log) {
         char line[1536];
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[RUNTIME] HUD release arg=");
+        str_append(line, (DWORD)sizeof(line), "[运行] HUD鼠标释放 参数坐标=");
         append_int(line, (DWORD)sizeof(line), mouse_x);
         str_append(line, (DWORD)sizeof(line), ",");
         append_int(line, (DWORD)sizeof(line), mouse_y);
 
         if (have_point) {
-            str_append(line, (DWORD)sizeof(line), " cursor=");
+            str_append(line, (DWORD)sizeof(line), " 光标=");
             append_int(line, (DWORD)sizeof(line), point.x);
             str_append(line, (DWORD)sizeof(line), ",");
             append_int(line, (DWORD)sizeof(line), point.y);
         } else {
-            str_append(line, (DWORD)sizeof(line), " cursor=unavailable");
+            str_append(line, (DWORD)sizeof(line), " 光标=不可用");
         }
 
-        str_append(line, (DWORD)sizeof(line), " hit=");
+        str_append(line, (DWORD)sizeof(line), " 命中=");
         append_child_brief(line, (DWORD)sizeof(line), hit_child);
 
         if (have_point) {
             append_candidates_at_point(line, (DWORD)sizeof(line), self, point.x, point.y);
         }
 
-        str_append(line, (DWORD)sizeof(line), " target0B_before=");
+        str_append(line, (DWORD)sizeof(line), " 目标0B前=");
         append_ui_target_brief(line, (DWORD)sizeof(line), target_0b_before);
-        str_append(line, (DWORD)sizeof(line), " target0B_after=");
+        str_append(line, (DWORD)sizeof(line), " 目标0B后=");
         if (g_top_button_0b_target_slot) {
             append_ui_target_brief(line, (DWORD)sizeof(line), *g_top_button_0b_target_slot);
         } else {
-            str_append(line, (DWORD)sizeof(line), "slot-unavailable");
+            str_append(line, (DWORD)sizeof(line), "槽不可用");
         }
 
-        str_append(line, (DWORD)sizeof(line), " target0E_before=");
+        str_append(line, (DWORD)sizeof(line), " 目标0E前=");
         append_ui_target_brief(line, (DWORD)sizeof(line), target_0e_before);
-        str_append(line, (DWORD)sizeof(line), " target0E_after=");
+        str_append(line, (DWORD)sizeof(line), " 目标0E后=");
         if (g_top_button_0e_target_slot) {
             append_ui_target_brief(line, (DWORD)sizeof(line), *g_top_button_0e_target_slot);
         } else {
-            str_append(line, (DWORD)sizeof(line), "slot-unavailable");
+            str_append(line, (DWORD)sizeof(line), "槽不可用");
         }
 
-        str_append(line, (DWORD)sizeof(line), " fallback=");
+        str_append(line, (DWORD)sizeof(line), " 兜底=");
         append_int(line, (DWORD)sizeof(line), fallback_used ? 1 : 0);
         append_runtime_line(line);
     }
@@ -3222,13 +3234,13 @@ static int __fastcall jmm_load_hook(LPVOID self, LPVOID unused_edx, LONG mode, L
         char line[320];
         ++g_jmm_runtime_log_count;
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[RUNTIME] JMM apply mode=");
+        str_append(line, (DWORD)sizeof(line), "[运行] JMM应用 模式=");
         append_int(line, (DWORD)sizeof(line), mode);
-        str_append(line, (DWORD)sizeof(line), " input=");
+        str_append(line, (DWORD)sizeof(line), " 输入=");
         append_int(line, (DWORD)sizeof(line), width);
         str_append(line, (DWORD)sizeof(line), "x");
         append_int(line, (DWORD)sizeof(line), height);
-        str_append(line, (DWORD)sizeof(line), " final=");
+        str_append(line, (DWORD)sizeof(line), " 最终=");
         append_int(line, (DWORD)sizeof(line), final_width);
         str_append(line, (DWORD)sizeof(line), "x");
         append_int(line, (DWORD)sizeof(line), final_height);
@@ -3401,16 +3413,16 @@ static void broadcast_initial_ui_resolution(void)
     char line[384];
 
     if (!g_jmm_manager || g_target_width == 0u || g_target_height == 0u) {
-        append_runtime_line("[RUNTIME] startup UI broadcast skipped: prerequisites unavailable");
+        append_runtime_line("[运行] 启动期UI广播已跳过：前置条件不可用");
         return;
     }
 
     node = *(LPVOID*)((BYTE*)g_jmm_manager + 0x1Cu);
 
     line[0] = '\0';
-    str_append(line, (DWORD)sizeof(line), "[RUNTIME] startup UI broadcast begin manager=");
+    str_append(line, (DWORD)sizeof(line), "[运行] 启动期UI广播开始 管理器=");
     append_hex32(line, (DWORD)sizeof(line), (DWORD)g_jmm_manager);
-    str_append(line, (DWORD)sizeof(line), " target=");
+    str_append(line, (DWORD)sizeof(line), " 目标=");
     append_int(line, (DWORD)sizeof(line), (LONG)g_target_width);
     str_append(line, (DWORD)sizeof(line), "x");
     append_int(line, (DWORD)sizeof(line), (LONG)g_target_height);
@@ -3436,14 +3448,14 @@ static void broadcast_initial_ui_resolution(void)
     }
 
     line[0] = '\0';
-    str_append(line, (DWORD)sizeof(line), "[RUNTIME] startup UI broadcast end visited=");
+    str_append(line, (DWORD)sizeof(line), "[运行] 启动期UI广播结束 已遍历=");
     append_int(line, (DWORD)sizeof(line), (LONG)visited);
-    str_append(line, (DWORD)sizeof(line), " applied=");
+    str_append(line, (DWORD)sizeof(line), " 已应用=");
     append_int(line, (DWORD)sizeof(line), (LONG)applied);
     if (node) {
-        str_append(line, (DWORD)sizeof(line), " guard=hit");
+        str_append(line, (DWORD)sizeof(line), " 保护=命中");
     } else {
-        str_append(line, (DWORD)sizeof(line), " guard=ok");
+        str_append(line, (DWORD)sizeof(line), " 保护=正常");
     }
     append_runtime_line(line);
 }
@@ -3590,7 +3602,7 @@ static void try_steam_delayed_ui_sync(LPVOID hud)
     if (!g_steam_environment && GAME_GetModuleHandleA) {
         if (GAME_GetModuleHandleA("ComeOn.dll")) {
             g_steam_environment = TRUE;
-            append_runtime_line("[RUNTIME] Steam environment detected late: ComeOn.dll is now loaded");
+            append_runtime_line("[运行] 延迟检测到Steam环境：ComeOn.dll现已加载");
         }
     }
 
@@ -3613,7 +3625,7 @@ static void try_steam_delayed_ui_sync(LPVOID hud)
     if (!steam_jmm_resource_root_ready()) {
         if (!g_steam_ui_sync_wait_root_logged) {
             g_steam_ui_sync_wait_root_logged = TRUE;
-            append_runtime_line("[RUNTIME] Steam delayed JMM apply waiting: game resource root is not ready yet");
+            append_runtime_line("[运行] Steam延迟JMM应用等待中：游戏资源根节点尚未就绪");
         }
         return;
     }
@@ -3627,19 +3639,19 @@ static void try_steam_delayed_ui_sync(LPVOID hud)
     have_0e_before = read_child_rect(child_0e, &rect_0e_before);
 
     line[0] = '\0';
-    str_append(line, (DWORD)sizeof(line), "[RUNTIME] Steam delayed JMM apply begin attempt=");
+    str_append(line, (DWORD)sizeof(line), "[运行] Steam延迟JMM应用开始 尝试次数=");
     append_int(line, (DWORD)sizeof(line), (LONG)g_steam_ui_sync_attempts);
-    str_append(line, (DWORD)sizeof(line), " manager=");
+    str_append(line, (DWORD)sizeof(line), " 管理器=");
     append_hex32(line, (DWORD)sizeof(line), (DWORD)g_jmm_manager);
-    str_append(line, (DWORD)sizeof(line), " head=");
+    str_append(line, (DWORD)sizeof(line), " 头节点=");
     append_hex32(line, (DWORD)sizeof(line), (DWORD)list_head);
-    str_append(line, (DWORD)sizeof(line), " target=");
+    str_append(line, (DWORD)sizeof(line), " 目标=");
     append_int(line, (DWORD)sizeof(line), (LONG)g_target_width);
     str_append(line, (DWORD)sizeof(line), "x");
     append_int(line, (DWORD)sizeof(line), (LONG)g_target_height);
-    str_append(line, (DWORD)sizeof(line), " resource_root=ready id0B_before=");
+    str_append(line, (DWORD)sizeof(line), " 资源根=就绪 ID0B前=");
     append_child_brief(line, (DWORD)sizeof(line), child_0b);
-    str_append(line, (DWORD)sizeof(line), " id0E_before=");
+    str_append(line, (DWORD)sizeof(line), " ID0E前=");
     append_child_brief(line, (DWORD)sizeof(line), child_0e);
     append_runtime_line(line);
 
@@ -3671,13 +3683,13 @@ static void try_steam_delayed_ui_sync(LPVOID hud)
     }
 
     line[0] = '\0';
-    str_append(line, (DWORD)sizeof(line), "[RUNTIME] Steam delayed JMM apply end result=");
+    str_append(line, (DWORD)sizeof(line), "[运行] Steam延迟JMM应用结束 结果=");
     append_int(line, (DWORD)sizeof(line), result);
-    str_append(line, (DWORD)sizeof(line), g_steam_ui_sync_done ? " done=1" : " done=0");
-    str_append(line, (DWORD)sizeof(line), changed ? " child_layout_changed=1" : " child_layout_changed=0");
-    str_append(line, (DWORD)sizeof(line), " id0B_after=");
+    str_append(line, (DWORD)sizeof(line), g_steam_ui_sync_done ? " 完成=1" : " 完成=0");
+    str_append(line, (DWORD)sizeof(line), changed ? " 子布局已变化=1" : " 子布局已变化=0");
+    str_append(line, (DWORD)sizeof(line), " ID0B后=");
     append_child_brief(line, (DWORD)sizeof(line), child_0b);
-    str_append(line, (DWORD)sizeof(line), " id0E_after=");
+    str_append(line, (DWORD)sizeof(line), " ID0E后=");
     append_child_brief(line, (DWORD)sizeof(line), child_0e);
     append_runtime_line(line);
 }
@@ -3997,17 +4009,17 @@ static void initialize_display_fix(void)
     make_sibling_path(module_path, "DisplayFix.ini", g_ini_path, (DWORD)sizeof(g_ini_path));
     make_sibling_path(module_path, "DisplayFix.log", g_log_path, (DWORD)sizeof(g_log_path));
 
-    log_line("DisplayFix v0.3.1");
-    log_line("Architecture: Win32/x86 ASI, content-signature runtime patch");
+    log_line("DisplayFix 本体 v0.3.2");
+    log_line("架构：Win32/x86 ASI，基于内容签名的运行时补丁");
 
     if (!resolve_required_apis()) {
-        log_line("[FAIL] cannot resolve VirtualProtect");
+        log_line("[失败] 无法解析 VirtualProtect");
         flush_log_file();
         return;
     }
 
     if (!get_main_text_region(&text_region)) {
-        log_line("[FAIL] cannot locate main EXE .text section");
+        log_line("[失败] 无法定位主 EXE 的 .text 代码段");
         flush_log_file();
         return;
     }
@@ -4017,7 +4029,7 @@ static void initialize_display_fix(void)
      * DisplayFix 始终读取“与当前 ASI 同目录”的 DisplayFix.ini；
      * 如果日志显示 BaseHeight 回退成 480，用户可以直接核对自己编辑的是否就是这里这份文件。
      */
-    log_text("[INFO] ConfigPath=", g_ini_path);
+    log_text("[信息] 配置文件路径=", g_ini_path);
 
     load_config(&config);
 
@@ -4038,37 +4050,37 @@ static void initialize_display_fix(void)
     if (config.fix_font_dpi) {
         font_result = apply_font_dpi_fix(&text_region);
         if (font_result == 1) {
-            log_line("[OK] font DPI path patched to 96 DPI");
+            log_line("[成功] 字体 DPI 路径已修正为 96 DPI");
         } else if (font_result == 2) {
-            log_line("[OK] font DPI path was already patched");
+            log_line("[成功] 字体 DPI 路径已经是 96 DPI 修正状态");
         } else {
-            log_line("[FAIL] font DPI signature is missing/ambiguous; font patch skipped");
+            log_line("[失败] 字体 DPI 特征缺失或不唯一；已跳过字体修复");
         }
     } else {
-        log_line("[INFO] Font.FixDPI=0, font patch disabled by INI");
+        log_line("[信息] Font.FixDPI=0；INI 已关闭字体修复");
     }
 
     if (!config.enable) {
-        log_line("[INFO] Display.Enable=0; widescreen/HUD/input patches disabled; Font.FixDPI remains independent");
+        log_line("[信息] Display.Enable=0；已关闭宽屏/HUD/输入补丁；Font.FixDPI 仍独立生效");
         flush_log_file();
         return;
     }
 
-    log_uint("[INFO] BaseHeight=", config.base_height);
-    log_uint("[INFO] AspectWidth=", config.aspect_width);
-    log_uint("[INFO] AspectHeight=", config.aspect_height);
+    log_uint("[信息] 基础高度(BaseHeight)=", config.base_height);
+    log_uint("[信息] 比例宽度(AspectWidth)=", config.aspect_width);
+    log_uint("[信息] 比例高度(AspectHeight)=", config.aspect_height);
 
     target_width = calculate_target_width(config.base_height, config.aspect_width, config.aspect_height);
-    log_uint("[INFO] TargetWidth=", target_width);
-    log_uint("[INFO] TargetHeight=", config.base_height);
+    log_uint("[信息] 目标宽度(TargetWidth)=", target_width);
+    log_uint("[信息] 目标高度(TargetHeight)=", config.base_height);
 
     /*
      * BaseHeight 是内部逻辑高度，不是最终输出清晰度。高于 600 会扩大实际世界 surface / 可见范围，
      * 老游戏会明显增加绘制和对象处理成本。保留任意值是高级实验能力，但 4K 输出通常仍建议 480/600。
      */
     if (config.base_height > 600u) {
-        log_line("[WARN] BaseHeight>600 is advanced world/FOV scaling and can heavily reduce FPS");
-        log_line("[INFO] For 4K output, normally use BaseHeight=480 or 600 and let cnc-ddraw upscale");
+        log_line("[警告] BaseHeight>600 属于高级世界/FOV缩放，可能显著降低帧率");
+        log_line("[信息] 4K 输出通常建议使用 BaseHeight=480 或 600，再交给 cnc-ddraw 放大");
     }
 
     /*
@@ -4082,20 +4094,20 @@ static void initialize_display_fix(void)
     g_center_main_hud = config.center_main_hud;
 
     hud_delta = ((LONG)g_target_width - (LONG)g_native_base_width) / 2;
-    log_uint("[INFO] NativeBaseWidth=", g_native_base_width);
-    log_int("[INFO] MainHUDCenterDelta=", hud_delta);
+    log_uint("[信息] 原生基准宽度(NativeBaseWidth)=", g_native_base_width);
+    log_int("[信息] 主HUD水平居中偏移(MainHUDCenterDelta)=", hud_delta);
 
     if (target_width != 0) {
         resolution_result = apply_dynamic_resolution(&text_region, target_width, config.base_height);
     }
 
     if (resolution_result) {
-        log_line("[OK] dynamic-resolution code points resolved; startup/frontend code is left original");
-        log_line("[INFO] main menu and fixed-resolution animations keep the game's native 4:3 display lifecycle");
-        log_line("[INFO] gameplay TargetWidth/TargetHeight will be activated only by the game's Strategy state transition");
-        log_line("[INFO] No 1024x768 menu option is required; the game menu only exposes up to 800x600");
+        log_line("[成功] 动态分辨率代码点已解析；启动/前端代码保持原样");
+        log_line("[信息] 主菜单与固定分辨率动画继续使用游戏原生 4:3 显示生命周期");
+        log_line("[信息] 游戏内 TargetWidth/TargetHeight 仅由 Strategy 状态切换激活");
+        log_line("[信息] 不需要1024x768菜单选项；游戏菜单最高只提供800x600");
     } else {
-        log_line("[FAIL] dynamic-resolution signatures are missing/ambiguous; runtime profile switching disabled");
+        log_line("[失败] 动态分辨率特征缺失或不唯一；已禁用运行时配置切换");
     }
 
     /*
@@ -4109,19 +4121,19 @@ static void initialize_display_fix(void)
     if (layout_result && resolution_result) {
         /* 明确把当前进程保持在 FRONTEND profile；理论上此时还是原字节，这一步也是一次完整自检。 */
         if (set_frontend_resolution_profile()) {
-            log_line("[OK] frontend/animation resolution profile armed: original display/JMM rules preserved");
+            log_line("[成功] 前端/动画分辨率配置已就绪：保留原版显示/JMM规则");
             if (config.base_height >= 600u) {
-                log_line("[INFO] gameplay profile will map TargetWidth to JMMDL800.txt when Strategy state 3 begins");
+                log_line("[信息] Strategy 状态 3 开始时，游戏内配置会把 TargetWidth 映射到 JMMDL800.txt");
             } else {
-                log_line("[INFO] gameplay profile will map TargetWidth to JMMDL.txt when Strategy state 3 begins");
+                log_line("[信息] Strategy 状态 3 开始时，游戏内配置会把 TargetWidth 映射到 JMMDL.txt");
             }
         } else {
             resolution_result = FALSE;
             layout_result = FALSE;
-            log_line("[FAIL] frontend profile self-check failed; dynamic resolution lifecycle disabled");
+            log_line("[失败] 前端配置自检失败；已禁用动态分辨率生命周期");
         }
     } else {
-        log_line("[FAIL] JMM layout-selector signature is missing/ambiguous; runtime layout profile disabled");
+        log_line("[失败] JMM布局选择器特征缺失或不唯一；已禁用运行时布局配置");
     }
 
     /*
@@ -4133,10 +4145,10 @@ static void initialize_display_fix(void)
     }
 
     if (strategy_state_result) {
-        log_line("[OK] Strategy state lifecycle hooks installed: state 3 enter=GAMEPLAY(force reapply), state 3 exit=FRONTEND(force mode 4)");
-        log_line("[INFO] enter: original 0x407000 is forced once; exit: original display mode 4 is forced once after Strategy cleanup");
+        log_line("[成功] Strategy状态生命周期Hook已安装：进入状态3=GAMEPLAY（强制重应用），退出状态3=FRONTEND（强制模式4）");
+        log_line("[信息] 进入时：原版0x407000会被临时强制一次；退出时：Strategy清理后强制应用原版显示模式4");
     } else if (resolution_result && layout_result) {
-        log_line("[FAIL] Strategy state transition signature/calls are missing or ambiguous; gameplay resolution switching disabled");
+        log_line("[失败] Strategy状态切换特征/调用缺失或不唯一；已禁用游戏内分辨率切换");
     }
 
     /*
@@ -4153,17 +4165,17 @@ static void initialize_display_fix(void)
 
     if (GAME_GetModuleHandleA && GAME_GetModuleHandleA("ComeOn.dll")) {
         g_steam_environment = TRUE;
-        log_line("[INFO] Steam/ComeOn.dll environment detected");
+        log_line("[信息] 已检测到Steam/ComeOn.dll环境");
         if (jmm_context_result) {
-            log_line("[OK] Steam delayed JMM apply armed; waits for mature HUD + top-level UI + resource root");
-            log_line("[INFO] Steam fix reuses original 0x4B35F0 once; non-Steam path remains untouched");
+            log_line("[成功] Steam延迟JMM应用已就绪；等待HUD、顶层UI和资源根节点全部成熟");
+            log_line("[信息] Steam修复只复用一次原版0x4B35F0；非Steam路径保持不变");
         } else {
-            log_line("[FAIL] Steam environment detected but UI/JMM context signature is missing/ambiguous; Steam layout sync disabled");
+            log_line("[失败] 已检测到Steam环境，但UI/JMM上下文特征缺失或不唯一；已禁用Steam布局同步");
         }
     } else {
-        log_line("[INFO] non-Steam environment detected; Steam delayed UI sync remains dormant");
+        log_line("[信息] 已检测到非Steam环境；Steam延迟UI同步保持休眠");
         if (!jmm_context_result) {
-            log_line("[INFO] optional Steam UI/JMM context was not resolved; non-Steam path is unaffected");
+            log_line("[信息] 可选Steam UI/JMM上下文未解析；不影响非Steam路径");
         }
     }
 
@@ -4182,15 +4194,15 @@ static void initialize_display_fix(void)
 
     if (hud_result) {
         if (config.center_main_hud) {
-            log_line("[OK] bottom main HUD visual centering hook installed (v0.2-test1 stable algorithm)");
+            log_line("[成功] 底部主HUD视觉居中Hook已安装（v0.2-test1稳定算法）");
         } else {
-            log_line("[INFO] GUI.CenterMainHUD=0; visual centering disabled, pure HUD diagnostics still installed");
+            log_line("[信息] GUI.CenterMainHUD=0；已关闭视觉居中，但HUD诊断仍会安装");
         }
-        log_line("[OK] main HUD hooks installed: FRONTEND keeps original layout; +0x58 centers/syncs only after Strategy GAMEPLAY gate");
-        log_line("[OK] main HUD +0x24 structure parsed for confirmed top-button IDs 0x0B/0x0E; +0x24 itself is not hooked");
-        log_line("[INFO] edge-anchored top-level UI is intentionally left untouched");
+        log_line("[成功] 主HUD Hook已安装：FRONTEND保持原布局；仅通过Strategy GAMEPLAY门控后在+0x58执行居中/同步");
+        log_line("[成功] 已解析主HUD +0x24结构并确认顶部按钮ID 0x0B/0x0E；+0x24本身不做Hook");
+        log_line("[信息] 边缘锚定的顶层UI按设计保持不变");
     } else {
-        log_line("[FAIL] main HUD root/event/layout signature validation failed; HUD hook skipped");
+        log_line("[失败] 主HUD根对象/事件/布局特征验证失败；已跳过HUD Hook");
     }
 
     /*
@@ -4204,17 +4216,17 @@ static void initialize_display_fix(void)
     }
 
     if (world_press_result) {
-        log_line("[OK] world mouse-press guard installed for 0x0B/0x0E click-through protection only");
-        log_line("[INFO] original 0x4B44F0 UI press dispatch is left completely untouched (test7 regression removed)");
+        log_line("[成功] 世界鼠标按下保护已安装，仅用于防止0x0B/0x0E点击穿透");
+        log_line("[信息] 原版0x4B44F0 UI按下分发保持完全不变（已移除test7回归）");
     } else {
-        log_line("[FAIL] world mouse-press callsite validation failed; click-through protection skipped");
+        log_line("[失败] 世界鼠标按下调用点验证失败；已跳过防点击穿透保护");
     }
 
     if (global_release_result) {
-        log_line("[OK] global mouse-release guard installed before HUD routing for top buttons 0x0B/0x0E");
-        log_line("[INFO] release: original UI dispatch always runs first; fallback toggles only when target active state did not change");
+        log_line("[成功] 全局鼠标释放保护已安装，在HUD路由前处理顶部按钮0x0B/0x0E");
+        log_line("[信息] 鼠标释放：始终先执行原版UI分发；只有目标激活状态未变化时才执行兜底切换");
     } else {
-        log_line("[FAIL] global mouse-release callsite validation failed; top-button pre-routing fallback skipped");
+        log_line("[失败] 全局鼠标释放调用点验证失败；已跳过顶部按钮路由前兜底");
     }
 
     /*

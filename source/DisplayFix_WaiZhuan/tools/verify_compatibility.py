@@ -5,7 +5,7 @@ DisplayFix_WaiZhuan：外传 ComeOn.exe / Steam ComeOn.dll 兼容性只读检查
 这个工具只读取 EXE/DLL，不写入任何字节，也不会生成补丁文件。DisplayFix 不再用整个文件的
 SHA-256 白名单锁版本，而是检查运行时真正依赖的机器码、调用关系和 vtable 结构是否仍然成立。
 
-v0.2.0 以 clean1/test2 的稳定代码结构为基线，并额外做两类封版验证：
+v0.2.1 完整继承 v0.2.0 的稳定代码结构；本次只改日志文本，继续执行以下封版验证：
 - EXE：继续验证 test4 已实机通过的 ResJM.Lib CreateFileA 调用点；
 - Steam ComeOn.dll：验证 CreateWindowExA callback 的 EDIT 子类化链，尤其是 RVA 0x2889 的 JNE +0x16 与随后 SetWindowLongA 结构。
 其余 test3-test9 影片/OpenGL 实验不属于当前运行基线。
@@ -821,7 +821,7 @@ def verify_one(path: Path) -> list[str]:
 
 
 # -------------------------------------------------------------------------------------------------
-# 5. Steam ComeOn.dll 专项验证（v0.2.0 正式封版）
+# 5. Steam ComeOn.dll 专项验证（v0.2.1 继承 v0.2.0 正式封版结构）
 # -------------------------------------------------------------------------------------------------
 
 def rva_to_file_offset(
@@ -862,7 +862,7 @@ def require_bytes_at_rva(
 
 def verify_steam_dll(path: Path) -> list[str]:
     """
-    验证 Steam ComeOn.dll 中 v0.2.0 正式版真正依赖的 CreateWindowExA callback 结构。
+    验证 Steam ComeOn.dll 中 v0.2.1 继续依赖、并由 v0.2.0 正式封版的 CreateWindowExA callback 结构。
 
     本函数不要求整个 DLL SHA-256 永远固定；SHA 只作为报告信息。
     当前兼容门槛是：CreateFileA 多语言 Hook、CreateWindowExA callback、对 lpClassName 的直接字符串解引用，
@@ -964,8 +964,8 @@ def verify_steam_dll(path: Path) -> list[str]:
         "USER32!CreateWindowExA 全局 Hook 安装块仍存在：callback RVA=0x2830, overwrite=12",
         'CreateWindowExA callback 的 EDIT -> SetWindowLongA(GWL_WNDPROC) 子类化链已确认',
         "RVA 0x2841 原始 lpClassName 路径会在只检查 NULL 后直接解引用 class 参数",
-        "RVA 0x2889 原始 EDIT WndProc 子类化块仍完整存在（v0.2.0 保留）",
-        "v0.2.0 可在 0x2841 前置 class-atom guard，同时保留普通字符串类名与官方 EDIT 处理",
+        "RVA 0x2889 原始 EDIT WndProc 子类化块仍完整存在（v0.2.1 继续保留）",
+        "v0.2.1 继续在 0x2841 前置 class-atom guard，同时保留普通字符串类名与官方 EDIT 处理",
     ]
 
 

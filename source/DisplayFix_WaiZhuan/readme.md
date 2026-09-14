@@ -1,6 +1,13 @@
 # DisplayFix_WaiZhuan 源码说明
 
-这是《刀剑封魔录外传：上古传说》DisplayFix 的独立源码工程。当前正式封版为 `v0.2.0`；`v0.1-clean1` 继续作为纯净历史回退基线。
+## v0.2.1 日志中文化
+
+`v0.2.1` 只把 `DisplayFix.log` 全面改为简体中文，不改变 `v0.2.0` 的任何已封版逻辑。Steam `ResJM.Lib` 多语言兜底、`ComeOn.dll` CreateWindowExA class-atom OpenGL 修复、非 Steam 宽屏/HUD/DPI/输入路径全部保持原样。日志等级统一为 `[成功]/[信息]/[警告]/[失败]/[运行]`；历史英文日志仅作为旧版实机证据保留。
+
+最终 `DisplayFix.asi` SHA-256：`e242e70e3a39afd71f57f45405bdaf52acb9e64c0f268e10f61401c00679cef4`。
+
+
+这是《刀剑封魔录外传：上古传说》DisplayFix 的独立源码工程。当前正式封版为 `v0.2.1`；`v0.1-clean1` 继续作为纯净历史回退基线。
 
 运行文件仍统一叫：
 
@@ -99,7 +106,7 @@ SteamAPI、多语言、CreateFileA Hook、CreateWindowExA 全局 Hook、callback
 ```
 
 
-## v0.2.0 正式封版
+## v0.2.0 运行逻辑封版基线（v0.2.1 继承）
 
 `v0.2.0` 不再继续缩小已经闭环的 class-atom guard，也不引入新的 Steam 影片/launcher 代码。正式版保留以下已通过组合：
 

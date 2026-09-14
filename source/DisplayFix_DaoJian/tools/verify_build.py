@@ -11,7 +11,8 @@ DisplayFix 构建结果检查工具。
 4. 必须导出 InitializeASI，兼容会主动调用该入口的 ASI Loader；
 5. 当前架构故意不让 ASI 自己带 Windows DLL 导入表，因此 Import Directory 必须为 0；
 6. 同目录的 DisplayFix.ini 必须存在、能以 UTF-8 解析，并且正式成品禁止 UTF-8 BOM；
-7. 仓库内源码、脚本、配置和 Markdown 文本统一禁止 UTF-8 BOM，BAT 额外必须是 CRLF。
+7. 仓库内源码、脚本、配置和 Markdown 文本统一禁止 UTF-8 BOM，BAT 额外必须是 CRLF；
+8. v0.3.2 的 DisplayFix.log 运行日志必须使用简体中文等级和正文，不能残留旧版英文日志标签。
 
 代码里的每一步都写了较细的中文说明，方便以后换编译器或接档时核对。
 """
@@ -22,6 +23,9 @@ from pathlib import Path
 
 # hashlib 只用来计算 SHA-256，方便把最终二进制指纹写进测试记录。
 import hashlib
+
+# re 用来只提取 C 源码里的字符串字面量，避免把历史注释里的英文旧日志误判为运行日志。
+import re
 
 # struct 用来按“小端整数”读取 PE 文件头。
 # x86 Windows PE 本来就是小端格式。
@@ -233,6 +237,12 @@ def validate_build_bat(build_bat: Path) -> list[str]:
     if "vc\\tools\\llvm\\x64\\bin" not in lower:
         raise RuntimeError("build.bat 必须显式保留 Visual Studio Llvm\\x64\\bin 回退路径。")
 
+    # v0.3.2 / v0.2.1 开始，DisplayFix.log 使用中文 UTF-8 窄字符串。
+    # 源码本身又按项目规则禁止 BOM，因此这里显式要求 clang 固定输入与执行字符集为 UTF-8，
+    # 防止不同 Windows 系统代码页把中文字符串编译成不同字节。
+    if "-finput-charset=utf-8" not in lower or "-fexec-charset=utf-8" not in lower:
+        raise RuntimeError("build.bat 必须显式指定 -finput-charset=UTF-8 和 -fexec-charset=UTF-8。")
+
     # 用户明确要求：所有有正文的 REM / echo 行末尾必须保留两个半角空格。
     for line_number, line in enumerate(text.splitlines(), start=1):
         stripped = line.lstrip()
@@ -249,6 +259,7 @@ def validate_build_bat(build_bat: Path) -> list[str]:
         "build.bat UTF-8 无 BOM + CRLF",
         "未使用 where /r 递归扫描 LLVM",
         "Visual Studio 回退固定为 Llvm\\x64\\bin",
+        "clang 输入/执行字符集固定为 UTF-8",
         "所有有正文的 REM/echo 行末尾均有两个半角空格",
     ]
 
@@ -288,7 +299,7 @@ def validate_repository_bom_free(package_root: Path) -> list[str]:
 
 def validate_font_display_independence(source_path: Path) -> list[str]:
     """
-    静态检查 v0.3.1 的配置开关顺序，防止以后又把字体修复绑回 Display.Enable。
+    静态检查 v0.3.2 继续沿用的配置开关顺序，防止以后又把字体修复绑回 Display.Enable。
 
     这里不做完整 C 语法解析，只检查 initialize_display_fix() 中三个稳定语义锚点：
 
@@ -322,6 +333,41 @@ def validate_font_display_independence(source_path: Path) -> list[str]:
     return ["Font.FixDPI 与 Display.Enable 初始化顺序独立（字体先执行，Display gate 后判断）"]
 
 
+
+def validate_chinese_runtime_logging(source_path: Path, expected_version: str) -> list[str]:
+    """
+    检查真正编译进 ASI 的 C 字符串字面量是否已经完成日志中文化。
+
+    这里故意只分析双引号字符串，不直接搜索整个源码：历史研究注释里需要保留旧版英文日志，
+    如果直接全文查 `[RUNTIME]` 会把正确保留的历史证据误报成回归。
+
+    当前规则：
+    1. 正式版本标题必须存在；
+    2. 新日志必须至少包含 [成功]/[信息]/[失败]/[运行] 四类中文等级；
+    3. 任何会编译进二进制的旧 [OK]/[INFO]/[WARN]/[FAIL]/[RUNTIME] 标签都禁止存在。
+    """
+
+    if not source_path.is_file():
+        raise RuntimeError(f"缺少主源码：{source_path}")
+
+    text = source_path.read_text(encoding="utf-8")
+    literals = re.findall(r'"((?:[^"\\]|\\.)*)"', text)
+
+    if expected_version not in literals:
+        raise RuntimeError(f"缺少当前中文日志版本标题：{expected_version}")
+
+    joined = "\n".join(literals)
+    for marker in ("[成功]", "[信息]", "[失败]", "[运行]"):
+        if marker not in joined:
+            raise RuntimeError(f"中文日志缺少等级标记：{marker}")
+
+    forbidden = ("[OK]", "[INFO]", "[WARN]", "[FAIL]", "[RUNTIME]")
+    for marker in forbidden:
+        if marker in joined:
+            raise RuntimeError(f"运行时字符串仍残留旧版英文日志标签：{marker}")
+
+    return ["DisplayFix.log 运行时字符串已全面中文化，旧英文日志标签=0"]
+
 def main() -> int:
     """命令行入口。成功返回 0，失败返回 1。"""
 
@@ -351,8 +397,9 @@ def main() -> int:
         package_root = Path(__file__).resolve().parents[3]
         bom_lines = validate_repository_bom_free(package_root)
 
-        # v0.3.1 新增：确保字体修复永远先于 Display.Enable 的提前退出。
+        # v0.3.2 继续验证：确保字体修复永远先于 Display.Enable 的提前退出。
         source_path = Path(__file__).resolve().parents[1] / "src" / "DisplayFix.c"
+        logging_lines = validate_chinese_runtime_logging(source_path, "DisplayFix 本体 v0.3.2")
         independence_lines = validate_font_display_independence(source_path)
 
         print(f"[验证目标] {asi_path}")
@@ -365,6 +412,8 @@ def main() -> int:
         for line in bom_lines:
             print(f"[通过] {line}")
         for line in independence_lines:
+            print(f"[通过] {line}")
+        for line in logging_lines:
             print(f"[通过] {line}")
         print(f"[通过] 配置文件：{ini_path.name}")
         return 0

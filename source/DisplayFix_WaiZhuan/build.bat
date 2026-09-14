@@ -59,8 +59,9 @@ echo [工具] python=%PYTHON_EXE% %PYTHON_ARGS%
 echo.
 
 REM 编译 32 位 COFF 对象；DisplayFix 不链接 CRT，也不新增外部导入表。  
+REM 源码和日志字符串统一使用 UTF-8；显式指定输入/执行字符集，避免中文日志受 Windows ANSI 代码页影响。  
 echo [1/5] 编译 src\DisplayFix.c...  
-"%CLANG_EXE%" -target i686-pc-windows-msvc -ffreestanding -fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -c "src\DisplayFix.c" -o "%BUILD_DIR%\DisplayFix.obj"
+"%CLANG_EXE%" -target i686-pc-windows-msvc -finput-charset=UTF-8 -fexec-charset=UTF-8 -ffreestanding -fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -c "src\DisplayFix.c" -o "%BUILD_DIR%\DisplayFix.obj"
 if errorlevel 1 goto :build_failed
 
 REM 用同一套 LLVM 目录里的 lld-link 生成 Win32/x86 ASI，避免混用不同工具链。  
