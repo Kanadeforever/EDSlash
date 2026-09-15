@@ -1,0 +1,11 @@
+stripe1 封包自包含检查结果
+
+[通过] 已检查 UTF-8 文本文件：49 个，BOM=0。
+[通过] 所有 BAT 均保持 UTF-8 无 BOM + CRLF。
+[通过] 全部 Markdown 文件名均包含简体中文/中文字符；代码、脚本与配置技术文件继续使用既有英文名。
+[通过] 本体/外传源码均包含 stripe1 8 像素宽度算法，旧“只补偶数”运行代码=0。
+[通过] test1~test7 菜单位移路线与 layer1b 顶层链重排关键运行符号未回流。
+[通过] release/DaoJian 与 release/WaiZhuan 均严格只有 DisplayFix.asi + DisplayFix.ini。
+[通过] 本体 SHA-256=f565b4d683746fcf9d1fa30d9728df66c7e4e83676758b69a40693ccbebb6b8e
+[通过] 外传 SHA-256=deb40b447c94dedd2301a665c59e27dfa3fdb3e2ff44dccc55a46e813b33d4c3
+[说明] 深度 verify_compatibility.py 仍因当前环境缺少四套 ComeOn.exe / 外传 Steam ComeOn.dll 而待真实样本执行。

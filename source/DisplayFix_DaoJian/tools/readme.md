@@ -1,4 +1,4 @@
-# 本体 DisplayFix 源码说明
+# 工具详细说明
 
 ## 2026-09-15 stripe1 当前同步（本节优先级最高）
 
@@ -28,63 +28,32 @@
 - 两套 `verify_build.py` 已通过新边界检查。本体当前 SHA-256：`a146348809cbba6a16d3602f5fff87d04274bd9c298409b96c3db86a335b4c9d`；外传当前 SHA-256：`e33d9e1b6813be5878a4cf1fce266fe7b4ab29fa91a78fa62a67bea84441133c`。本体只剩这一项 layer1d 最终实机确认；外传仍不能用本体结果代替，后续正式封版前至少应完成一次外传主线实机回归。
 
 
-## 历史：layer1d 当前版本
+本目录服务 `v0.3.3-layer1d`，稳定回退基线 `v0.3.2`。
 
-当前封版候选：`v0.3.3-layer1d`。稳定回退基线：`v0.3.2`。
+## verify_build.py
 
+只读检查当前 ASI、INI、源码和仓库规范：PE32/i386、DLL、非零入口、`InitializeASI`、Import Directory=0、UTF-8 无 BOM、BAT CRLF、中文日志、`Font.FixDPI` 与 `Display.Enable` 初始化独立。
 
-layer1c 历史实验版：`v0.3.3-layer1c`。
+layer1d 专项检查包括：
+- 固定三主菜单 HUD 后延迟 Draw 与动态辅助顶层 Draw wrapper 存在；
+- 独立面板短生命周期跟踪必须存在，并逐帧复核真实 Draw 链、active、vtable 与 HUD 相交；没有主菜单时不得发现新的未知对象；
+- 顶层 picker 单次返回值 Hook 存在；
+- 输入候选保留原版 JMM 属性 `0x0D==1` 与原版 hit-rect 路径；
+- `manager+0x40` 仍由原版更新；
+- HUD 特殊 pass 不 Hook、不重放；
+- 禁止 test1~test7 位移/命中补偿符号；
+- 禁止 layer1b 顶层链重排函数和四个链字段写入。
 
-本体 `layer1a` 已实机确认：把辅助 GUI 延后到主 HUD 后绘制，视觉方向正确；但 HUD 重叠区按钮仍不可点，且独立左侧面板可能仍在 HUD 下。`layer1b` 试图同步顶层双向链，但用户日志明确显示“顶层双向链验证失败”，实际只回退到 layer1a，因此该写链方案已经撤销。
+## verify_compatibility.py
 
+对 ComeOn.exe 做只读机器码/结构验证，不以整文件 SHA-256 作为兼容白名单。继续核对稳定分辨率、Strategy/JMM/HUD、world press/global release、0x09~0x0E、三菜单类及 UI manager Draw。layer1d 继续验证 picker callsite/原版命中矩形/JMM 属性路径的验证内容应以真实 EXE 为准。
 
-## layer1d 封版前最后修正
+当前环境没有用户真实 ComeOn.exe；因此这个工具本轮没有重新跑最终样本，不能把历史输出写成 layer1d 新通过。
 
-本体 layer1d 不改 layer1c 已经通过的 Draw 延后和 picker 返回值覆盖。唯一新增状态是 `TrackedAuxiliaryObject`：独立面板必须先在主菜单上下文中被确认，随后逐帧验证真实 Draw 链、active、vtable 与 HUD 相交。物品主 root 先关闭时，只要独立装备面板自身仍合法存在，就继续置于 HUD 上方；面板关闭或生命周期变化时立即忘掉。没有主菜单时禁止发现新未知对象。
+## verify_compatibility.bat
 
-## layer1c 做什么
+Windows 拖拽/多文件入口，只调用 Python 验证器，不写任何游戏二进制。
 
-### 1. 绘制层
+## 当前状态
 
-继续保留 layer1a 已验证的 HUD 后延迟 Draw。`0x0B/0x0D/0x0E` 三个主菜单继续使用固定 wrapper；当前菜单体系中与 HUD 相交、parent 可追到主菜单或本身就是活动辅助顶层的独立对象，可以动态安装 Draw wrapper。动态表固定 16 项，超限时失败开放，不做堆分配。
-
-### 2. 输入层
-
-不再改顶层链。Hook 原版 `0x4B4790 -> 0x4B4800` 顶层 picker 的唯一 callsite。先让原版 picker 完整执行；只有它已经选中主 HUD，且当前鼠标点同时命中一个已延后绘制、active、JMM 属性 `0x0D==1` 的菜单 root 时，才把这一次 picker 返回值换成菜单 root。随后原版 `0x4B44D0` 继续负责 `manager+0x40`、焦点、旧 root 清理和后续事件。
-
-命中矩形优先调用从 picker 解析得到的原版 `0x4B1D30`，立即复制 x/y/width/height；解析不到才退回对象普通矩形。这样不自己发明坐标体系。
-
-## 明确禁止的旧路线
-
-- 不移动菜单 X/Y。
-- 不反算 `GetCursorPos`。
-- 不写 `self+0xA8`。
-- 不接管 `vtable+0x30` child hit-test。
-- 不硬编码按钮业务。
-- 不包装具有隐藏 ESI 语义的 `0x004B44F0`。
-- 不写 `manager+0x18/+0x1C` 或 `object+0x08/+0x0C`，layer1b 顶层链重排禁止回流。
-
-## 配置
-
-`AuxiliaryUIAboveHUD=1`：安装 layer1c 绘制层和单次输入 root 优先级 Hook。
-
-`AuxiliaryUIAboveHUD=0`：不安装 layer1c，本体只保留 `v0.3.2` 稳定宽屏/HUD/字体/既有输入主线。
-
-`CenterMainHUD=0`：主 HUD 不居中，不存在本轮遮挡目标，因此不安装 layer1c。
-
-## 构建与验证
-
-Windows 使用 `build.bat` 从零构建 Win32/x86 ASI。`verify_build.py` 检查 PE32/i386、DLL、入口点、`InitializeASI`、Import Directory=0、INI/BAT/UTF-8 规范、中文日志、字体与 Display gate 独立性，并硬性禁止 test1~test7 与 layer1b 写链代码回流。
-
-当前环境另外用 clang + lld-link 进行了独立 Win32 构建。`verify_compatibility.py` 仍需要用户真实 ComeOn.exe；当前环境没有四套 EXE，因此不能宣称本轮深度二进制兼容验证已通过。
-
-## 实机验收
-
-1. 物品界面底部与 HUD 重叠区域全部按钮。
-2. 技能连招编辑子菜单关闭按钮和同区域控件。
-3. 左侧独立装备/辅助面板是否真正位于 HUD 上方。
-4. 装备/技能/物品其它按钮与乾坤袋。
-5. 主 HUD 12 槽快捷栏、HP/MP、悬停、键盘快捷键。
-6. 世界点击、切分辨率、退出回 FRONTEND。
-
-详细地址、历史失败实验与接档见包根《完整接档说明.md》和 `docs/DisplayFix_DaoJian/逆向工程知识库.md`。
+最终封包前必须重新运行 `verify_build.py`；兼容验证在拿到真实 EXE/DLL 后补跑。

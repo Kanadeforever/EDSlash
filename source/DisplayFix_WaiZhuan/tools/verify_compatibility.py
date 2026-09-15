@@ -1,38 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-DisplayFix_WaiZhuan：外传 ComeOn.exe / Steam ComeOn.dll 兼容性只读检查工具。
+DisplayFix layer1d：外传 ComeOn.exe / Steam ComeOn.dll 兼容性只读检查工具。
 
-这个工具只读取 EXE/DLL，不写入任何字节，也不会生成补丁文件。DisplayFix 不再用整个文件的
-SHA-256 白名单锁版本，而是检查运行时真正依赖的机器码、调用关系和 vtable 结构是否仍然成立。
+这个工具只读取 EXE/DLL，不写入任何字节，也不会生成补丁文件。兼容判断依赖机器码、调用关系和 vtable
+结构，而不是整个文件 SHA-256 白名单。
 
-v0.2.1 完整继承 v0.2.0 的稳定代码结构；本次只改日志文本，继续执行以下封版验证：
-- EXE：继续验证 test4 已实机通过的 ResJM.Lib CreateFileA 调用点；
-- Steam ComeOn.dll：验证 CreateWindowExA callback 的 EDIT 子类化链，尤其是 RVA 0x2889 的 JNE +0x16 与随后 SetWindowLongA 结构。
-其余 test3-test9 影片/OpenGL 实验不属于当前运行基线。
+layer1d 从外传 v0.2.1 稳定运行基线重新开线。外传 Steam 两条已封版兼容路径是硬红线：
+- ResJM.Lib 多语言 CreateFileA 低层调用点兜底必须继续存在；
+- ComeOn.dll CreateWindowExA class-atom guard 必须继续保留官方 EDIT WndProc/OpenGL 路径。
 
-v0.1-test2 继续以本传 v0.3 的最终结构为参考，但所有关键地址/调用链都重新从外传 EXE 验证。test15 在 test14 已经闭合的 Strategy enter / force=1 证据之上，新增“原版前端 mode 4”交叉验证：
+同时继承本体同层级的深度结构验证：Strategy/JMM/HUD、0x09~0x0E 六路窗口、键盘快捷键、
+0x0B 装备 / 0x0D 技能 / 0x0E 物品三个菜单类，以及 layer1d 所需的 UI manager Draw / 顶层链架构。
 
-1. 0x00404A00 风格状态切换函数必须唯一存在；
-2. “离开旧状态 3”的 callsite 必须解码到 0x00407040 风格清理包装函数；
-3. “进入新状态 3 / BeforeStrategy”的 callsite 必须解码到 0x00407000 风格函数；
-4. 进入函数必须以 `6A 00` 压入 force=0、读取 self+0x280、写 self+0x08，并立即 call 原版显示模式函数；
-5. 原版 0x00404D30 必须存在“当前 mode 相同 + force=0 -> 直接返回”的早退结构；
-6. 原游戏启动前端必须存在 `push 0 / push 4 / mov ecx,ebp / mov [ebp+8],4 / call 0x00404D30` 结构，
-   而且这条 CALL 必须和 Strategy enter 内部 CALL 精确落到同一个显示模式函数。
-
-test14 实机已经证明：Strategy enter 用 force=1 后 live 能正确切到目标宽高；失败只发生在退出时，
-因为“恢复 FRONTEND 代码 profile”不会自动重建已经存在的宽屏 surface。test15 因此在原版 Strategy 清理完成后，
-恢复前端立即数，再复用同一个原版显示模式函数以 mode=4 / force=1 重建真正的前端 surface。
-
-同时继续验证：
-- 字体 DPI 原始/已修复状态；
-- 两处分辨率映射与 JMM 选择器；
-- 0x4087A0 -> 0x4B35F0 以及 test10 Steam delayed JMM 所需的资源路径构造链；
-- 主 HUD +0x24 的真实 0x0B/0x0E 窗口分支与 +0x58 布局关系；
-- test8 世界输入 0x4060EB -> 0x473F10（只做点击防穿透，不再承担 gameplay 判定）；
-- 全局 release 0x406086 -> 0x4B4560。
-
-工具只报告兼容/不兼容，不运行游戏。代码注释故意写得很细，方便以后减少重复反编译。
+layer1d 不移动辅助 GUI，也不修改 child tree、GetCursorPos、self+0xA8、快捷键或 active；运行时不写顶层链；绘制使用 HUD 后延迟 Draw，输入只覆盖原版 picker 的单次返回值。
+因此工具仍会验证 +0x30/self+0xA8 等原版输入结构，但这些结构只作为“输入必须保持原样”的兼容证据。
+乾坤袋对象地址也只保留为逆向证据，本版不手工移动。
 """
 
 from __future__ import annotations
@@ -46,6 +28,42 @@ import sys
 # -------------------------------------------------------------------------------------------------
 # 1. 已确认的机器码签名
 # -------------------------------------------------------------------------------------------------
+
+# test4 证据：物品 control 0x17 切换的乾坤袋/辅助面板构造写槽指令。
+# Steam / 非 Steam 用户样本完全一致。layer1d 运行时不改这个对象的坐标/业务，但兼容性验证仍确认“vtable + 写槽”存在，作为完整逆向接档证据。
+BAG_AUX_PANEL_VTABLE = 0x0055395C
+BAG_AUX_PANEL_SLOT = 0x0058CCB8
+BAG_AUX_PANEL_CTOR_WRITE = bytes.fromhex("C7 06 5C 39 55 00 89 35 B8 CC 58 00")
+
+# layer1d：UI manager Draw 包装函数。
+# 机器码语义：mov eax,[ecx] / mov ecx,<manager> / push eax / call <manager Draw> / ret。
+# manager 绝对地址和 E8 rel32 会因本体/外传及版本位置变化，所以对应字节使用通配。
+UI_MANAGER_DRAW_WRAPPER = bytes([
+    0x8B, 0x01,
+    0xB9, 0, 0, 0, 0,
+    0x50,
+    0xE8, 0, 0, 0, 0,
+    0xC3,
+])
+UI_MANAGER_DRAW_WRAPPER_MASK = "xxx????xx????x"
+
+# layer1d：0x4B4790 风格顶层 root picker callsite。
+# 语义：lea POINT / mov ecx,manager / push POINT / call picker / push result / call set-current-root / mov eax,[manager+0x40]。
+UI_TOP_LEVEL_PICK_CALLSITE = bytes([
+    0x8D,0x44,0x24,0x0C,
+    0x8B,0xCE,
+    0x50,
+    0xC7,0x44,0x24,0x20,0x00,0x00,0x00,0x00,
+    0xE8,0,0,0,0,
+    0x50,
+    0x8B,0xCE,
+    0xE8,0,0,0,0,
+    0x8B,0x4C,0x24,0x14,
+    0x8B,0x46,0x40,
+])
+UI_TOP_LEVEL_PICK_CALLSITE_MASK = "xxxxxxxxxxxxxxxx????xxxx????xxxxxxx"
+
+
 
 # 字体路径：未修复状态。
 FONT_ORIGINAL = bytes.fromhex(
@@ -234,6 +252,49 @@ GLOBAL_MOUSE_RELEASE_CALLSITE = bytes([
 GLOBAL_MOUSE_RELEASE_CALLSITE_MASK = "xxxxxxxxxxxx????xx????x????xxxx"
 
 
+# test2：主 HUD 每帧调用原版键盘快捷键处理函数的上下文。
+# 第三条 E8（签名起点 +26）在本体为 0x004C2F45 -> 0x004C42B0，
+# 在外传为 0x004D7505 -> 0x004D8890。绝对地址不同，但周围对象字段访问完全同形。
+HUD_KEYBOARD_SHORTCUT_CALLSITE = bytes([
+    0x8B, 0x87, 0x24, 0x01, 0x00, 0x00,
+    0x85, 0xC0,
+    0x75, 0x07,
+    0x8B, 0xCF,
+    0xE8, 0, 0, 0, 0,
+    0x8B, 0xCF,
+    0xE8, 0, 0, 0, 0,
+    0x8B, 0xCF,
+    0xE8, 0, 0, 0, 0,
+    0x83, 0xBF, 0xF4, 0x0B, 0x00, 0x00, 0xFF,
+    0x74, 0x22,
+    0x8B, 0x97, 0xF8, 0x0B, 0x00, 0x00,
+    0x42,
+])
+HUD_KEYBOARD_SHORTCUT_CALLSITE_MASK = "xxxxxxxxxxxxx????xxx????xxx????xxxxxxxxxxxxxxxx"
+
+
+# test5：继续验证原版通用 child hit-test 函数开头；当前运行时明确不再 Hook 它。
+#
+# 历史 test1~test7 曾平移顶层物品/装备/技能窗口；下面保留相关输入机器码只用于证明原版命中结构仍存在，layer1d 不再平移窗口。
+# 原版通用命中函数会在内部单独调用 GetCursorPos，再直接用得到的屏幕 X/Y 和 child +0x14/+0x18 比较。
+# test4 曾改这一处 6 字节 `FF 15 <GetCursorPos_IAT>`，但实机证明方向错误；test5 只验证它仍是原版 `FF 15`，绝不写入。
+# 全局 GetCursorPos IAT、顶层 press 分派和世界点击全部保持原版。
+UI_CHILD_HITTEST_CURSOR = bytes([
+    0x83,0xEC,0x08,
+    0x8D,0x44,0x24,0x00,
+    0x53,0x55,0x56,0x57,
+    0x8B,0xF9,
+    0x50,
+    0x8B,0xB7,0x9C,0x00,0x00,0x00,
+    0x89,0xB7,0xA0,0x00,0x00,0x00,
+    0xFF,0x15,0,0,0,0,
+    0x8B,0x5C,0x24,0x10,
+    0x8B,0x6C,0x24,0x14,
+])
+UI_CHILD_HITTEST_CURSOR_MASK = "xxxxxxxxxxxxxxxxxxxxxxxxxxxx????xxxxxxxx"
+EXPECTED_GET_CURSOR_POS_IAT = 0x005513E4
+
+
 # 0x4C2AE3 一带主 HUD 根类构造签名。
 MAIN_HUD_ROOT = bytes([
     0xC7, 0x06, 0, 0, 0, 0,
@@ -401,6 +462,174 @@ def require_unique(name: str, hits: list[int]) -> int:
     return hits[0]
 
 
+
+def find_modal_class_vtable_from_global(
+    text_data: bytes,
+    image_base: int,
+    text_rva: int,
+    global_slot: int,
+) -> tuple[int, int]:
+    """从“constructor 把 this 写进目标 global slot”的机器码反推菜单类 vtable。
+
+    已确认三个菜单构造函数都包含：
+        C7 06 <vtable imm32>     ; mov [esi], vtable
+        ...
+        89 35 <global imm32>     ; mov [global_slot], esi
+
+    Steam / 非 Steam 两份 EXE 的代码位置可以不同，但这个对象构造语义必须成立。
+    返回 `(constructor_vtable_write_va, vtable_va)`；如果不能唯一闭合就拒绝兼容。
+    """
+
+    global_bytes = struct.pack("<I", global_slot)
+    candidates: list[tuple[int, int]] = []
+    start = 0
+
+    while True:
+        pos = text_data.find(b"\x89\x35" + global_bytes, start)
+        if pos < 0:
+            break
+
+        # vtable 写入通常就在前 32 字节内。倒序找最近的 `C7 06 imm32`，避免把更早的别类构造误认进来。
+        search_start = max(0, pos - 32)
+        for back in range(pos - 2, search_start - 1, -1):
+            if text_data[back : back + 2] == b"\xC7\x06" and back + 6 <= len(text_data):
+                vtable_va = u32(text_data, back + 2)
+                ctor_va = image_base + text_rva + back
+                candidates.append((ctor_va, vtable_va))
+                break
+
+        start = pos + 1
+
+    # 同一个类析构函数也会清 global slot，但那里写的是 0，不会匹配 `89 35`，所以正常应当恰好一条。
+    unique = []
+    for item in candidates:
+        if item not in unique:
+            unique.append(item)
+
+    if len(unique) != 1:
+        raise RuntimeError(
+            f"global slot 0x{global_slot:08X} 的菜单构造/vtable 闭合数量={len(unique)}，预期 1。"
+        )
+
+    return unique[0]
+
+
+def verify_modal_menu_class(
+    *,
+    name: str,
+    control_id: int,
+    global_slot: int,
+    text_data: bytes,
+    data: bytes,
+    image_base: int,
+    sections: list[tuple[str, int, int, int, int]],
+    text_rva: int,
+    child_hittest_va: int,
+    layout_va: int,
+    item_variant: bool,
+) -> dict[str, int]:
+    """验证一个辅助菜单类的原版 Draw/事件/命中/布局结构，并返回反编译地址供报告固化。"""
+
+    ctor_va, vtable_va = find_modal_class_vtable_from_global(
+        text_data, image_base, text_rva, global_slot
+    )
+
+    slots: dict[int, int] = {}
+    for slot_offset in (0x08, 0x1C, 0x24, 0x30, 0x58):
+        slot_va = vtable_va + slot_offset
+        slot_file = va_to_file_offset(slot_va, image_base, sections)
+        slots[slot_offset] = u32(data, slot_file)
+
+    # layer1d 实际只会 Hook +0x08 Draw，所以离线兼容验证必须先证明这个槽仍指向当前 PE 的可执行代码。
+    try:
+        va_to_file_offset(slots[0x08], image_base, sections)
+    except Exception as exc:
+        raise RuntimeError(f"{name} vtable+0x08 Draw 不在当前 PE 可映射代码范围：0x{slots[0x08]:08X}。") from exc
+
+    if slots[0x58] != layout_va:
+        raise RuntimeError(
+            f"{name} vtable+0x58 未指向通用布局：actual=0x{slots[0x58]:08X}, expected=0x{layout_va:08X}。"
+        )
+
+    hit_va = slots[0x30]
+    hit_file = va_to_file_offset(hit_va, image_base, sections)
+    hit_code = data[hit_file : hit_file + 40]
+    if len(hit_code) < 31 or hit_code[0:4] != bytes.fromhex("56 8B F1 E8"):
+        raise RuntimeError(f"{name} vtable+0x30 函数头不符合已确认命中更新形状。")
+
+    # +3 的 E8 必须调用同一个通用 direct-child hit-test；layer1d 不修改这条路径；验证它只是为了确认原版输入结构没有变化。
+    hit_child_target = rel32_target(hit_va + 3, data, hit_file + 3)
+    if hit_child_target != child_hittest_va:
+        raise RuntimeError(
+            f"{name} vtable+0x30 没有调用已确认 child hit-test："
+            f"actual=0x{hit_child_target:08X}, expected=0x{child_hittest_va:08X}。"
+        )
+
+    if not item_variant:
+        expected_tail = bytes.fromhex("89 86 A8 00 00 00 5E C2 0C 00")
+        if hit_code[8:18] != expected_tail:
+            raise RuntimeError(f"{name} vtable+0x30 没有把 child hit-test 返回值写入 self+0xA8。")
+    else:
+        if not (
+            hit_code[8:10] == bytes.fromhex("8B CE")
+            and hit_code[10:16] == bytes.fromhex("89 86 A8 00 00 00")
+            and hit_code[16] == 0xE8
+            and hit_code[21:27] == bytes.fromhex("89 86 FC 00 00 00")
+            and hit_code[27:31] == bytes.fromhex("5E C2 0C 00")
+        ):
+            raise RuntimeError(
+                f"{name} 物品版 vtable+0x30 的 self+0xA8 / self+0xFC 更新结构发生变化。"
+            )
+
+    event_va = slots[0x24]
+    event_file = va_to_file_offset(event_va, image_base, sections)
+    event_code = data[event_file : event_file + 0x600]
+    if len(event_code) < 0x40:
+        raise RuntimeError(f"{name} vtable+0x24 事件函数超出文件范围。")
+
+    # 每个类继续验证关键 self+0xA8 动作证据，用来保证 layer1d 没有建立在错误输入结构之上；不复制整个业务函数。
+    if control_id == 0x0B:
+        if event_code[0:28] != bytes.fromhex(
+            "8B 81 A8 00 00 00 85 C0 74 0F 83 78 28 5D 75 09 8B 01 6A 00 6A 00 FF 50 1C C2 0C 00"
+        ):
+            raise RuntimeError(f"{name} 关闭按钮 0x5D -> vtable+0x1C 的事件证据变化。")
+    elif control_id == 0x0D:
+        # 0x7E/0x7F/0x80 直接从 self+0xA8->ID 分支；0x81/82/83 和 0x84..0x8F 通过全局控件查找后比较 self+0xA8。
+        required = [
+            bytes.fromhex("8B 87 A8 00 00 00"),
+            bytes.fromhex("83 F8 7F"),
+            bytes.fromhex("3D 80 00 00 00"),
+            bytes.fromhex("83 F8 7E"),
+            bytes.fromhex("68 81 00 00 00"),
+            bytes.fromhex("68 82 00 00 00"),
+            bytes.fromhex("68 83 00 00 00"),
+            bytes.fromhex("8D 86 84 00 00 00"),
+            bytes.fromhex("83 FE 0C"),
+        ]
+        for sig in required:
+            if sig not in event_code:
+                raise RuntimeError(f"{name} 技能动作 ID 0x7E~0x8F 的 self+0xA8 事件证据不完整。")
+    elif control_id == 0x0E:
+        for cid in (0x15, 0x17, 0x5A, 0x16):
+            sig = bytes([0x83, 0xF8, cid])
+            if sig not in event_code[:0x180]:
+                raise RuntimeError(f"{name} 物品动作 ID 0x{cid:02X} 的事件分支缺失。")
+        if bytes.fromhex("8B 86 A8 00 00 00") not in event_code[:0x80]:
+            raise RuntimeError(f"{name} 物品事件没有读取 self+0xA8。")
+    else:
+        raise RuntimeError(f"内部错误：未支持的辅助菜单 control ID 0x{control_id:02X}。")
+
+    return {
+        "ctor": ctor_va,
+        "vtable": vtable_va,
+        "draw": slots[0x08],
+        "active": slots[0x1C],
+        "event": slots[0x24],
+        "hit": slots[0x30],
+        "layout": slots[0x58],
+    }
+
+
 # -------------------------------------------------------------------------------------------------
 # 4. 单文件验证
 # -------------------------------------------------------------------------------------------------
@@ -418,6 +647,25 @@ def verify_one(path: Path) -> list[str]:
         raise RuntimeError("找不到 .text Section。") from exc
 
     _name, text_rva, _virtual_size, raw_size, raw_pointer = text
+
+    # test4 继续验证乾坤袋/物品辅助对象地址证据：构造函数必须唯一地把该类实例写入已确认全局槽。
+    bag_aux_ctor_hits = []
+    start = 0
+    while True:
+        hit = data.find(BAG_AUX_PANEL_CTOR_WRITE, start)
+        if hit < 0:
+            break
+        bag_aux_ctor_hits.append(hit)
+        start = hit + 1
+    if len(bag_aux_ctor_hits) != 1:
+        raise RuntimeError(
+            f"乾坤袋/物品辅助面板构造写槽签名数量异常：期望 1，实际 {len(bag_aux_ctor_hits)}；"
+            "拒绝把该地址继续当作已确认乾坤袋证据。"
+        )
+    bag_aux_ctor_off = bag_aux_ctor_hits[0]
+    if not (raw_pointer <= bag_aux_ctor_off < raw_pointer + raw_size):
+        raise RuntimeError("乾坤袋/物品辅助面板构造写槽签名不在 .text 节。")
+    bag_aux_ctor_va = image_base + text_rva + (bag_aux_ctor_off - raw_pointer)
     text_data = data[raw_pointer : raw_pointer + raw_size]
 
     original_count = data.count(FONT_ORIGINAL)
@@ -673,6 +921,67 @@ def verify_one(path: Path) -> list[str]:
             f"全局鼠标释放 CALL 目标 0x{global_release_target_va:08X} 不符合 0x4B4560 已确认函数头。"
         )
 
+
+
+    # ---------------------------------------------------------------------------------------------
+    # test2/test3 键盘快捷键 callsite。
+    #
+    # 这是本轮“鼠标和键盘统一走同一套模态布局”的关键静态证据。DisplayFix 不改快捷键判断本身，
+    # 只包住第三条原版 thiscall：原函数先执行，随后再执行绝对锚定。
+    # ---------------------------------------------------------------------------------------------
+    keyboard_off = require_unique(
+        "主 HUD 键盘快捷键 callsite",
+        find_masked(text_data, HUD_KEYBOARD_SHORTCUT_CALLSITE, HUD_KEYBOARD_SHORTCUT_CALLSITE_MASK),
+    )
+    keyboard_site_va = image_base + text_rva + keyboard_off
+    keyboard_call_file = raw_pointer + keyboard_off + 26
+    keyboard_call_va = keyboard_site_va + 26
+    if data[keyboard_call_file] != 0xE8:
+        raise RuntimeError("主 HUD 键盘快捷键 callsite +26 不是第三条 E8 CALL。")
+
+    keyboard_target_va = rel32_target(keyboard_call_va, data, keyboard_call_file)
+    keyboard_target_file = va_to_file_offset(keyboard_target_va, image_base, sections)
+    keyboard_head = data[keyboard_target_file : keyboard_target_file + 32]
+    if len(keyboard_head) < 32 or not (
+        keyboard_head[0] == 0xA1
+        and keyboard_head[5:9] == bytes.fromhex("53 56 8B F1")
+        and keyboard_head[9:17] == bytes.fromhex("85 C0 74 08 3B C6 0F 85")
+        and keyboard_head[21] == 0xA1
+        and keyboard_head[26:32] == bytes.fromhex("B3 F0 85 C0 74 18")
+    ):
+        raise RuntimeError(
+            f"键盘快捷键 CALL 目标 0x{keyboard_target_va:08X} 不符合已确认函数头。"
+        )
+
+
+    # ---------------------------------------------------------------------------------------------
+    # test5 逆向证据：通用 child hit-test 内部 GetCursorPos 调用点必须保持原版。
+    #
+    # 这里验证的是“按钮命中补偿可以安全安装”的机器码事实，而不是验证某个截图坐标：
+    #   1. 整个函数头在 .text 中必须唯一；
+    #   2. 函数头 +26 必须仍是 6 字节 `FF 15 imm32`；
+    #   3. imm32 必须正好是当前 外传 已确认的 GetCursorPos IAT 0x005513E4。
+    #
+    # 运行时 ASI 会把这一条局部 CALL 改成 E8 hook + NOP。全局 IAT 不改，因此 HUD、小地图和世界输入不会
+    # 被三菜单的坐标反算污染。
+    # ---------------------------------------------------------------------------------------------
+    child_hittest_off = require_unique(
+        "通用 child hit-test GetCursorPos 调用点",
+        find_masked(text_data, UI_CHILD_HITTEST_CURSOR, UI_CHILD_HITTEST_CURSOR_MASK),
+    )
+    child_hittest_va = image_base + text_rva + child_hittest_off
+    child_cursor_call_off = child_hittest_off + 26
+    child_cursor_call_va = child_hittest_va + 26
+    child_cursor_call = text_data[child_cursor_call_off : child_cursor_call_off + 6]
+    if len(child_cursor_call) != 6 or child_cursor_call[0:2] != bytes.fromhex("FF 15"):
+        raise RuntimeError("通用 child hit-test +26 已不是 6 字节 FF 15 GetCursorPos IAT 调用。")
+    child_cursor_iat = u32(child_cursor_call, 2)
+    if child_cursor_iat != EXPECTED_GET_CURSOR_POS_IAT:
+        raise RuntimeError(
+            "通用 child hit-test 的 GetCursorPos IAT 地址变化："
+            f"actual=0x{child_cursor_iat:08X}, expected=0x{EXPECTED_GET_CURSOR_POS_IAT:08X}。"
+        )
+
     # ---------------------------------------------------------------------------------------------
     # vtable +0x00：主 HUD scalar deleting destructor。
     #
@@ -709,69 +1018,215 @@ def verify_one(path: Path) -> list[str]:
     # ---------------------------------------------------------------------------------------------
     # vtable +0x24：主 HUD 真正的鼠标释放/事件分派函数。
     #
-    # v0.3-test4 的实机 A/B 日志已经闭合：用户点击顶部两个圆形按钮时，原版 self+0xA8
-    # 真正命中的 control ID 是 0x0B 和 0x0E，不是此前误判的 0x0F / 0x10。
+    # test2 在这里不再只验证 0x0B / 0x0E。反汇编已经确认主 HUD 的六个主圆形按钮 0x09~0x0E
+    # 都使用完全相同的“读取 target global -> 查询 active -> 再读同一 global -> vtable+0x1C”结构。
+    # 六个 target global 都用于结构识别与排除误判；历史 test5 曾只移动 0x0B/0x0D/0x0E。layer1d 不移动任何一路，但仍要求六路原版结构全部成立。
     #
-    # 原版两条分支结构分别是：
-    #   ID 0x0E -> mov ecx,[target_global] -> call 0x4B1DB0 -> mov ecx,[同一 global]
-    #            -> !active -> call [vtable+0x1C]
-    #   ID 0x0B -> 同样结构，使用自己的 target_global。
-    #
-    # test5 的兜底只会复用目标对象自身 vtable+0x1C，所以这里必须把这两条原版分支验证清楚。
+    # 0x0B / 0x0E 仍然具有额外意义：历史鼠标点击穿透/释放 fallback 只对这两路做过实机闭环，
+    # 所以 test2 只扩大“布局读取”，不扩大那条输入行为补丁。
     # ---------------------------------------------------------------------------------------------
     event_slot_va = vtable_va + 0x24
     event_slot_file_offset = va_to_file_offset(event_slot_va, image_base, sections)
     event_slot_target = u32(data, event_slot_file_offset)
     event_target_file_offset = va_to_file_offset(event_slot_target, image_base, sections)
 
-    if event_target_file_offset + 0x1DE > len(data):
+    if event_target_file_offset + 0x208 > len(data):
         raise RuntimeError("主 HUD vtable +0x24 指向的事件函数超出文件范围。")
 
-    event_code = data[event_target_file_offset : event_target_file_offset + 0x1DE]
-    event_shape_ok = (
+    event_code = data[event_target_file_offset : event_target_file_offset + 0x208]
+    if not (
         event_code[0x19:0x1C] == bytes([0xFF, 0x50, 0x30])
         and event_code[0xD0:0xD6] == bytes([0x8B, 0xBF, 0xA8, 0x00, 0x00, 0x00])
         and event_code[0xDE:0xE1] == bytes([0x8B, 0x47, 0x28])
-        and event_code[0x113:0x116] == bytes([0x83, 0xF8, 0x0E])
-        and event_code[0x118:0x11A] == bytes([0x8B, 0x0D])
-        and event_code[0x122] == 0xE8
-        and event_code[0x127:0x129] == bytes([0x8B, 0x0D])
-        and event_code[0x133:0x136] == bytes([0xFF, 0x56, 0x1C])
-        and event_code[0x1BB:0x1BE] == bytes([0x83, 0xF8, 0x0B])
-        and event_code[0x1C0:0x1C2] == bytes([0x8B, 0x0D])
-        and event_code[0x1CA] == 0xE8
-        and event_code[0x1CF:0x1D1] == bytes([0x8B, 0x0D])
-        and event_code[0x1DB:0x1DE] == bytes([0xFF, 0x56, 0x1C])
-    )
-
-    if not event_shape_ok:
+    ):
         raise RuntimeError(
-            "主 HUD vtable +0x24 的 0x0B/0x0E 原版窗口开关结构不符合已确认版本，"
+            "主 HUD vtable +0x24 的公共事件分派前半段不符合已确认版本，"
             f"target=0x{event_slot_target:08X}。"
         )
 
-    target_global_0e_a = u32(event_code, 0x11A)
-    target_global_0e_b = u32(event_code, 0x129)
-    target_global_0b_a = u32(event_code, 0x1C2)
-    target_global_0b_b = u32(event_code, 0x1D1)
+    branch_ids = [0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E]
+    cmp_offsets = [0x167, 0x191, 0x1BB, 0x13D, 0x1E5, 0x113]
+    target_globals: dict[int, int] = {}
+    active_queries: dict[int, int] = {}
 
-    if target_global_0e_a != target_global_0e_b:
-        raise RuntimeError("ID 0x0E 分支前后读取的目标窗口全局槽不同。")
-    if target_global_0b_a != target_global_0b_b:
-        raise RuntimeError("ID 0x0B 分支前后读取的目标窗口全局槽不同。")
+    for control_id, cmp_offset in zip(branch_ids, cmp_offsets):
+        mov_a = cmp_offset + 5
+        query_call = cmp_offset + 15
+        mov_b = cmp_offset + 20
+        toggle_call = cmp_offset + 32
 
-    active_query_0e = rel32_target(
-        event_slot_target + 0x122,
-        data,
-        event_target_file_offset + 0x122,
+        if event_code[cmp_offset : cmp_offset + 5] != bytes([0x83, 0xF8, control_id, 0x75, 0x25]):
+            raise RuntimeError(f"ID 0x{control_id:02X} 分支入口结构不符合已确认版本。")
+        if event_code[mov_a : mov_a + 2] != bytes([0x8B, 0x0D]):
+            raise RuntimeError(f"ID 0x{control_id:02X} 第一次 target global 读取不是 mov ecx,[imm32]。")
+        if event_code[mov_a + 6 : mov_a + 9] != bytes([0x6A, 0x00, 0x8B]) or event_code[mov_a + 9] != 0x31:
+            raise RuntimeError(f"ID 0x{control_id:02X} active 查询前的 push 0 / mov esi,[ecx] 结构变化。")
+        if event_code[query_call] != 0xE8:
+            raise RuntimeError(f"ID 0x{control_id:02X} active 查询不是 E8 CALL。")
+        if event_code[mov_b : mov_b + 2] != bytes([0x8B, 0x0D]):
+            raise RuntimeError(f"ID 0x{control_id:02X} 第二次 target global 读取不是 mov ecx,[imm32]。")
+        if event_code[toggle_call : toggle_call + 3] != bytes([0xFF, 0x56, 0x1C]):
+            raise RuntimeError(f"ID 0x{control_id:02X} 最终不是调用目标对象 vtable+0x1C。")
+
+        global_a = u32(event_code, mov_a + 2)
+        global_b = u32(event_code, mov_b + 2)
+        if global_a != global_b:
+            raise RuntimeError(f"ID 0x{control_id:02X} 分支前后读取的目标窗口全局槽不同。")
+
+        query_target = rel32_target(
+            event_slot_target + query_call,
+            data,
+            event_target_file_offset + query_call,
+        )
+        target_globals[control_id] = global_a
+        active_queries[control_id] = query_target
+
+    if len(set(active_queries.values())) != 1:
+        details = ", ".join(f"0x{k:02X}->0x{v:08X}" for k, v in active_queries.items())
+        raise RuntimeError(f"六个主模态分支没有共用同一个 active 查询函数：{details}")
+
+    active_query_va = next(iter(active_queries.values()))
+
+
+    # ---------------------------------------------------------------------------------------------
+    # 历史 test6/test7 曾围绕三个菜单类的输入路径做过失败实验；layer1d 已彻底停止这些运行时修改。
+    # 但这些失败实验留下了很有价值的类结构证据，所以兼容工具继续把三类的
+    # constructor/vtable/+0x08/+0x24/+0x30/+0x58 全部闭合并输出。
+    # 目的正好相反：确认 layer1d 只需要 Hook +0x08 Draw，+0x30/self+0xA8 仍可完全交还原版。
+    # ---------------------------------------------------------------------------------------------
+    modal_classes: dict[int, dict[str, int]] = {}
+    modal_classes[0x0B] = verify_modal_menu_class(
+        name="装备菜单",
+        control_id=0x0B,
+        global_slot=target_globals[0x0B],
+        text_data=text_data,
+        data=data,
+        image_base=image_base,
+        sections=sections,
+        text_rva=text_rva,
+        child_hittest_va=child_hittest_va,
+        layout_va=layout_va,
+        item_variant=False,
     )
-    active_query_0b = rel32_target(
-        event_slot_target + 0x1CA,
-        data,
-        event_target_file_offset + 0x1CA,
+    modal_classes[0x0D] = verify_modal_menu_class(
+        name="技能菜单",
+        control_id=0x0D,
+        global_slot=target_globals[0x0D],
+        text_data=text_data,
+        data=data,
+        image_base=image_base,
+        sections=sections,
+        text_rva=text_rva,
+        child_hittest_va=child_hittest_va,
+        layout_va=layout_va,
+        item_variant=False,
     )
-    if active_query_0e != active_query_0b:
-        raise RuntimeError("ID 0x0B 与 0x0E 分支使用的 active 查询函数不同。")
+    modal_classes[0x0E] = verify_modal_menu_class(
+        name="物品菜单",
+        control_id=0x0E,
+        global_slot=target_globals[0x0E],
+        text_data=text_data,
+        data=data,
+        image_base=image_base,
+        sections=sections,
+        text_rva=text_rva,
+        child_hittest_va=child_hittest_va,
+        layout_va=layout_va,
+        item_variant=True,
+    )
+
+    # ---------------------------------------------------------------------------------------------
+    # layer1d：UI manager 顶层 Draw 架构。
+    #
+    # 这里只读验证，不打补丁。运行时 layer1d 会 Hook 包装函数内部那条 manager Draw CALL，原因是同一个包装函数
+    # 在游戏里存在多个外层调用者；Hook 包装函数内部可以天然覆盖它们，而无需对场景 callsite 逐个猜测。
+    # ---------------------------------------------------------------------------------------------
+    draw_wrapper_off = require_unique(
+        "UI manager Draw 包装函数",
+        find_masked(text_data, UI_MANAGER_DRAW_WRAPPER, UI_MANAGER_DRAW_WRAPPER_MASK),
+    )
+    draw_wrapper_va = image_base + text_rva + draw_wrapper_off
+    ui_manager_va = u32(text_data, draw_wrapper_off + 3)
+    if not (0x00400000 <= ui_manager_va < 0x00600000):
+        raise RuntimeError(f"UI manager 绝对地址异常：0x{ui_manager_va:08X}。")
+
+    manager_draw_call_va = draw_wrapper_va + 8
+    manager_draw_call_file = raw_pointer + draw_wrapper_off + 8
+    manager_draw_va = rel32_target(manager_draw_call_va, data, manager_draw_call_file)
+    manager_draw_file = va_to_file_offset(manager_draw_va, image_base, sections)
+    manager_code = data[manager_draw_file : manager_draw_file + 72]
+    if len(manager_code) < 55:
+        raise RuntimeError("UI manager Draw 函数长度不足，无法验证 layer1d 顶层绘制结构。")
+
+    # 与 ASI 安装时相同的关键结构：先读取 HUD global、执行 HUD 特殊 pass，再开始 manager+0x1C 顶层链，
+    # 每个顶层对象最终通过 vtable+0x08 Draw。
+    if not (
+        manager_code[0:3] == bytes.fromhex("56 8B F1")
+        and manager_code[3:5] == bytes.fromhex("8B 0D")
+        and manager_code[9] == 0x57
+        and manager_code[10:14] == bytes.fromhex("8B 7C 24 0C")
+        and manager_code[14:16] == bytes.fromhex("85 C9")
+        and manager_code[18] == 0xE8
+        and manager_code[27:29] == bytes.fromhex("8B 0D")
+        and manager_code[33] == 0x57
+        and manager_code[34] == 0xE8
+        and manager_code[39:42] == bytes.fromhex("8B 4E 1C")
+        and manager_code[49:51] == bytes.fromhex("8B 01")
+        and manager_code[51] == 0x57
+        and manager_code[52:55] == bytes.fromhex("FF 50 08")
+    ):
+        raise RuntimeError("UI manager Draw 不符合已确认的 HUD special-pass + 顶层 vtable+0x08 绘制结构。")
+
+    hud_global_a = u32(manager_code, 5)
+    hud_global_b = u32(manager_code, 29)
+    if hud_global_a != hud_global_b:
+        raise RuntimeError(
+            f"UI manager Draw 两次主 HUD global 不一致：0x{hud_global_a:08X} / 0x{hud_global_b:08X}。"
+        )
+
+    hud_special_pass_va = rel32_target(manager_draw_va + 34, data, manager_draw_file + 34)
+    va_to_file_offset(hud_special_pass_va, image_base, sections)
+
+    main_hud_draw_slot_file = va_to_file_offset(vtable_va + 0x08, image_base, sections)
+    main_hud_draw_va = u32(data, main_hud_draw_slot_file)
+    va_to_file_offset(main_hud_draw_va, image_base, sections)
+
+    # ---------------------------------------------------------------------------------------------
+    # layer1d：顶层输入 root picker。运行时只 Hook 这一条 rel32 CALL，不直接写 manager+0x40。
+    # ---------------------------------------------------------------------------------------------
+    input_pick_off = require_unique(
+        "顶层输入 root picker callsite",
+        find_masked(text_data, UI_TOP_LEVEL_PICK_CALLSITE, UI_TOP_LEVEL_PICK_CALLSITE_MASK),
+    )
+    input_pick_site_va = image_base + text_rva + input_pick_off
+    input_pick_call_va = input_pick_site_va + 15
+    input_pick_call_file = raw_pointer + input_pick_off + 15
+    input_picker_va = rel32_target(input_pick_call_va, data, input_pick_call_file)
+    input_picker_file = va_to_file_offset(input_picker_va, image_base, sections)
+    input_picker_code = data[input_picker_file : input_picker_file + 0xB3]
+    if len(input_picker_code) < 0xB3:
+        raise RuntimeError("顶层 root picker 长度不足，无法验证 layer1d 输入结构。")
+
+    if not (
+        input_picker_code[0:3] == bytes.fromhex("53 8B D9")
+        and input_picker_code[0x4C:0x4F] == bytes.fromhex("8B 73 18")
+        and input_picker_code[0x51:0x54] == bytes.fromhex("89 73 20")
+        and input_picker_code[0x65:0x67] == bytes.fromhex("8B CE")
+        and input_picker_code[0x67] == 0xE8
+        and input_picker_code[0x9F:0xA2] == bytes.fromhex("8B 43 20")
+        and input_picker_code[0xA2:0xA5] == bytes.fromhex("8B 4B 1C")
+        and input_picker_code[0xAD:0xB0] == bytes.fromhex("8B 40 0C")
+        and input_picker_code[0xB0:0xB3] == bytes.fromhex("89 43 20")
+    ):
+        raise RuntimeError("顶层 root picker 不符合 manager+0x18 -> manager+0x20 -> object+0x0C 的原版选择结构。")
+
+    input_hit_rect_va = rel32_target(input_picker_va + 0x67, data, input_picker_file + 0x67)
+    input_property_get_va = rel32_target(input_picker_va + 0x5B, data, input_picker_file + 0x5B)
+    va_to_file_offset(input_hit_rect_va, image_base, sections)
+    va_to_file_offset(input_property_get_va, image_base, sections)
+
+
+
 
 
     # clean1 额外确认 Steam 多语言最终兜底所依赖的 CreateFileA 调用上下文仍然唯一存在。
@@ -807,15 +1262,29 @@ def verify_one(path: Path) -> list[str]:
         f"ResJM.Lib CreateFileA 低层 CALL VA=0x{resjm_call_va:08X}（clean1 语言兜底依赖；IAT 0x005511E4 保持原样）",
         f"世界鼠标按下 callsite VA=0x{world_press_va:08X} -> 0x{world_press_target_va:08X}（仅点击穿透保护，不参与 gameplay gate）",
         f"全局鼠标释放 callsite VA=0x{global_release_va:08X} -> 0x{global_release_target_va:08X}（顶部窗口 fallback）",
+        f"键盘快捷键 callsite VA=0x{keyboard_call_va:08X} -> 0x{keyboard_target_va:08X}（layer1d 保持原版，不 Hook）",
+        f"通用 child hit-test VA=0x{child_hittest_va:08X}，GetCursorPos callsite=0x{child_cursor_call_va:08X} -> IAT 0x{child_cursor_iat:08X}（仅作原版输入证据；layer1d 不改写）",
+        f"layer1d Draw 包装 VA=0x{draw_wrapper_va:08X}，UI manager=0x{ui_manager_va:08X} -> Draw 0x{manager_draw_va:08X}",
+        f"UI manager HUD 特殊 pass=0x{hud_special_pass_va:08X}（layer1d 只验证，不 Hook/不重放）",
+        f"layer1d 顶层输入 picker callsite=0x{input_pick_call_va:08X} -> 0x{input_picker_va:08X}",
+        f"顶层输入原版矩形函数=0x{input_hit_rect_va:08X}，JMM 属性读取=0x{input_property_get_va:08X}（key 0x0D）",
+        f"主 HUD vtable+0x08 Draw=0x{main_hud_draw_va:08X}",
         f"主 HUD 根类构造 VA=0x{hud_va:08X}",
         f"主 HUD vtable=0x{vtable_va:08X}",
         f"vtable+0x00 -> 0x{destructor_slot_target:08X}（test15 仅清理 HUD 实例缓存，不参与 profile 生命周期）",
-        f"vtable+0x24 -> 0x{event_slot_target:08X}（顶部按钮 0x0B/0x0E 原版窗口开关已验证）",
-        f"ID 0x0B target global=0x{target_global_0b_a:08X}",
-        f"ID 0x0E target global=0x{target_global_0e_a:08X}",
-        f"两分支 active query=0x{active_query_0b:08X}，最终均调用各目标对象 vtable+0x1C",
+        f"vtable+0x24 -> 0x{event_slot_target:08X}（顶部按钮 0x09~0x0E 六条原版窗口开关已验证）",
+        f"乾坤袋/物品辅助面板构造写槽 VA=0x{bag_aux_ctor_va:08X}：vtable 0x{BAG_AUX_PANEL_VTABLE:08X} -> global slot 0x{BAG_AUX_PANEL_SLOT:08X}（只保留逆向证据；layer1d 不手工移动）",
+        "六路 target global=" + ", ".join(
+            f"0x{control_id:02X}:0x{target_globals[control_id]:08X}" for control_id in branch_ids
+        ),
+        f"六路 active query=0x{active_query_va:08X}，最终均调用各目标对象 vtable+0x1C",
         f"vtable+0x58 -> 0x{layout_slot_target:08X}（已和通用布局函数交叉验证）",
-        "vtable+0x30 不再被 DisplayFix hook（此前三种 self+0xA8/hit-test 修补均已实机失败）",
+        "layer1d 三菜单类证据=" + "; ".join(
+            f"ID0x{cid:02X}: ctor=0x{info['ctor']:08X}, vtable=0x{info['vtable']:08X}, "
+            f"+0x08=0x{info['draw']:08X}, +0x24=0x{info['event']:08X}, +0x30=0x{info['hit']:08X}, +0x58=0x{info['layout']:08X}"
+            for cid, info in modal_classes.items()
+        ),
+        "layer1d 运行边界：只可能 Hook 三菜单 vtable+0x08 Draw；+0x30/self+0xA8/GetCursorPos/快捷键全部保持原版",
     ]
 
 
@@ -964,8 +1433,8 @@ def verify_steam_dll(path: Path) -> list[str]:
         "USER32!CreateWindowExA 全局 Hook 安装块仍存在：callback RVA=0x2830, overwrite=12",
         'CreateWindowExA callback 的 EDIT -> SetWindowLongA(GWL_WNDPROC) 子类化链已确认',
         "RVA 0x2841 原始 lpClassName 路径会在只检查 NULL 后直接解引用 class 参数",
-        "RVA 0x2889 原始 EDIT WndProc 子类化块仍完整存在（v0.2.1 继续保留）",
-        "v0.2.1 继续在 0x2841 前置 class-atom guard，同时保留普通字符串类名与官方 EDIT 处理",
+        "RVA 0x2889 原始 EDIT WndProc 子类化块仍完整存在（layer1d 继续保留）",
+        "layer1d 继续沿用 v0.2.1：0x2841 前置 class-atom guard，同时保留普通字符串类名与官方 EDIT 处理",
     ]
 
 

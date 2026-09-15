@@ -1,4 +1,4 @@
-# 前端动画与主菜单研究说明（截至 v0.2.3-stripe1，稳定基线另行保留）
+# 外传 DPI 字体修复工具详细说明
 
 ## 2026-09-15 stripe1 当前同步（本节优先级最高）
 
@@ -42,67 +42,10 @@
 - 最终 Win32/PE32 release 已生成并通过两套 `verify_build.py`：本体 SHA-256 `60af39160a7c4fa0e1f84488e146da696902af852bffe2b5fdeccfa91251b16c`；外传 SHA-256 `2d9a2554a6b2407f4e1a50e854fbefd7e654d11895b26a38fcd750d874839392`。本体/外传 layer1c 均待用户实机；外传尤其不能用本体结果代替。
 
 
-## 2026-09-15 layer1b 历史记录（实机失败，仅保留证据）
+`apply_dpi_font_fix.py` 是独立的 ComeOn.exe 字体 DPI 补丁器，和 DisplayFix ASI 的 layer1c 绘制/输入 root 功能没有耦合。它解决 Windows 125%/150% 等缩放下，原游戏调用 `GetDeviceCaps(LOGPIXELSY)` 得到 120/144 DPI 后创建过大的字体、但旧字格仍按原尺寸裁切的问题。
 
-- **当前实验版本：`v0.2.2-layer1b`。稳定回退基线：`v0.2.1`。** 用户目前只实测了本体 layer1a；外传 layer1a/layer1b 尚未实机，因此不能把本体结果直接宣称为外传通过。
-- layer1b 与本体采用同一架构：不移动辅助 GUI，不修按钮坐标，而是在完整验证 `manager+0x1C/+0x18` 与 `object+0x08/+0x0C` 双向顶层链后，把当前菜单相关、且原本位于 HUD 前方的活动顶层对象稳定提升到 HUD 后面。这样正向 Draw 与反向鼠标输入使用同一 Z 顺序。
-- 触发门槛仍严格限定为 `GAMEPLAY + CenterMainHUD=1 + AuxiliaryUIAboveHUD=1 + 0x0B/0x0D/0x0E 至少一个 active`。候选是主菜单本体、parent 链可证明属于主菜单，或与 HUD 实际相交的活动顶层对象；接近整屏的世界根/遮罩会被排除。
-- 双向链只要任一验证失败，本帧就零写入，并退回 layer1a Draw-only 兜底。所有 X/Y、child、active、`GetCursorPos`、`self+0xA8`、`+0x30`、键盘快捷键和按钮业务均保持原版。
-- 外传 Steam 两条封版红线完全不动：`ResJM.Lib` 多语言 CreateFileA 低层兜底仍保留；`ComeOn.dll CreateWindowExA` class-atom guard 仍只修 NULL/MAKEINTATOM 非法字符串解引用，官方 EDIT WndProc/OpenGL 路径继续完整执行。历史 DirectShow/影片/EDIT neutralize 实验继续禁止回流。
-- 外传的三菜单、UI manager Draw、HUD 特殊 pass、Strategy/JMM/HUD 稳定结构仍由构建/兼容验证工具检查；`+0x30/self+0xA8` 只作为“原版输入结构应保持”的证据，不作为 layer1b Hook 点。
-- 当前 layer1b 外传 ASI SHA-256：`58da452ec081b75e6cb8e14f1377d851c83fbd880154fe4a28e63840e5d65ff6`。当前环境没有外传 Steam/非 Steam ComeOn.exe 与 Steam `ComeOn.dll`，所以新版深层兼容验证器仍未重新跑真实样本；只能写作静态/构建边界通过。
-- **外传实机验收**除本体同样的物品重叠按钮、技能连招编辑、左侧辅助面板、12 槽/HUD/键盘/世界点击外，还必须额外确认 Steam 多语言、cnc-ddraw OpenGL、class-atom guard、Strategy 进入/退出均无回归。
-- 本文后续的 layer1a、test1~test7、v0.2.1 等章节均是**历史阶段记录**。凡涉及“当前版本/当前方案”的表述与本节冲突时，以本节为准。
+脚本不会覆盖输入 EXE。它先用 PE32/x86 和局部机器码上下文确认目标确实是已知字体创建路径，再复制为新文件并把 `GetDeviceCaps` 的 6 字节 CALL 等长替换为“自己清理两个参数 + 让 EAX=96”。因此后续栈平衡和调用者代码保持不变。它不依赖整个 EXE 哈希，宽屏改版只要没有改这段字体代码也可以使用。
 
-## 2026-09-14 日志中文化同步
+`apply_fix.bat` 只是拖拽入口：把 EXE 拖上去，BAT 以 UTF-8 代码页调用同目录 Python；脚本返回码会原样传回。宿主只需要 Python，不需要编译器。
 
-- 历史记录：`v0.2.1` 曾为正式源码版本；现作为 layer1b 的稳定回退基线。
-- 本轮只把 DisplayFix.log 全面改为简体中文；v0.2.0 已封版的非Steam显示/HUD/DPI/输入、Steam ResJM.Lib 多语言兜底、ComeOn.dll CreateWindowExA class-atom OpenGL 修复全部不变。
-- `DisplayFix.log` 现统一使用 `[成功] / [信息] / [警告] / [失败] / [运行]`；关键技术名、地址、配置键仍保留英文，方便与逆向记录对应。
-- 日志以 UTF-8 无 BOM 写出；`build.bat` 显式使用 `-finput-charset=UTF-8 -fexec-charset=UTF-8`，避免受 Windows ANSI 代码页影响。
-- 本文后续如保留 `[OK]/[INFO]/[WARN]/[FAIL]/[RUNTIME]`，均属于历史版本的原始实机证据，不代表当前版本仍输出英文。
-
-当前日志示例：
-
-```text
-[成功] Steam多语言 ResJM.Lib CreateFileA 兜底已安装
-[成功] Steam ComeOn.dll CreateWindowExA 类Atom兼容修复已安装；官方EDIT处理保持完整
-[运行] Steam CreateWindowExA 类Atom保护命中次数=3 最后Atom=0x0000C1F2
-```
-
-
-## 已实机闭合的游戏前端生命周期
-
-外传当前稳定设计：
-
-```text
-FRONTEND：原版 4:3
-    ↓ Strategy state 3 enter
-GAMEPLAY：fixed-Y / auto-X 宽屏
-    ↓ Strategy state 3 exit
-FRONTEND：恢复原版 mode 4 / 640×480
-```
-
-关键地址：
-
-- 原版显示模式函数 `0x0040BCC0`
-- 前端 mode 4 应用 `0x0040C339`，CALL `0x0040C345 -> 0x0040BCC0`
-- Strategy enter `0x0040BA5F -> 0x0040E060`
-- enter 内部显示 CALL `0x0040E06F -> 0x0040BCC0`
-- Strategy exit `0x0040B9E8 -> 0x0040E0A0`
-
-用户在 v0.1-test1 已实机确认标题 4:3、进游戏宽屏、退回标题恢复 4:3。因此这条生命周期继续作为 v0.2.0 稳定基线。
-
-## Steam 开场动画历史结论修正
-
-早期 test4~test9 把 `ComeOn.exe` 进程内加载的 `ComeOn.dll` 影片代码当成实际 Steam 开场动画实例进行实验。多轮实机出现同一个异常：补丁安装日志显示成功，但屏幕上的开场动画比例与行为完全不变。
-
-后续启动链调查已经把 Steam 2.01 官方开场动画归到 launcher 阶段，而不是 DisplayFix 所修的主程序显示生命周期。由此需要修正旧文档中的表述：
-
-- `ComeOn.dll` 中的 DirectShow 代码、RVA、WndProc、cleanup 逆向结果本身仍然是真实静态证据；
-- 但**不能继续假定 ComeOn.exe 进程内那一份 ComeOn.dll 就是屏幕上开场动画的实际播放实例**；
-- test4~test9 因此只能作为失败历史和进程边界反证，不能作为“动画已被真正接管”的证据。
-
-v0.2.0 完全不恢复这些影片实验代码。OpenGL 修复已经独立闭环为 ComeOn.dll `CreateWindowExA` class-atom 参数缺陷。Steam 官方 launcher 控制的开场动画不属于 DisplayFix 主程序修复范围，因此其比例/播放行为不再作为本项目待办。
-
-用户已经实机确认 PlugK 不解决 OpenGL 崩溃。后续允许读取其逆向文档作为地址/结构辅助资料，但不采用其运行时代码作为兼容方案。
+安全规则：签名找不到、出现多次、PE 身份不符、目标已经处于未知第三种状态时必须拒绝修改，不能“猜地址继续打补丁”。

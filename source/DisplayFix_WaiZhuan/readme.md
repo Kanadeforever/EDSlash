@@ -1,120 +1,67 @@
-# DisplayFix_WaiZhuan 源码说明
+# 外传 DisplayFix 源码说明
 
-## v0.2.1 日志中文化
+## 2026-09-15 stripe1 当前同步（本节优先级最高）
 
-`v0.2.1` 只把 `DisplayFix.log` 全面改为简体中文，不改变 `v0.2.0` 的任何已封版逻辑。Steam `ResJM.Lib` 多语言兜底、`ComeOn.dll` CreateWindowExA class-atom OpenGL 修复、非 Steam 宽屏/HUD/DPI/输入路径全部保持原样。日志等级统一为 `[成功]/[信息]/[警告]/[失败]/[运行]`；历史英文日志仅作为旧版实机证据保留。
+- **当前竖条实验版：本体 `v0.3.4-stripe1` / 外传 `v0.2.3-stripe1`。** 本体 GUI/输入基线 `v0.3.3-layer1d` 已由用户实机确认最后生命周期边界也解决；外传仍不能用本体结果代替独立实机。
+- 本轮只处理从早期宽屏阶段就存在的**最右侧竖条纹**，不扩大 GUI/Input Hook。用户在 `BaseHeight=480` 下实测：`16:9 / 32:9 / 8:9 / 40:9` 有竖条，`24:9` 没有。
+- 旧宽度算法会得到：`16:9 -> 854 (mod8=6)`、`32:9 -> 1708 (mod8=4)`、`8:9 -> 428 (mod8=4)`、`40:9 -> 2134 (mod8=6)`、`24:9 -> 1280 (mod8=0)`。目前所有有问题样本的实际 `TargetWidth` 都**不是 8 像素倍数**，唯一无问题样本 `1280` 恰好是 8 像素倍数。
+- 因此 stripe1 的单一实验变量是：把最终 `TargetWidth` 从“按比例四舍五入后只保证偶数”改成“**选择距离理想比例最近的 8 像素倍数**”。对应上述样本，新宽度为 `856 / 1704 / 424 / 2136 / 1280`。
+- 这仍是**待实机验证的根因假设**，目前不能把“8 像素块处理”写成已确认事实。若 stripe1 消除竖条，才可把根因升级为已实机闭合；若竖条仍在，则立即回退，不继续扩大改动。
+- `layer1d` 已通过的辅助 GUI HUD 后绘制、顶层 picker 单次返回值覆盖、独立面板短生命周期跟踪、Strategy FRONTEND/GAMEPLAY、Steam delayed JMM、96-DPI、0x0B/0x0E 防穿透全部保持不变。外传 Steam `ResJM.Lib`、ComeOn.dll class-atom 与官方 EDIT WndProc 红线也不变。
+- 两套 `verify_build.py` 已新增 stripe1 防回归：要求 `TargetWidth` 使用 8 像素边界算法、旧“只补偶数”运行代码为 0，并继续锁住 layer1d GUI/Input 红线。
+- 当前构建 SHA-256：本体 `f565b4d683746fcf9d1fa30d9728df66c7e4e83676758b69a40693ccbebb6b8e`；外传 `deb40b447c94dedd2301a665c59e27dfa3fdb3e2ff44dccc55a46e813b33d4c3`。当前环境仍没有四套 ComeOn.exe 与外传 Steam ComeOn.dll，所以深度 `verify_compatibility.py` 仍标记为待真实样本。
+- **本体首轮实机最重要：继续使用 `BaseHeight=480`，优先测 `16:9` 和 `24:9`。** 日志中 `16:9` 应变成 `TargetWidth=856`，`24:9` 应保持 `1280`，并且 `stripe1目标宽度8像素对齐余数=0`。随后再复测 `32:9 / 8:9 / 40:9`。
 
-最终 `DisplayFix.asi` SHA-256：`e242e70e3a39afd71f57f45405bdaf52acb9e64c0f268e10f61401c00679cef4`。
+> 下文保存 layer1d、layer1c、layer1b、test1~test7 以及更早阶段的完整历史。凡历史段落仍使用“当前版本 / 当前方案 / 竖条另案处理”等措辞，与本节冲突时一律以本节为准。
 
+## 2026-09-15 layer1d 阶段记录（历史，已由 stripe1 当前同步取代）
 
-这是《刀剑封魔录外传：上古传说》DisplayFix 的独立源码工程。当前正式封版为 `v0.2.1`；`v0.1-clean1` 继续作为纯净历史回退基线。
-
-运行文件仍统一叫：
-
-```text
-DisplayFix.asi
-DisplayFix.ini
-```
-
-## v0.2-test1 版本定位（历史成功 A/B）
-
-`v0.2-test1` 继续以 `v0.1-clean1` 为主体：test2 稳定代码 + test4 已实机通过的 Steam `ResJM.Lib` 多语言兜底。
-
-用户已经确认“删除 `ComeOn.dll` 后 OpenGL 可以启动”，因此本轮只新增一个激进实验：隔离该 DLL 对 `USER32!CreateWindowExA` 的全局 inline Hook 以及其 EDIT WndProc 后处理。ComeOn.dll、SteamAPI、官方多语言 Hook 均继续保留。
-
-源码**仍不包含** test3~test9 的 DirectShow、ActiveMovie、MovieManager、teardown、worker/export 隔离等失败实验运行代码。Steam 官方 launcher 控制的开场动画明确不属于 DisplayFix 主程序修复范围。
-
-## 目录
-
-```text
-source\DisplayFix_WaiZhuan\
-├─ src\DisplayFix.c
-├─ template\DisplayFix.ini
-├─ tools\verify_build.py
-├─ tools\verify_compatibility.py
-├─ tools\verify_compatibility.bat
-├─ tools\工具详细说明.md
-├─ build.bat
-└─ readme.md
-```
-
-独立字体补丁器：
-
-```text
-source\FontFix_WaiZhuan\
-```
-
-项目研究/接档文档：
-
-```text
-docs\DisplayFix_WaiZhuan\
-```
-
-最终 `release\` 严格只有 `DisplayFix.asi` 和 `DisplayFix.ini`。
-
-## 已通过基线
-
-v0.1-test1 已由用户在非 Steam 实机确认：96 DPI、FRONTEND 4:3、Strategy 游戏内 fixed-Y 宽屏、HUD/GUI 居中、右侧 6 个菜单按钮、退出 Strategy 后恢复原版 4:3。
-
-v0.1-test2 已修复 `Display.Enable=0` 时错误连带关闭 `Font.FixDPI=1` 的配置耦合。
-
-v0.1-test4 的 Steam raw `ResJM.Lib` callsite shim 已实机确认消除裸 `ResJM.Lib` 缺失弹窗；clean1 只保留这一项。
-
-## 构建
-
-双击 `build.bat`。脚本使用 Win32/x86 clang + lld-link 从零生成 `release`。
-
-BAT 硬规则：UTF-8 无 BOM、CRLF、首行 `chcp 65001 >nul`、不递归扫描 Visual Studio LLVM、避免误选 ARM64、正文 REM/echo 行末两个半角空格。
-
-构建后运行 `tools\verify_build.py`；需要检查目标 EXE 结构时使用 `tools\verify_compatibility.py` 或拖拽到 `verify_compatibility.bat`。
+- **当前封版候选：本体 `v0.3.3-layer1d` / 外传 `v0.2.2-layer1d`。稳定回退基线仍为本体 `v0.3.2` / 外传 `v0.2.1`。**
+- 本体 `layer1c` 已完成实机验证：此前 layer1a/layer1b 遗留的物品底部重叠区按钮、技能“连招编辑”关闭按钮、HUD 重叠区输入 root、左侧独立装备/辅助面板在物品界面打开时的层级问题均已解决。用户结论为“问题完全解决了”。
+- `layer1c` 仅剩一个很小的生命周期边界：**当左侧装备独立面板仍保持打开时，如果先关闭物品主窗口，独立面板会重新落回主 HUD 下方。** 用户日志已经证明该面板此前被动态识别为独立对象（本体实机样本对象 `0x04255670`、vtable `0x0052A60C`、矩形 `0,217,325,442`；对象地址只属于该次运行，不得硬编码）。
+- 根因已由源码复核闭合：layer1c 的独立面板候选入口要求 `0x0B/0x0D/0x0E` 至少一个主菜单仍 active；物品 root 关闭以后，这个硬门槛立即失效，即使独立装备面板自身仍 active，也不再参加 HUD 后延迟 Draw。
+- `layer1d` **不改变 layer1c 已实机通过的核心方案**。新增的只有“独立辅助面板短生命周期跟踪”：对象必须先在合法主菜单上下文中被识别并成功拥有动态 Draw wrapper，之后才记录“对象指针 + vtable + 本帧验证 epoch”。主 root 关闭以后，只要该对象仍在真实 `manager+0x1C -> object+0x08` Draw 链的 HUD 之前、仍 active、vtable 未变、有效矩形仍与 HUD 相交，就继续在 HUD 后绘制，并继续参与原版 picker 的单次 input-root 覆盖。
+- 跟踪不是永久缓存。对象 inactive、离开 HUD 前 Draw 链、vtable 变化、矩形不再与 HUD 相交、退出 GAMEPLAY、进入 Strategy 切换或 HUD 不可用时，记录会立即清除；验证旧记录时不会直接解引用“表里的旧指针”，只会对当前真实 Draw 链重新枚举到的对象做检查，因此不会为了保留层级而制造悬空指针访问。
+- **没有主菜单 active 时绝不发现新的未知对象。** layer1d 只允许继续保留此前已经由合法菜单上下文确认过的独立面板，所以不会因为普通跑图时某个窗口恰好与 HUD 相交就把它错误提升。
+- 输入方案仍完全沿用 layer1c：只 Hook 原版顶层 picker 的单次返回值；`manager+0x40`、焦点、`+0x20/+0x24/+0x30`、child hit-test、按下/释放、键盘快捷键和按钮业务仍全部由原版处理。
+- test1~test7 的 X/Y 位移、GetCursorPos 反算、`self+0xA8` 修补、`+0x30` 接管、按钮硬编码继续禁止；layer1b 的顶层链写入继续禁止。最右侧历史竖条纹仍单独处理，不属于本轮封版条件。
+- 两套 `verify_build.py` 已通过新边界检查。本体当前 SHA-256：`a146348809cbba6a16d3602f5fff87d04274bd9c298409b96c3db86a335b4c9d`；外传当前 SHA-256：`e33d9e1b6813be5878a4cf1fce266fe7b4ab29fa91a78fa62a67bea84441133c`。本体只剩这一项 layer1d 最终实机确认；外传仍不能用本体结果代替，后续正式封版前至少应完成一次外传主线实机回归。
 
 
-## v0.2-test1 OpenGL A/B（历史预期已被实机修正）
+## 历史：layer1d 当前版本
 
-当时原计划要求出现全局 Hook bypass `[OK]` 才算完整 A/B；实际用户日志只出现“callback neutralized only”，说明全局 Hook 仍在，但 OpenGL 已经成功启动。
-
-因此 test1 的有效结论恰好与最初判读规则不同：**全局 CreateWindowExA Hook 不是必要根因，post-create callback 的 EDIT 专用逻辑才是收敛点。** PlugK 已由用户实机确认不能解决 OpenGL，后续仅把其逆向文档当辅助资料。
+当前封版候选：`v0.2.2-layer1d`。稳定回退基线：`v0.2.1`。
 
 
-## v0.2-test2 历史定位
+layer1c 历史实验版：`v0.2.2-layer1c`。外传 layer1a/layer1b/layer1c 均尚待用户实机；不能把本体结果直接写成外传通过。
 
-用户实机确认 test1 可以启动 OpenGL，但日志证明全局 `CreateWindowExA` Hook 并没有被绕过，只有 post-create callback neutralize 真正生效。
+layer1c 与本体使用同一原则：保留 HUD 后延迟 Draw，动态覆盖独立辅助顶层对象；输入只覆盖原版顶层 picker 的单次返回值，不写顶层链、不改坐标、不接管 child hit-test。
 
-因此 test2 删除 test1 的 VirtualQuery Hook 对象扫描、USER32 trampoline bypass、callback 整段提前 return与旧 WndProc 恢复，只留下一个最小改动：`ComeOn.dll+0x2889` 的 `JNE 0x16` 改为 `JMP 0x16`，无条件跳过 `SetWindowLongA(GWL_WNDPROC, ComeOn.dll+0x26A0)`。
+## 外传 Steam 红线
 
-运行日志成功标志：
-
-```text
-[OK] Steam ComeOn.dll EDIT WndProc subclass disabled; global CreateWindowExA hook remains intact
-[INFO] v0.2-test2 narrows the OpenGL fix to one JNE->JMP byte at ComeOn.dll RVA 0x2889
-```
-
-SteamAPI、多语言、CreateFileA Hook、CreateWindowExA 全局 Hook、callback 其它逻辑全部保留。
+外传 `v0.2.1` 已验证的 Steam 兼容路径必须永久保留：`ResJM.Lib` 多语言路径、ComeOn.dll `CreateWindowExA` class-atom 防崩与官方 EDIT WndProc 路径均不能因 layer1c 改动。`verify_build.py` 继续包含这部分源码防回归检查。
 
 
-## v0.2-test2 实机失败与 v0.2-test3 根因闭环历史
+## layer1d 封版前最后修正
 
-`v0.2-test2` 已由用户实机确认仍然崩溃。它只禁止了 EDIT 的 `SetWindowLongA(GWL_WNDPROC)`，所以这个结果证明 test1 的成功并不是单纯来自“禁用自定义 WndProc”。
+外传 layer1d 不改 layer1c 已经通过的 Draw 延后和 picker 返回值覆盖。唯一新增状态是 `TrackedAuxiliaryObject`：独立面板必须先在主菜单上下文中被确认，随后逐帧验证真实 Draw 链、active、vtable 与 HUD 相交。物品主 root 先关闭时，只要独立装备面板自身仍合法存在，就继续置于 HUD 上方；面板关闭或生命周期变化时立即忘掉。没有主菜单时禁止发现新未知对象。
 
-重新检查 callback 后发现 `RVA 0x2841` 取出的 `lpClassName` 会在只做 NULL 检查后被直接当字符串解引用；但 Win32 允许这里传 `MAKEINTATOM`。test3 因此撤销 test2 的 WndProc 禁用，只在 `lpClassName < 0x10000` 时跳过 ComeOn.dll 的字符串比较，正常字符串与官方 EDIT 功能全部保留。随后用户实机确认 OpenGL 成功，并记录到 `count=3 / last_atom=0xC1F2`，根因由动态证据闭环。
+## layer1c 核心
 
-正常安装日志：
+- 三主菜单固定 HUD 后延迟 Draw。
+- 当前菜单体系独立辅助顶层对象可动态安装 Draw wrapper，固定容量 16。
+- Hook 原版顶层 picker 唯一 callsite；仅在原版已经选中 HUD 且鼠标命中已延后绘制菜单 root 时覆盖本次返回值。
+- 手工输入候选必须满足原版 JMM 属性 `0x0D==1`，命中矩形优先复用原版 hit-rect 函数。
+- 后续 `manager+0x40`、焦点、`+0x20/+0x24/+0x30`、child hit-test、按下/释放继续全部由原版执行。
 
-```text
-[OK] Steam ComeOn.dll CreateWindowExA class-atom compatibility fix installed; official EDIT handling remains intact
-[INFO] Steam OpenGL compatibility fix only bypasses unsafe ComeOn.dll string parsing for NULL/MAKEINTATOM class names
-```
+## 禁止回流
 
+禁止 test1~test7 位移/坐标补偿；禁止 layer1b 顶层链写入；禁止修改外传 Steam 已封版兼容路径。
 
-## v0.2.0 运行逻辑封版基线（v0.2.1 继承）
+## 构建与验证
 
-`v0.2.0` 不再继续缩小已经闭环的 class-atom guard，也不引入新的 Steam 影片/launcher 代码。正式版保留以下已通过组合：
+`build.bat` 生成 Win32/x86 ASI；`verify_build.py` 检查 layer1c 边界和外传 Steam 红线。`verify_compatibility.py` 可只读验证外传 ComeOn.exe / Steam ComeOn.dll，但当前环境没有真实样本，必须标记为待执行。
 
-- test2 的显示/HUD/DPI/输入稳定主线；
-- test4 已实机通过的 `ResJM.Lib.<language>` 最终兜底；
-- test3 已实机闭环的 `CreateWindowExA(lpClassName=MAKEINTATOM(...))` 安全修复；
-- SteamAPI、ComeOn.dll 全局 `CreateWindowExA` Hook、普通字符串类名处理、官方 EDIT WndProc 全部保留。
+## 实机验收
 
-OpenGL 根因已经闭合：ComeOn.dll callback 只检查 `lpClassName != NULL` 就按 C 字符串解引用，而 cnc-ddraw OpenGL 启动路径实机至少触发 3 次合法 class atom。正式版仅让 NULL/atom 跳过这段字符串解析，普通字符串仍走官方路径。
-
-Steam 官方 launcher 控制的开场动画不属于本项目主程序修复范围，`v0.2.0` 不处理动画比例或播放行为。
+优先按本体同一清单验证物品重叠区、技能连招编辑、独立左侧面板、HUD 快捷栏/悬停/快捷键、世界点击和退出回前端；另外必须验证 Steam 多语言与 ComeOn.dll 路径无回归。

@@ -1,0 +1,20 @@
+stripe1 深度兼容验证待执行说明
+
+当前版本：本体 v0.3.4-stripe1 / 外传 v0.2.3-stripe1。
+
+当前容器没有本项目此前用于 verify_compatibility.py 的四套真实 ComeOn.exe，也没有外传 Steam ComeOn.dll，因此本轮不能把深度二进制兼容验证写成“已通过”。
+
+本轮源码改动只发生在 calculate_target_width() 的最终宽度对齐：从旧版偶数对齐改为最接近的 8 像素倍数；所有 EXE 特征签名、Strategy、JMM、HUD、layer1d Draw/Input、外传 ResJM.Lib 与 ComeOn.dll class-atom/EDIT 路径均未修改。
+
+已完成的验证：
+- 两套 ASI PE32/i386、DLL、入口点、InitializeASI、Import Directory=0；
+- INI/BAT/UTF-8/BOM 规范；
+- layer1d GUI/Input 红线；
+- stripe1 8 像素宽度算法锚点与旧偶数算法运行代码清除；
+- 外传 Steam 源码红线防回归。
+
+待真实样本时重新执行：
+- source/DisplayFix_DaoJian/tools/verify_compatibility.py
+- source/DisplayFix_WaiZhuan/tools/verify_compatibility.py
+
+在真实样本重新提供以前，只能写“构建与源码静态边界通过，深度二进制兼容验证待执行”。

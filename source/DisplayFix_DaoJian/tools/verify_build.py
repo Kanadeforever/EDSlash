@@ -12,7 +12,7 @@ DisplayFix 构建结果检查工具。
 5. 当前架构故意不让 ASI 自己带 Windows DLL 导入表，因此 Import Directory 必须为 0；
 6. 同目录的 DisplayFix.ini 必须存在、能以 UTF-8 解析，并且正式成品禁止 UTF-8 BOM；
 7. 仓库内源码、脚本、配置和 Markdown 文本统一禁止 UTF-8 BOM，BAT 额外必须是 CRLF；
-8. v0.3.2 的 DisplayFix.log 运行日志必须使用简体中文等级和正文，不能残留旧版英文日志标签。
+8. stripe1 继续要求 DisplayFix.log 使用简体中文等级和正文，不能残留旧版英文日志标签；
 
 代码里的每一步都写了较细的中文说明，方便以后换编译器或接档时核对。
 """
@@ -193,7 +193,7 @@ def validate_ini(ini_path: Path) -> list[str]:
     if not lines or not lines[0].startswith("; DisplayFix configuration."):
         raise RuntimeError("DisplayFix.ini 第一行缺少固定 ASCII 配置说明。")
 
-    required = ("[Display]", "BaseHeight=", "AspectRatio=", "[Font]", "FixDPI=", "[GUI]", "CenterMainHUD=")
+    required = ("[Display]", "BaseHeight=", "AspectRatio=", "[Font]", "FixDPI=", "[GUI]", "CenterMainHUD=", "AuxiliaryUIAboveHUD=")
     for marker in required:
         if marker not in text:
             raise RuntimeError(f"DisplayFix.ini 缺少必要内容：{marker}")
@@ -201,7 +201,7 @@ def validate_ini(ini_path: Path) -> list[str]:
     return [
         "DisplayFix.ini UTF-8 无 BOM",
         "[Display] 前存在固定 ASCII 说明行",
-        "BaseHeight / AspectRatio / FixDPI / CenterMainHUD 键存在",
+        "BaseHeight / AspectRatio / FixDPI / CenterMainHUD / AuxiliaryUIAboveHUD 键存在",
     ]
 
 
@@ -237,7 +237,7 @@ def validate_build_bat(build_bat: Path) -> list[str]:
     if "vc\\tools\\llvm\\x64\\bin" not in lower:
         raise RuntimeError("build.bat 必须显式保留 Visual Studio Llvm\\x64\\bin 回退路径。")
 
-    # v0.3.2 / v0.2.1 开始，DisplayFix.log 使用中文 UTF-8 窄字符串。
+    # 从稳定基线 v0.3.2 / v0.2.1 起，DisplayFix.log 使用中文 UTF-8 窄字符串；stripe1 继续保持。
     # 源码本身又按项目规则禁止 BOM，因此这里显式要求 clang 固定输入与执行字符集为 UTF-8，
     # 防止不同 Windows 系统代码页把中文字符串编译成不同字节。
     if "-finput-charset=utf-8" not in lower or "-fexec-charset=utf-8" not in lower:
@@ -299,7 +299,7 @@ def validate_repository_bom_free(package_root: Path) -> list[str]:
 
 def validate_font_display_independence(source_path: Path) -> list[str]:
     """
-    静态检查 v0.3.2 继续沿用的配置开关顺序，防止以后又把字体修复绑回 Display.Enable。
+    静态检查 layer1d 从 v0.3.2 继承的配置开关顺序，防止以后又把字体修复绑回 Display.Enable。
 
     这里不做完整 C 语法解析，只检查 initialize_display_fix() 中三个稳定语义锚点：
 
@@ -333,6 +333,159 @@ def validate_font_display_independence(source_path: Path) -> list[str]:
     return ["Font.FixDPI 与 Display.Enable 初始化顺序独立（字体先执行，Display gate 后判断）"]
 
 
+
+
+def validate_layer1d_scope(source_path: Path) -> list[str]:
+    """
+    检查 layer1d 的运行边界，防止 test1~test7 和 layer1b 的失败路线重新混回源码。
+
+    layer1d 的硬规则：
+    1. 不移动物品/装备/技能 GUI，不修改鼠标坐标、self+0xA8、child、active 或键盘业务；
+    2. 完全禁止 layer1b 的 manager+0x18/+0x1C、object+0x08/+0x0C 顶层链重排；
+    3. 继续使用 layer1a 已实机通过的“HUD 后延迟 Draw”，并允许动态纳入菜单体系的独立顶层辅助面板；
+    4. 输入只 Hook 原版顶层 picker 的单次 CALL：先执行原 picker，只有它选中 HUD 且鼠标命中已延后绘制的
+       可输入菜单 root 时才替换返回值；manager+0x40 必须继续由原版 0x4B44D0 更新；
+    5. 手工候选必须镜像原版 JMM 属性 0x0D==1 门槛，并优先使用原版 0x4B1D30 的顶层命中矩形；
+    6. 已在合法菜单上下文中确认的独立面板允许做短生命周期跟踪，但每帧必须重新验证：仍在真实 Draw 链、active、
+       vtable 未变且仍与 HUD 相交；主菜单关闭后不得凭几何关系发现新的未知对象；
+    7. UI manager 的 HUD 特殊绘制 pass 仍只验证，不 Hook、不重放。
+    """
+
+    if not source_path.is_file():
+        raise RuntimeError(f"缺少主源码：{source_path}")
+
+    text = source_path.read_text(encoding="utf-8")
+
+    required = (
+        '"AuxiliaryUIAboveHUD"',
+        "g_auxiliary_ui_above_hud",
+        "UI_MANAGER_DRAW_CALLSITE_PATTERN",
+        "UI_TOP_LEVEL_PICK_CALLSITE_PATTERN",
+        "install_auxiliary_ui_draw_layer_hook",
+        "ui_manager_draw_layer_scope_hook",
+        "ui_top_level_pick_layer_hook",
+        "layer_main_hud_draw_hook",
+        "layer_equipment_draw_hook",
+        "layer_skill_draw_hook",
+        "layer_inventory_draw_hook",
+        "layer_dynamic_auxiliary_draw_hook",
+        "ensure_dynamic_layer_hooks_for_current_menu",
+        "layer_find_input_override_root",
+        "layer_object_has_active_deferred_draw_wrapper",
+        "layer_top_level_root_accepts_mouse_input",
+        "TrackedAuxiliaryObject",
+        "layer_track_auxiliary_object",
+        "layer_refresh_tracked_auxiliary_objects",
+        "layer_is_tracked_auxiliary_object",
+        "layer_clear_all_tracked_auxiliary_objects",
+        "辅助GUI独立面板主窗口关闭后继续置于HUD上方",
+        "g_original_ui_top_level_pick",
+        "g_original_ui_get_hit_rect",
+        "g_original_ui_property_get",
+        "input_picker[0x4Cu]",
+        "input_picker[0xADu]",
+        "input_picker + 0x67u",
+        "input_picker + 0x5Bu",
+        "patch_rel32_call(input_pick_call, (LPVOID)&ui_top_level_pick_layer_hook)",
+        "manager+0x40仍由原版0x4B44D0更新",
+        "g_layer_draw_scope_depth == 1u",
+        "original_current_after_draw",
+        "decode_rel32_target(manager_draw + 34u)",
+        "UI manager 的原版HUD特殊绘制pass保持原样，只执行一次",
+    )
+    for marker in required:
+        if marker not in text:
+            raise RuntimeError(f"layer1d 缺少必要源码锚点：{marker}")
+
+    # test1~test7 的菜单位移/坐标补偿路线继续严格禁止。
+    forbidden_old = (
+        "apply_modal_safe_area",
+        "g_modal_safe_area_enabled",
+        "move_top_level_ui_x",
+        "place_modal_target_absolute",
+        "sync_bag_panel_with_item_delta",
+        "modal_hit_update_hook",
+        "repair_modal_action_hit_child",
+        "ensure_modal_menu_hit_hooks",
+        "g_bag_manual_sync_enabled",
+    )
+    for marker in forbidden_old:
+        if marker in text:
+            raise RuntimeError(f"layer1d 混入 test1~test7 失败运行代码：{marker}")
+
+    # layer1b 已被实机证明没有执行成功；其“直接重排顶层链”的函数必须从运行源码彻底消失。
+    forbidden_layer1b = (
+        "layer_validate_bidirectional_top_level_chain",
+        "layer_move_top_level_node_after",
+        "layer_promote_overlapping_menu_nodes_after_hud",
+        "辅助GUI Z顺序提升",
+        "顶层双向链验证失败",
+    )
+    for marker in forbidden_layer1b:
+        if marker in text:
+            raise RuntimeError(f"layer1d 仍残留 layer1b 顶层链重排实现：{marker}")
+
+    # 精确禁止对四个顶层链指针的赋值。读取这些偏移用于原版结构验证/候选扫描是允许的。
+    forbidden_writes = (
+        "*(LPVOID*)((BYTE*)manager + 0x18u) =",
+        "*(LPVOID*)((BYTE*)manager + 0x1Cu) =",
+        "*(LPVOID*)((BYTE*)node + 0x08u) =",
+        "*(LPVOID*)((BYTE*)node + 0x0Cu) =",
+    )
+    for marker in forbidden_writes:
+        if marker in text:
+            raise RuntimeError(f"layer1d 禁止写顶层链，但发现赋值：{marker}")
+
+    return [
+        "layer1d 运行边界正确：不移动 GUI、不写顶层链、不做鼠标坐标补偿",
+        "0x0B/0x0D/0x0E 继续使用 HUD 后延迟 Draw；独立辅助顶层对象支持动态 Draw wrapper",
+        "输入只覆盖原版顶层 picker 的单次返回值，manager+0x40 仍由原版 0x4B44D0 更新",
+        "输入候选必须满足原版 JMM 属性 0x0D==1，并使用原版顶层命中矩形路径",
+        "独立面板短生命周期跟踪存在：主 root 关闭后只保留已确认对象，并逐帧复核 Draw 链/active/vtable/HUD 相交",
+        "HUD 特殊 pass 不 Hook/不重放；嵌套 manager Draw 不参与外层延迟队列",
+        "帧末兜底补画后恢复原版 manager+0x20 返回值，不假定必须为 NULL",
+        "test1~test7 菜单位移/输入补偿与 layer1b 顶层链重排运行代码=0",
+    ]
+
+
+def validate_stripe1_width_alignment(source_path: Path) -> list[str]:
+    """
+    检查 stripe1 唯一新增的运行时变量：TargetWidth 必须按最接近的 8 像素边界计算。
+
+    这一轮绝不能借修竖条之名重新改 GUI、输入或 Strategy。这里不尝试完整解析 C AST，
+    只锁住几条足够稳定、能明确代表新算法的源码锚点，并禁止旧版“奇数补成偶数”逻辑继续存在。
+    """
+
+    if not source_path.is_file():
+        raise RuntimeError(f"缺少主源码：{source_path}")
+
+    text = source_path.read_text(encoding="utf-8")
+
+    required = (
+        "floor_width = product / aspect_height;",
+        "remainder = product % aspect_height;",
+        "block_base = floor_width & ~7u;",
+        "block_offset = floor_width & 7u;",
+        "width = block_base + 8u;",
+        "stripe1目标宽度8像素对齐余数=",
+    )
+    for marker in required:
+        if marker not in text:
+            raise RuntimeError(f"stripe1 缺少 8 像素对齐源码锚点：{marker}")
+
+    forbidden = (
+        "if ((width & 1u) != 0u)",
+        "老 DirectDraw 对偶数宽度更友好，奇数仍然向上补成偶数",
+    )
+    for marker in forbidden:
+        if marker in text:
+            raise RuntimeError(f"stripe1 仍残留旧版偶数宽度算法：{marker}")
+
+    return [
+        "stripe1 TargetWidth 已改为最接近的 8 像素倍数",
+        "旧版仅偶数对齐运行代码=0",
+        "运行日志包含 TargetWidth%8 诊断字段",
+    ]
 
 def validate_chinese_runtime_logging(source_path: Path, expected_version: str) -> list[str]:
     """
@@ -397,10 +550,12 @@ def main() -> int:
         package_root = Path(__file__).resolve().parents[3]
         bom_lines = validate_repository_bom_free(package_root)
 
-        # v0.3.2 继续验证：确保字体修复永远先于 Display.Enable 的提前退出。
+        # layer1d 继续验证稳定基线规则：字体修复永远先于 Display.Enable 的提前退出。
         source_path = Path(__file__).resolve().parents[1] / "src" / "DisplayFix.c"
-        logging_lines = validate_chinese_runtime_logging(source_path, "DisplayFix 本体 v0.3.2")
+        logging_lines = validate_chinese_runtime_logging(source_path, "DisplayFix 本体 v0.3.4-stripe1")
         independence_lines = validate_font_display_independence(source_path)
+        layer_lines = validate_layer1d_scope(source_path)
+        stripe_lines = validate_stripe1_width_alignment(source_path)
 
         print(f"[验证目标] {asi_path}")
         for line in lines:
@@ -412,6 +567,10 @@ def main() -> int:
         for line in bom_lines:
             print(f"[通过] {line}")
         for line in independence_lines:
+            print(f"[通过] {line}")
+        for line in layer_lines:
+            print(f"[通过] {line}")
+        for line in stripe_lines:
             print(f"[通过] {line}")
         for line in logging_lines:
             print(f"[通过] {line}")

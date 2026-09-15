@@ -2,7 +2,24 @@
  * DisplayFix.c
  *
  * 《刀剑封魔录外传：上古传说》ComeOn.exe 显示修复 ASI 插件。
- * 当前版本：v0.2.1（v0.2.0 正式封版逻辑不变，仅把 DisplayFix.log 全面中文化）
+ * 当前版本：v0.2.3-stripe1（从 v0.2.1 稳定基线重开：不移动辅助 GUI，不改顶层链；同步绘制层与单次输入 root 优先级）
+ *
+ * stripe1 是在 layer1d 已实机解决 GUI 绘制/输入层级问题之后，单独处理历史最右侧竖条纹的实验版。
+ * 用户实测发现：BaseHeight=480 时，16:9、32:9、8:9、40:9 都会出现最右侧竖条，24:9 不会。
+ * 把这些比例代入旧算法后，实际 TargetWidth 分别为 854、1708、428、2134、1280；前四个都不是
+ * 8 像素整除，只有 1280 能被 8 整除。因此本实验只改变 TargetWidth 的最终横向对齐规则：
+ * 从“先四舍五入、再向上补成偶数”改为“选择最接近理想比例的 8 像素倍数”。
+ * 除 TargetWidth 计算外，layer1d 已实机通过的 GUI Draw、输入 root、Strategy、Steam JMM、字体与
+ * 外传 Steam 专项兼容路径全部保持不变。这个版本的目的就是验证竖条是否来自游戏内部 8 像素块处理。
+ *
+ * layer1d 延续从稳定基线重新开出的独立路线。test1~test7 只继承逆向证据、失败经验和文档，
+ * 不继承任何“移动物品/装备/技能窗口、补鼠标坐标、改 self+0xA8、手工移动乾坤袋”的运行时代码。
+ * layer1a 已由实机证明“辅助菜单应该位于居中主 HUD 上方”的绘制方向正确，但只延迟 Draw 会让视觉层级和
+ * 顶层输入 root 优先级不一致：重叠区域能看见按钮，却会先被 HUD 吃掉；独立左侧面板也可能仍画在 HUD 下。
+ * layer1b 曾尝试重排 manager+0x1C/+0x18 双向顶层链，但实机日志明确显示其边界假设不成立，运行时直接退回
+ * layer1a，因此 layer1d 完全撤销链表写入。现在绘制侧继续使用 HUD 后延迟 Draw，并动态覆盖独立辅助面板；
+ * 输入侧只 Hook 原版顶层 picker 的单次返回值：仅当原版选中 HUD 且鼠标命中已延后绘制的菜单 root 时，
+ * 才把这一次 root 改成菜单。对象坐标、child、active、业务事件和键盘快捷键仍全部保持原版。
  *
  * v0.2.1 不修改 v0.2.0 已经实机闭环的任何功能逻辑：
  *   - 非 Steam 显示/HUD/DPI/输入与 Strategy 生命周期保持不变；
@@ -1459,6 +1476,7 @@ static const char UI_LAYOUT_MASK[] = "xxxxxxxxxxxxxxxxxxxxx????";
 #define UI_OBJECT_WIDTH_OFFSET   0x1Cu
 #define UI_OBJECT_HEIGHT_OFFSET  0x20u
 #define UI_OBJECT_NEXT_OFFSET    0x08u
+#define UI_OBJECT_PREV_OFFSET    0x0Cu
 #define UI_OBJECT_CHILD_HEAD     0x9Cu
 #define UI_OBJECT_CHILD_ITER     0xA0u
 #define UI_OBJECT_HIT_CHILD      0xA8u
@@ -1468,16 +1486,19 @@ static const char UI_LAYOUT_MASK[] = "xxxxxxxxxxxxxxxxxxxxx????";
 #define UI_OBJECT_ACTIVE_LATCH   0xB8u
 
 /*
- * 主 HUD vtable 中已经闭合的三个关键槽：
- *   +0x24 = 鼠标释放/点击事件分派 0x004C3E40；
- *   +0x30 = 原版通用子控件命中更新 0x004A1F90（本版不再 hook）；
- *   +0x58 = 通用布局 0x004B2B90。
- * v0.3-test8 只实际 hook +0x58 做视觉居中。
- * +0x24 仍会被静态验证和解析，用来取得 0x0B/0x0E 对应的原版目标窗口指针槽，
- * 但不再改写它：test5 已经实机证明，问题发生时鼠标释放可能根本到不了 +0x24，
- * 因此在这里继续安装行为补丁既太晚，也会增加不必要的变量。
+ * 主 HUD vtable 中已经闭合的关键槽（这里写外传自己的地址，不能照抄本体）：
+ *   +0x24 = 鼠标释放/点击事件分派，当前已验证样本为 0x004D8400；
+ *   +0x30 = 原版子控件命中更新槽。兼容验证器会动态确认它仍调用通用 child hit-test
+ *           0x004C6700，并把返回 child 写入 self+0xA8；layer1a 运行时绝不 Hook 这个槽；
+ *   +0x58 = 通用布局 0x004C5F00；
+ *   +0x08 = 普通 Draw，layer1a 只在安装图层功能时才会临时替换这一槽。
+ *
+ * 稳定基线的 HUD 居中只需要 +0x58；+0x24/+0x30 继续作为原版输入证据和目标对象解析依据。
+ * test1~test7 已经证明：如果为了修视觉问题去改 +0x30/self+0xA8，会产生新的按钮误命中。
+ * 因此 layer1a 的原则是“验证输入结构，但不接管输入结构”。
  */
 #define MAIN_HUD_DESTRUCTOR_SLOT 0x00u
+#define MAIN_HUD_DRAW_SLOT       0x08u
 #define MAIN_HUD_EVENT_SLOT      0x24u
 #define MAIN_HUD_INPUT_SLOT      0x30u
 #define MAIN_HUD_LAYOUT_SLOT     0x58u
@@ -1593,6 +1614,7 @@ static DWORD g_frontend_hud_skip_log_count = 0u;
  * 就不需要为每个 SHA-256 单独维护地址表。
  */
 static LPVOID* g_top_button_0b_target_slot = (LPVOID*)0;
+static LPVOID* g_top_button_0d_target_slot = (LPVOID*)0;
 static LPVOID* g_top_button_0e_target_slot = (LPVOID*)0;
 
 /* 当前目标逻辑宽高，例如 854x480、1920x1080。 */
@@ -1654,6 +1676,14 @@ static BOOL g_strategy_transition_in_progress = FALSE;
 
 /* 是否启用主 HUD 居中；顶部按钮兜底在更上层的全局鼠标释放 hook 中，与此开关彼此独立。 */
 static BOOL g_center_main_hud = TRUE;
+
+/*
+ * layer1a 独立图层开关。
+ * TRUE 只表示“允许辅助 GUI 在需要时调整 Draw 先后”，并不保证每帧都会调整：
+ * 真正执行还必须同时满足 GAMEPLAY、CenterMainHUD=1、Strategy 不在切换、HUD 与目标都在同一顶层绘制链。
+ * FALSE 时不会安装 layer1a 绘制 Hook，运行行为直接退回 v0.3.2 / v0.2.1 稳定基线。
+ */
+static BOOL g_auxiliary_ui_above_hud = TRUE;
 
 /*
  * Steam 版的 ComeOnSteam.exe 会额外 LoadLibraryA("ComeOn.dll")。
@@ -3370,18 +3400,34 @@ static BOOL parse_ratio(const char* text, DWORD* numerator, DWORD* denominator)
 }
 
 /*
- * 根据 BaseHeight 和宽高比得到逻辑宽度。
+ * 根据 BaseHeight 和宽高比得到逻辑宽度，并把最终宽度对齐到最接近的 8 像素倍数。
  *
- * 例：480 × 16 / 9 = 853.333...
- * 先四舍五入得到 853，再把奇数向上对齐成偶数 854。
- * 老 DirectDraw 对偶数宽度更友好，而 854x480 也正好是附件宽屏改版已经实机跑过的组合。
+ * 为什么 stripe1 不再只做“偶数对齐”：
+ *   用户已经实测 BaseHeight=480 时，16:9、32:9、8:9、40:9 都会在最右侧留下竖条，
+ *   而 24:9 没有。旧算法得到的 TargetWidth 正好分别是 854、1708、428、2134、1280。
+ *   前四个宽度除以 8 都有余数，只有 1280 能被 8 整除。
+ *
+ * 这非常像老游戏内部某段横向清屏/扫描/块处理按 8 像素为一组：
+ *   Surface 本身可以创建成任意偶数宽度，但最后不足 8 像素的一小段没有被完整刷新，
+ *   于是只在最右侧形成历史竖条。stripe1 先用最小变量实验这个假设。
+ *
+ * 这里不是简单“一律向上补到 8”：那样会让某些超宽比例比必要值更宽。
+ * 我们直接从精确的有理数结果选择距离最近的 8 像素倍数。
+ * 例如：
+ *   480 × 16 / 9 = 853.333... -> 最近的 8 倍数是 856；
+ *   480 × 32 / 9 = 1706.666... -> 最近的 8 倍数是 1704；
+ *   480 × 24 / 9 = 1280       -> 本来就是 8 倍数，保持 1280。
+ *
+ * 这样既验证 8 像素块假设，又尽量减少对原始宽高比的误差。
  */
 static DWORD calculate_target_width(DWORD base_height, DWORD aspect_width, DWORD aspect_height)
 {
     DWORD product;
-    DWORD width;
+    DWORD floor_width;
     DWORD remainder;
-    DWORD round_threshold;
+    DWORD block_base;
+    DWORD block_offset;
+    DWORD width;
 
     if (base_height == 0 || aspect_width == 0 || aspect_height == 0) {
         return 0;
@@ -3392,33 +3438,53 @@ static DWORD calculate_target_width(DWORD base_height, DWORD aspect_width, DWORD
      * 在 32 位 x86 上直接使用 64 位除法会让编译器引入 __aulldiv 之类的 CRT helper，
      * 从而破坏“零 CRT / 零额外依赖”的项目目标。
      *
-     * 所以这里用最直接的乘法溢出检查：
+     * 所以这里继续使用原版的 32 位乘法溢出检查：
      *   base_height <= 0x7FFFFFFE / aspect_width
-     * 才执行 32 位乘法。
-     *
-     * 这个边界已经远远超过老 DirectDraw/本游戏现实可创建的任何分辨率，
-     * 因此它不是用户可感知的“BaseHeight 上限”，只是整数安全边界。
+     * 才允许计算 base_height * aspect_width。
      */
     if (base_height > (0x7FFFFFFEu / aspect_width)) {
         return 0;
     }
 
     product = base_height * aspect_width;
-    width = product / aspect_height;
+    floor_width = product / aspect_height;
     remainder = product % aspect_height;
 
     /*
-     * 不写 product + aspect_height/2，是为了连这一步也避免无符号加法溢出。
-     * remainder >= ceil(aspect_height/2) 与“四舍五入时余数至少一半”完全等价。
+     * floor_width 是理想宽度向下取整后的整数部分。
+     * 把它拆成：
+     *   block_base   = 前一个 8 像素边界；
+     *   block_offset = 当前整数宽度距离这个边界有几像素（0~7）。
+     *
+     * “离哪个 8 像素边界更近”其实只需要看理想宽度是否越过 block_base+4 这个中点：
+     *   offset 0~3：一定更靠近下面的 8 倍数；
+     *   offset 5~7：一定更靠近上面的 8 倍数；
+     *   offset 4：正好处在中点或中点右侧，选择上面的 8 倍数。
+     *
+     * 这样完全不需要 64 位乘除，也不会引入 CRT helper。
      */
-    round_threshold = (aspect_height / 2u) + (aspect_height & 1u);
-    if (remainder >= round_threshold) {
-        ++width;
-    }
+    block_base = floor_width & ~7u;
+    block_offset = floor_width & 7u;
 
-    /* 老 DirectDraw 对偶数宽度更友好，奇数仍然向上补成偶数。 */
-    if ((width & 1u) != 0u) {
-        ++width;
+    if (block_base == 0u) {
+        /*
+         * 极端窄比例可能让“最近的下方 8 倍数”变成 0。
+         * 游戏不可能使用 0 像素宽 Surface，所以这种边界至少保留 8 像素。
+         */
+        width = 8u;
+    } else if (block_offset < 4u) {
+        width = block_base;
+    } else {
+        /*
+         * offset==4 且 remainder==0 时，上下两个 8 倍数距离完全相同。
+         * 这里沿用旧算法“相等时偏向不缩窄”的习惯，选择上方边界。
+         * remainder>0 时理想宽度已经越过中点，上方边界本来就更近。
+         */
+        (void)remainder;
+        if (block_base > (0x7FFFFFFEu - 8u)) {
+            return 0;
+        }
+        width = block_base + 8u;
     }
 
     /*
@@ -4199,6 +4265,1870 @@ static void try_steam_delayed_ui_sync(LPVOID hud)
     append_runtime_line(line);
 }
 
+
+/* ============================================================================================== */
+/* 10.X 只改变“绘制先后顺序”的辅助 GUI 图层修复                                                       */
+/* ============================================================================================== */
+
+/*
+ * 这一节是 layer1 相对 test1~test7 最重要的架构变化。
+ *
+ * 旧实验曾经尝试把物品 / 装备 / 技能窗口从屏幕边缘搬到别的位置，然后再补鼠标坐标、child 命中、
+ * 键盘入口和乾坤袋位置。实机已经证明，这条路会把游戏原本已经成立的“显示坐标”和“输入坐标”拆开，
+ * 修一个按钮又可能弄坏另一个按钮。
+ *
+ * layer1 完全停止移动这三个辅助 GUI。它们的 X/Y、parent、child、hit-test、快捷键、active 状态都由
+ * 游戏原版维护。DisplayFix 只解决真正的问题：主 HUD 居中以后，原版绘制顺序会让某些贴边辅助 GUI
+ * 先画，主 HUD 后画，于是辅助 GUI 的一部分被主 HUD 盖住。
+ *
+ * 为了只改“谁最后画”，又绝不改 UI 链表本身，本版使用三层很窄的 Hook：
+ *   1. UI manager 的总 Draw 调用点只负责标记“一次完整顶层绘制正在进行”；随后仍调用原版 manager Draw。
+ *   2. 如果物品 / 装备 / 技能对象在主 HUD 之前被画，并且它当前确实处于 active 状态，就暂时不画，
+ *      只把“原本应该调用哪个 Draw”记下来。
+ *   3. 主 HUD 自己的原版 Draw 完成后，立刻按刚才遇到的原始先后顺序，把这些延迟对象各画一次。
+ *
+ * 这样做有三个关键性质：
+ *   - 原版 manager 仍然负责遍历 manager+0x1C / object+0x08，DisplayFix 不重写遍历器；
+ *   - manager+0x18 / object+0x0C 的输入反向链完全没有被改过，所以鼠标优先级也不改变；
+ *   - 每个对象仍然只调用一次原版 Draw，不会因为“最后再补画一遍”产生透明度叠加或动画推进两次。
+ */
+
+typedef int  (__thiscall *FnUIDraw)(LPVOID self, DWORD draw_context);
+typedef void (__thiscall *FnUIManagerDraw)(LPVOID self, DWORD draw_context);
+
+
+/*
+ * 原版 0x4B4800 类型：ECX 是 UI manager，唯一显式参数是指向当前鼠标逻辑坐标的 POINT。
+ * 返回值是原版判定的“这一次输入应该交给哪个顶层 root”，没有命中时返回 NULL。
+ */
+typedef LPVOID (__thiscall *FnUITopLevelPick)(LPVOID self, const POINT* point);
+
+/*
+ * 原版 0x4B1D30 类型：ECX 是一个 UI 对象，返回一个至少包含 x/y/width/height 的临时矩形结构。
+ * 正常对象会直接返回 object+0x14；特殊 JMM 参数下会返回游戏自己的临时全局矩形。
+ * layer1d 只立即复制前四个 LONG，绝不长期保存这个返回指针。
+ */
+typedef LONG* (__thiscall *FnUIGetHitRect)(LPVOID self);
+
+/* 原版 0x4D0210：从对象 +0x50 指向的 JMM 属性表读取一个整数属性。顶层 picker 用 key=0x0D 判断 root 是否参与鼠标选择。 */
+typedef LONG (__thiscall *FnUIPropertyGet)(LPVOID property_table, LONG key);
+
+/*
+ * 0x408510（本体）/ 0x40F730（外传）的包装函数形状完全相同：
+ *
+ *   mov eax,[ecx]
+ *   mov ecx,<UI manager 绝对地址>
+ *   push eax
+ *   call <UI manager Draw>
+ *   ret
+ *
+ * 绝对地址和 rel32 都设成通配，所以同一份代码可以在本体/外传各自从当前 EXE 现场解析。
+ */
+static const BYTE UI_MANAGER_DRAW_CALLSITE_PATTERN[] = {
+    0x8B,0x01,
+    0xB9,0,0,0,0,
+    0x50,
+    0xE8,0,0,0,0,
+    0xC3
+};
+static const char UI_MANAGER_DRAW_CALLSITE_MASK[] = "xxx????xx????x";
+
+
+/*
+ * layer1d 新增：顶层 root 选择器的唯一 callsite。
+ *
+ * 原版输入路径已经从反汇编闭合为：
+ *   0x4B4790：取得当前鼠标坐标；
+ *   0x4B47DC：调用 0x4B4800，从顶层 UI 中选出这一次应该接收输入的 root；
+ *   0x4B47E4：把返回的 root 交给 0x4B44D0；
+ *   0x4B44D0：由游戏原版负责更新 manager+0x40，并通知旧 root 失去当前状态。
+ *
+ * 因此最窄、最安全的做法不是直接写 manager+0x40，更不是重排 manager 的链表；而是只把
+ * “0x4B4800 的返回值”在一个极窄条件下从 HUD 换成菜单 root。后续 +0x20/+0x24/+0x30、
+ * child hit-test、鼠标按下/释放、焦点切换都仍然由游戏原版执行。
+ *
+ * 下面的签名从 0x4B4790 中 `lea POINT -> mov ecx,manager -> push POINT -> call picker ->
+ * push result -> mov ecx,manager -> call set-current-root -> mov eax,[manager+0x40]` 这一整段结构定位。
+ * 两个 rel32 设为通配，避免把本体/外传绝对地址写死。
+ */
+static const BYTE UI_TOP_LEVEL_PICK_CALLSITE_PATTERN[] = {
+    0x8D,0x44,0x24,0x0C,
+    0x8B,0xCE,
+    0x50,
+    0xC7,0x44,0x24,0x20,0x00,0x00,0x00,0x00,
+    0xE8,0,0,0,0,
+    0x50,
+    0x8B,0xCE,
+    0xE8,0,0,0,0,
+    0x8B,0x4C,0x24,0x14,
+    0x8B,0x46,0x40
+};
+static const char UI_TOP_LEVEL_PICK_CALLSITE_MASK[] = "xxxxxxxxxxxxxxxx????xxxx????xxxxxxx";
+
+/* 保存主 HUD vtable+0x08 槽。真正安装图层 Hook 时才会改写它。 */
+static BYTE* g_main_hud_draw_slot = (BYTE*)0;
+
+/* 原版 UI manager Draw；layer scope wrapper 内部最终仍完整调用它。 */
+static FnUIManagerDraw g_original_ui_manager_draw = (FnUIManagerDraw)0;
+
+/* 主 HUD 原版 Draw；主 HUD wrapper 先完整调用它，再处理延迟的辅助 GUI。 */
+static FnUIDraw g_original_main_hud_draw = (FnUIDraw)0;
+
+/*
+ * manager Draw 函数开头会直接读一个“主 HUD 全局指针槽”。
+ * 我们把这个槽从原版机器码解析出来，不把本体 0x55BBB0 / 外传 0x58D164 写死进逻辑。
+ */
+static LPVOID* g_layer_main_hud_global_slot = (LPVOID*)0;
+
+/* 记录唯一的 UI manager 对象地址；它同样来自 callsite 的 `mov ecx,imm32`。 */
+static LPVOID g_layer_ui_manager = (LPVOID)0;
+
+/* 目标 EXE 的 .text 范围，只用来确认 vtable+0x08 最初确实指向游戏代码。 */
+static BYTE* g_layer_text_start = (BYTE*)0;
+static BYTE* g_layer_text_end = (BYTE*)0;
+
+/*
+ * 三个目标类各自保存一个“原版 Draw + 已改写的 vtable 槽”。
+ * target_slot 是主 HUD 原版事件函数中解析出的顶层对象全局槽：
+ *   0x0B = 装备
+ *   0x0D = 技能
+ *   0x0E = 物品
+ */
+typedef struct LayerTargetHook_TAG {
+    DWORD control_id;
+    LPVOID* target_slot;
+    BYTE* draw_slot;
+    FnUIDraw original_draw;
+    BOOL installed;
+
+    /*
+     * disabled 只针对当前这一类菜单。
+     * 一旦对象已经真实存在，却发现 vtable/Draw/layout 不再符合已确认结构，就把这一类永久停用到进程退出。
+     * 这样不会每帧重复尝试危险 Hook；其它两类仍可独立工作，稳定基线也完全不受影响。
+     */
+    BOOL disabled;
+} LayerTargetHook;
+
+static LayerTargetHook g_layer_equipment = { 0x0Bu, (LPVOID*)0, (BYTE*)0, (FnUIDraw)0, FALSE, FALSE };
+static LayerTargetHook g_layer_skill     = { 0x0Du, (LPVOID*)0, (BYTE*)0, (FnUIDraw)0, FALSE, FALSE };
+static LayerTargetHook g_layer_inventory = { 0x0Eu, (LPVOID*)0, (BYTE*)0, (FnUIDraw)0, FALSE, FALSE };
+
+/*
+ * layer1a 只会延迟三个已知主菜单；layer1d 继续允许把“属于当前菜单体系的独立顶层辅助面板”一起延迟。
+ * 本轮新增短生命周期跟踪：独立面板一旦在合法主菜单上下文中被确认，即使随后物品主窗口先关闭，
+ * 只要该面板自身仍 active、仍在 HUD 前的真实顶层链、vtable 未变且仍与 HUD 相交，就继续保持 HUD 后绘制。
+ * 固定 16 项足够覆盖当前实机界面，而且完全不需要 malloc，不会在老游戏渲染热路径里做堆分配。
+ * 超过 16 项时直接失败开放：多出来的对象保持原版 Draw，不会覆盖数组。
+ */
+typedef struct DeferredLayerDraw_TAG {
+    LPVOID object;
+    FnUIDraw original_draw;
+    DWORD draw_context;
+    DWORD control_id;
+} DeferredLayerDraw;
+
+static DeferredLayerDraw g_deferred_layer_draws[16];
+static DWORD g_deferred_layer_count = 0u;
+
+/* 当前是否处在“原版 UI manager Draw 的这一帧调用”内部。 */
+static BOOL g_layer_draw_scope_active = FALSE;
+
+/* 当前这一帧是否满足真正调整图层的条件。 */
+static BOOL g_layer_draw_pass_enabled = FALSE;
+
+/* 当前这一帧主 HUD 顶层 Draw 是否已经完成。 */
+static BOOL g_layer_main_hud_drawn = FALSE;
+
+/* 防止理论上的嵌套 manager Draw 把外层状态覆盖。 */
+static DWORD g_layer_draw_scope_depth = 0u;
+
+/* 运行日志只记录每个目标第一次真的被延迟，避免每帧刷盘。bit0/1/2 对应 0B/0D/0E。 */
+static DWORD g_layer_runtime_logged_mask = 0u;
+
+/* 异常兜底最多记一次。 */
+static BOOL g_layer_unexpected_flush_logged = FALSE;
+
+/* 每个菜单第一次得到原始顶层 Draw 链索引时记一次。bit0/1/2 对应 0B/0D/0E。 */
+static DWORD g_layer_chain_relation_logged_mask = 0u;
+
+/* 每个菜单类如果结构验证失败，只记一次警告。bit0/1/2 对应 0B/0D/0E。 */
+static DWORD g_layer_hook_failure_logged_mask = 0u;
+
+/*
+ * layer1d 输入/动态辅助面板状态。
+ *
+ * layer1b 的实机日志已经证明：把 manager+0x1C/+0x18 当成“普通 NULL 结尾双向链”是不成立的，
+ * 因此 layer1d 完全删除运行时链表写入。下面只保存两个原版函数指针和少量 Hook 元数据。
+ */
+static FnUITopLevelPick g_original_ui_top_level_pick = (FnUITopLevelPick)0;
+static FnUIGetHitRect g_original_ui_get_hit_rect = (FnUIGetHitRect)0;
+static FnUIPropertyGet g_original_ui_property_get = (FnUIPropertyGet)0;
+static DWORD g_layer_input_override_log_count = 0u;
+
+/*
+ * 独立左侧装备面板等对象不一定使用 0x0B/0x0D/0x0E 三个主菜单 vtable。
+ * layer1d 因此允许在运行时对最多 16 个“已经由当前菜单上下文证明相关”的额外 vtable 安装同一个 Draw wrapper。
+ *
+ * 每一项只记录 vtable、vtable+0x08 槽和被替换掉的原版 Draw。Hook 一旦安装就不撤销；菜单关闭以后
+ * wrapper 会因为“不在 layer scope / 不是当前候选”而直接调用原版 Draw，所以不会改变普通跑图行为。
+ */
+typedef struct DynamicLayerHook_TAG {
+    BYTE* vtable;
+    BYTE* draw_slot;
+    FnUIDraw original_draw;
+} DynamicLayerHook;
+
+#define LAYER_DYNAMIC_HOOK_MAX 16u
+static DynamicLayerHook g_layer_dynamic_hooks[LAYER_DYNAMIC_HOOK_MAX];
+static DWORD g_layer_dynamic_hook_count = 0u;
+static BOOL g_layer_dynamic_hook_capacity_logged = FALSE;
+static DWORD g_layer_dynamic_defer_log_count = 0u;
+
+/*
+ * layer1d：给“已经在合法主菜单上下文里确认过”的独立辅助顶层对象一个很短的生命周期记忆。
+ *
+ * 为什么需要它：
+ *   layer1c 只有在 0x0B/0x0D/0x0E 至少一个主菜单仍 active 时，才把未知独立面板当成菜单体系的一部分。
+ *   实机已经证明：装备左侧面板可以在物品主窗口关闭以后继续保持 active。此时主菜单门槛突然消失，
+ *   layer1c 就会把这个仍然存在的装备面板重新放回 HUD 下方。
+ *
+ * 这里不“永久记住 vtable”，也不保存任何游戏分配出来的内存内容副本，而是只保存：
+ *   - 当时那个对象指针；
+ *   - 当时那个对象的 vtable；
+ *   - 它最近一次在当前顶层 Draw 链里通过验证的帧编号。
+ *
+ * 每次 UI manager Draw 开始前都会重新验证：对象必须仍在 HUD 之前的真实顶层链、仍 active、vtable 没变、
+ * 仍和 HUD 相交。任何一项不成立就立即忘掉该对象。这样既能跨过“物品 root 已关闭但装备面板还活着”这一小段
+ * 生命周期，又不会把一个已经销毁/复用的旧地址长期当成菜单。
+ */
+typedef struct TrackedAuxiliaryObject_TAG {
+    LPVOID object;
+    BYTE* vtable;
+    DWORD seen_epoch;
+    BOOL detached_keep_logged;
+} TrackedAuxiliaryObject;
+
+#define LAYER_TRACKED_AUXILIARY_MAX 16u
+static TrackedAuxiliaryObject g_layer_tracked_auxiliary[LAYER_TRACKED_AUXILIARY_MAX];
+static DWORD g_layer_tracking_epoch = 0u;
+static BOOL g_layer_tracking_capacity_logged = FALSE;
+/*
+ * 判断一个函数地址是否确实落在当前 EXE 的 .text 中。
+ * 这是 vtable Hook 的最后一道保险：如果某个兼容 EXE 的类结构已经变化，就宁可不安装目标 Hook，
+ * 也绝不把数据地址或第三方 DLL 地址误当成原版 Draw。
+ */
+static BOOL layer_address_is_game_text(DWORD address)
+{
+    return g_layer_text_start && g_layer_text_end &&
+           address >= (DWORD)g_layer_text_start && address < (DWORD)g_layer_text_end;
+}
+
+/*
+ * UI manager 的原版顶层绘制链从 manager+0x1C 开始，沿 object+0x08 向前走。
+ * 这里只读链表，用来确认“本帧主 HUD 确实在同一条绘制链上”。
+ *
+ * 为什么要先确认？
+ * 如果某个特殊场景根本没有主 HUD，而我们仍把物品窗口延迟等待 HUD，就会导致这一帧窗口不画。
+ * 所以找不到 HUD 时本版直接关闭本帧图层调整，完全回到原版 Draw 顺序。
+ */
+static DWORD layer_log_bit_for_id(DWORD control_id);
+
+static BOOL layer_draw_chain_contains(LPVOID manager, LPVOID wanted)
+{
+    LPVOID node;
+    DWORD guard = 0u;
+
+    if (!manager || !wanted) {
+        return FALSE;
+    }
+
+    node = *(LPVOID*)((BYTE*)manager + 0x1Cu);
+    while (node && guard < 128u) {
+        if (node == wanted) {
+            return TRUE;
+        }
+        node = *(LPVOID*)((BYTE*)node + 0x08u);
+        ++guard;
+    }
+
+    return FALSE;
+}
+
+
+/*
+ * 返回 wanted 在 UI manager 原始顶层 Draw 链里的从 0 开始索引。
+ * 返回 -1 表示当前链里没有这个对象，或者输入无效。
+ *
+ * 这个函数只读取 manager+0x1C / object+0x08，不修改链表，所以它不会改变输入优先级或绘制顺序。
+ * layer1a 用它做诊断的原因是：把“菜单移到 HUD 后面”除了会翻转菜单/HUD 的相对关系，还可能翻转菜单与
+ * 两者之间其它顶层 UI 的关系。实机日志必须先告诉我们原始链究竟是什么样，后续才能判断是否需要更窄的方案。
+ */
+static LONG layer_draw_chain_index(LPVOID manager, LPVOID wanted)
+{
+    LPVOID node;
+    LONG index = 0;
+
+    if (!manager || !wanted) {
+        return -1;
+    }
+
+    node = *(LPVOID*)((BYTE*)manager + 0x1Cu);
+    while (node && index < 128) {
+        if (node == wanted) {
+            return index;
+        }
+        node = *(LPVOID*)((BYTE*)node + 0x08u);
+        ++index;
+    }
+
+    return -1;
+}
+
+/*
+ * 对一个已经存在、但无法安全安装 Draw Hook 的菜单类执行“失败开放”。
+ * 这里只关闭这一类菜单的图层调整，不触碰对象、输入、active、坐标，也不影响其它两类菜单。
+ */
+static void layer_disable_target_hook(LayerTargetHook* hook, const char* reason)
+{
+    DWORD bit;
+
+    if (!hook) {
+        return;
+    }
+
+    hook->disabled = TRUE;
+    bit = layer_log_bit_for_id(hook->control_id);
+
+    if (bit && !(g_layer_hook_failure_logged_mask & bit)) {
+        char line[448];
+        g_layer_hook_failure_logged_mask |= bit;
+        line[0] = '\0';
+        str_append(line, (DWORD)sizeof(line), "[警告] 辅助GUI绘制层：ID=");
+        append_hex32(line, (DWORD)sizeof(line), hook->control_id);
+        str_append(line, (DWORD)sizeof(line), " Draw Hook 已单独禁用；原因=");
+        str_append(line, (DWORD)sizeof(line), reason ? reason : "未知");
+        str_append(line, (DWORD)sizeof(line), "；该菜单保持原版绘制/输入");
+        append_runtime_line(line);
+    }
+}
+
+/*
+ * 第一次看到某个目标对象进入顶层 Draw 链时，记录它与主 HUD 的原始链索引。
+ * 这只是诊断，不参与是否命中按钮，也不参与是否移动对象。
+ */
+static void layer_log_chain_relation_once(LPVOID manager, LPVOID hud, LayerTargetHook* hook)
+{
+    LPVOID object;
+    LONG hud_index;
+    LONG target_index;
+    DWORD bit;
+    char line[512];
+
+    if (!manager || !hud || !hook || !hook->target_slot) {
+        return;
+    }
+
+    bit = layer_log_bit_for_id(hook->control_id);
+    if (!bit || (g_layer_chain_relation_logged_mask & bit)) {
+        return;
+    }
+
+    object = *hook->target_slot;
+    if (!object) {
+        return;
+    }
+
+    hud_index = layer_draw_chain_index(manager, hud);
+    target_index = layer_draw_chain_index(manager, object);
+    if (hud_index < 0 || target_index < 0) {
+        return;
+    }
+
+    g_layer_chain_relation_logged_mask |= bit;
+    line[0] = '\0';
+    str_append(line, (DWORD)sizeof(line), "[运行] 辅助GUI原始Draw链 ID=");
+    append_hex32(line, (DWORD)sizeof(line), hook->control_id);
+    str_append(line, (DWORD)sizeof(line), " 菜单索引=");
+    append_int(line, (DWORD)sizeof(line), target_index);
+    str_append(line, (DWORD)sizeof(line), " 主HUD索引=");
+    append_int(line, (DWORD)sizeof(line), hud_index);
+
+    if (target_index < hud_index) {
+        str_append(line, (DWORD)sizeof(line), " 关系=菜单在HUD之前；layer1d会在HUD之后延迟绘制该菜单");
+    } else if (target_index > hud_index) {
+        str_append(line, (DWORD)sizeof(line), " 关系=菜单已在HUD之后；layer1d不需要调整该菜单");
+    } else {
+        str_append(line, (DWORD)sizeof(line), " 关系=异常同索引；本帧不会据此修改任何输入状态");
+    }
+
+    append_runtime_line(line);
+}
+
+/*
+ * 判断某个 target wrapper 当前是不是“UI manager 顶层遍历正在画的那个对象”。
+ * manager 原版代码在每次 Draw 前都会把 manager+0x20 写成 current object。
+ * 只有这个条件成立时，我们才允许延迟；如果同一个类的 Draw 从别的内部路径被调用，必须原样执行。
+ */
+
+/*
+ * 判断两个已经验证有效的矩形是否有任何像素区域相交。
+ *
+ * 这里不用“中心点”或固定按钮坐标，因为我们需要覆盖三类情况：
+ *   1. 物品/技能主窗口的底部按钮被 HUD 压住；
+ *   2. 连招编辑等子菜单的关闭按钮落进 HUD 区；
+ *   3. 用户实机发现的左侧独立装备/辅助面板仍然在 HUD 下面。
+ *
+ * 只要顶层窗口真实矩形和 HUD 矩形相交，就说明二者确实存在层级竞争。
+ */
+static BOOL layer_rects_intersect(const HudRect* a, const HudRect* b)
+{
+    if (!a || !b || !a->valid || !b->valid) {
+        return FALSE;
+    }
+
+    if (a->right < b->left || b->right < a->left ||
+        a->bottom < b->top || b->bottom < a->top) {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+/*
+ * 只读判断三个已确认主菜单（装备 0x0B / 技能 0x0D / 物品 0x0E）当前是否至少有一个正在显示。
+ *
+ * layer1d 只有在这些主菜单实际打开时才允许启用辅助面板延后绘制和输入 root 覆盖。普通跑图、战斗、
+ * 小地图、右侧常驻按钮等状态完全不会进入这套候选逻辑。
+ */
+static BOOL layer_any_primary_menu_active(void)
+{
+    LayerTargetHook* hooks[3];
+    DWORD i;
+
+    hooks[0] = &g_layer_equipment;
+    hooks[1] = &g_layer_skill;
+    hooks[2] = &g_layer_inventory;
+
+    for (i = 0u; i < 3u; ++i) {
+        LayerTargetHook* hook = hooks[i];
+        LPVOID object;
+
+        if (!hook || !hook->target_slot) {
+            continue;
+        }
+
+        object = *hook->target_slot;
+        if (object && child_active_for_diagnostic(object)) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+/*
+ * 判断 object 自己是不是三个已确认主菜单之一。
+ * 这是最可靠的候选条件：即使某个老 JMM 对象的 width/height 不完整，只要它就是 0x0B/0x0D/0x0E
+ * 当前实例，就仍然应该和 HUD 使用同一份 Z 顺序。
+ */
+static BOOL layer_is_primary_menu_object(LPVOID object)
+{
+    if (!object) {
+        return FALSE;
+    }
+
+    if (g_layer_equipment.target_slot && *g_layer_equipment.target_slot == object) {
+        return TRUE;
+    }
+    if (g_layer_skill.target_slot && *g_layer_skill.target_slot == object) {
+        return TRUE;
+    }
+    if (g_layer_inventory.target_slot && *g_layer_inventory.target_slot == object) {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+/*
+ * 判断一个对象沿 +0xA4 parent 链向上追溯后，是否属于三个主菜单中的任意一个。
+ *
+ * 有些“子菜单”虽然也出现在 UI manager 顶层 Draw 链里，但对象内部仍保留到主菜单的 parent 关系。
+ * 如果能用这条关系证明归属，就不需要猜它的 control ID、vtable 或屏幕位置。
+ *
+ * 最多追 16 层，既足够覆盖实际 UI，又避免坏 parent 链形成死循环时卡住游戏。
+ */
+static BOOL layer_belongs_to_primary_menu_tree(LPVOID object)
+{
+    LPVOID current = object;
+    DWORD guard = 0u;
+
+    while (current && guard < 16u) {
+        if (layer_is_primary_menu_object(current)) {
+            return TRUE;
+        }
+
+        current = *(LPVOID*)((BYTE*)current + 0xA4u);
+        ++guard;
+    }
+
+    return FALSE;
+}
+
+/*
+ * 读取“顶层输入选择器真正使用的矩形”。
+ *
+ * 原版 0x4B4800 不是直接固定读取 object+0x14，而是先调用 0x4B1D30。大多数对象两者相同，
+ * 但某些 JMM 参数会让 0x4B1D30 对 Y 做临时修正。为了让 layer1d 的候选判断和游戏原版尽量一致，
+ * 如果安装阶段已经从 0x4B4800 解析出 0x4B1D30，就优先调用它并立即复制结果；解析不到时才退回
+ * read_child_rect()。这个函数只读矩形，不调用会修改 +0xB8 latch 的 active query。
+ */
+static BOOL layer_read_top_level_hit_rect(LPVOID object, HudRect* rect)
+{
+    LONG* values;
+    LONG width;
+    LONG height;
+
+    if (!object || !rect) {
+        return FALSE;
+    }
+
+    if (!g_original_ui_get_hit_rect) {
+        return read_child_rect(object, rect);
+    }
+
+    values = g_original_ui_get_hit_rect(object);
+    if (!values) {
+        return FALSE;
+    }
+
+    width = values[2];
+    height = values[3];
+    if (width <= 0 || height <= 0) {
+        rect->valid = FALSE;
+        return FALSE;
+    }
+
+    rect->left = values[0];
+    rect->top = values[1];
+    rect->right = rect->left + width - 1;
+    rect->bottom = rect->top + height - 1;
+    rect->valid = TRUE;
+    return TRUE;
+}
+
+/*
+ * 排除世界根、整屏遮罩等“几乎覆盖整个逻辑画面”的对象。
+ * 这些对象当然会和 HUD 相交，但它们绝不是本轮要提升的菜单辅助面板。
+ */
+static BOOL layer_rect_looks_fullscreen(const HudRect* rect)
+{
+    LONG width;
+    LONG height;
+
+    if (!rect || !rect->valid || g_target_width == 0u || g_target_height == 0u) {
+        return FALSE;
+    }
+
+    width = rect->right - rect->left + 1;
+    height = rect->bottom - rect->top + 1;
+
+    return (width >= (LONG)((g_target_width * 7u) / 8u) &&
+            height >= (LONG)((g_target_height * 7u) / 8u)) ? TRUE : FALSE;
+}
+
+/*
+ * 在短生命周期跟踪表里按对象指针查找一项。
+ *
+ * 这个函数本身不解引用 object；所以即使表里保存的是上一帧已经消失的地址，单纯查表也不会访问坏内存。
+ * 真正读取 vtable/active/矩形只会发生在“这个指针又从当前真实顶层链里被枚举出来”以后。
+ */
+static TrackedAuxiliaryObject* layer_find_tracked_auxiliary_slot(LPVOID object)
+{
+    DWORD i;
+
+    if (!object) {
+        return (TrackedAuxiliaryObject*)0;
+    }
+
+    for (i = 0u; i < LAYER_TRACKED_AUXILIARY_MAX; ++i) {
+        if (g_layer_tracked_auxiliary[i].object == object) {
+            return &g_layer_tracked_auxiliary[i];
+        }
+    }
+
+    return (TrackedAuxiliaryObject*)0;
+}
+
+/*
+ * 判断“当前这个真实对象”是否仍是我们之前确认过的独立辅助面板。
+ *
+ * 调用者必须已经从当前游戏对象/顶层链拿到了 object，因此这里读取 object->vtable 是安全的。
+ * 指针相同但 vtable 不同，说明该地址已经被别的对象复用，立即视为不是旧面板。
+ */
+static BOOL layer_is_tracked_auxiliary_object(LPVOID object)
+{
+    TrackedAuxiliaryObject* item;
+    BYTE* vtable;
+
+    item = layer_find_tracked_auxiliary_slot(object);
+    if (!item || !item->object) {
+        return FALSE;
+    }
+
+    vtable = *(BYTE**)object;
+    return (vtable && vtable == item->vtable) ? TRUE : FALSE;
+}
+
+/*
+ * 第一次在“合法主菜单上下文”里确认一个独立面板以后，把它加入短生命周期跟踪表。
+ *
+ * seen_epoch 直接写成本帧编号，表示这个对象刚刚就是从当前真实顶层链发现的。
+ * 表满时失败开放：不再新增跟踪对象，原来的 layer1c 行为仍然保留，不会覆盖数组或猜测对象。
+ */
+static void layer_track_auxiliary_object(LPVOID object)
+{
+    TrackedAuxiliaryObject* item;
+    BYTE* vtable;
+    DWORD i;
+
+    if (!object) {
+        return;
+    }
+
+    vtable = *(BYTE**)object;
+    if (!vtable || (DWORD)vtable < 0x00400000u || (DWORD)vtable >= 0x00600000u) {
+        return;
+    }
+
+    item = layer_find_tracked_auxiliary_slot(object);
+    if (item) {
+        /* 同一个地址若换了 vtable，就把它当成全新的对象重新开始生命周期。 */
+        if (item->vtable != vtable) {
+            item->vtable = vtable;
+            item->detached_keep_logged = FALSE;
+        }
+        item->seen_epoch = g_layer_tracking_epoch;
+        return;
+    }
+
+    for (i = 0u; i < LAYER_TRACKED_AUXILIARY_MAX; ++i) {
+        item = &g_layer_tracked_auxiliary[i];
+        if (!item->object) {
+            item->object = object;
+            item->vtable = vtable;
+            item->seen_epoch = g_layer_tracking_epoch;
+            item->detached_keep_logged = FALSE;
+            return;
+        }
+    }
+
+    if (!g_layer_tracking_capacity_logged) {
+        g_layer_tracking_capacity_logged = TRUE;
+        append_runtime_line("[警告] 辅助GUI短生命周期跟踪表已满；额外独立面板保持未跟踪时的原有行为");
+    }
+}
+
+/*
+ * 清空一项跟踪记录。
+ * 这里只把我们自己的四个字段归零，绝不写游戏对象，也不尝试调用它的析构函数。
+ */
+static void layer_clear_tracked_auxiliary_slot(TrackedAuxiliaryObject* item)
+{
+    if (!item) {
+        return;
+    }
+
+    item->object = (LPVOID)0;
+    item->vtable = (BYTE*)0;
+    item->seen_epoch = 0u;
+    item->detached_keep_logged = FALSE;
+}
+
+/*
+ * 离开 GAMEPLAY、HUD 不存在或顶层链暂时不可用时，直接忘掉全部短生命周期对象。
+ * 下一次合法菜单打开时可以重新发现；这比跨场景保存旧对象地址安全得多。
+ */
+static void layer_clear_all_tracked_auxiliary_objects(void)
+{
+    DWORD i;
+
+    for (i = 0u; i < LAYER_TRACKED_AUXILIARY_MAX; ++i) {
+        layer_clear_tracked_auxiliary_slot(&g_layer_tracked_auxiliary[i]);
+    }
+}
+
+/*
+ * 每次最外层 UI manager Draw 开始前刷新一次短生命周期表。
+ *
+ * 步骤很机械：
+ *   1. epoch + 1，相当于“这是新的一帧验证”；
+ *   2. 只遍历真实正向顶层 Draw 链从 head 到 HUD 的对象；
+ *   3. 只有本来就在跟踪表中的对象，才检查它现在是否仍然：vtable 相同、active、不是全屏根、与 HUD 相交；
+ *   4. 通过就把 seen_epoch 更新到本帧；
+ *   5. 扫描结束后，任何没在本帧重新看到的旧记录立即清掉。
+ *
+ * 因为我们绝不会为了验证旧记录去直接解引用“表里的旧指针”，所以对象销毁以后也不会产生悬空指针读取。
+ */
+static void layer_refresh_tracked_auxiliary_objects(LPVOID manager, LPVOID hud)
+{
+    LPVOID node;
+    HudRect hud_rect;
+    DWORD guard = 0u;
+    DWORD i;
+
+    if (!manager || !hud || !g_gameplay_profile_active || g_strategy_transition_in_progress ||
+        !layer_read_top_level_hit_rect(hud, &hud_rect)) {
+        layer_clear_all_tracked_auxiliary_objects();
+        return;
+    }
+
+    ++g_layer_tracking_epoch;
+    if (g_layer_tracking_epoch == 0u) {
+        /* DWORD 回绕在实际游戏时间里几乎不可能发生；仍然显式处理，避免 0 和“空记录”语义混在一起。 */
+        g_layer_tracking_epoch = 1u;
+        for (i = 0u; i < LAYER_TRACKED_AUXILIARY_MAX; ++i) {
+            if (g_layer_tracked_auxiliary[i].object) {
+                g_layer_tracked_auxiliary[i].seen_epoch = 0u;
+            }
+        }
+    }
+
+    node = *(LPVOID*)((BYTE*)manager + 0x1Cu);
+    while (node && node != hud && guard < 128u) {
+        TrackedAuxiliaryObject* item = layer_find_tracked_auxiliary_slot(node);
+
+        if (item) {
+            BYTE* vtable = *(BYTE**)node;
+            HudRect rect;
+
+            if (vtable == item->vtable &&
+                child_active_for_diagnostic(node) &&
+                layer_read_top_level_hit_rect(node, &rect) &&
+                !layer_rect_looks_fullscreen(&rect) &&
+                layer_rects_intersect(&rect, &hud_rect)) {
+                item->seen_epoch = g_layer_tracking_epoch;
+            }
+        }
+
+        node = *(LPVOID*)((BYTE*)node + 0x08u);
+        ++guard;
+    }
+
+    for (i = 0u; i < LAYER_TRACKED_AUXILIARY_MAX; ++i) {
+        TrackedAuxiliaryObject* item = &g_layer_tracked_auxiliary[i];
+        if (item->object && item->seen_epoch != g_layer_tracking_epoch) {
+            layer_clear_tracked_auxiliary_slot(item);
+        }
+    }
+}
+
+/*
+ * 当主菜单已经全部关闭、但一个已确认的独立面板仍然合法存活时，只记一次诊断。
+ * 这条日志正好对应本轮用户实机发现的“关闭物品后装备左面板被压回 HUD 下方”边界。
+ */
+static void layer_log_detached_tracked_auxiliary_once(LPVOID object)
+{
+    TrackedAuxiliaryObject* item;
+    char line[384];
+
+    item = layer_find_tracked_auxiliary_slot(object);
+    if (!item || item->detached_keep_logged) {
+        return;
+    }
+
+    item->detached_keep_logged = TRUE;
+    line[0] = '\0';
+    str_append(line, (DWORD)sizeof(line), "[运行] 辅助GUI独立面板主窗口关闭后继续置于HUD上方 对象=");
+    append_hex32(line, (DWORD)sizeof(line), (DWORD)object);
+    str_append(line, (DWORD)sizeof(line), " vtable=");
+    append_hex32(line, (DWORD)sizeof(line), (DWORD)item->vtable);
+    append_runtime_line(line);
+}
+
+/*
+ * 判断一个顶层对象是否属于“当前打开菜单需要压在 HUD 上方”的候选。
+ *
+ * 证明强度从高到低分三类：
+ *   1. 它就是 0x0B/0x0D/0x0E 三个已确认主菜单之一；
+ *   2. 沿 +0xA4 parent 链能追到主菜单，说明它是被提升成顶层绘制的子菜单/辅助面板；
+ *   3. 当前确实有主菜单打开，而且它是活动的、不是全屏根，并且矩形与 HUD 相交。
+ *
+ * 第 3 条用于覆盖用户实机看到的“左侧独立装备面板”。它只在主菜单上下文、HUD 之前的顶层链扫描中使用，
+ * 不会在普通跑图时把任意窗口都当成菜单。
+ */
+static BOOL layer_is_auxiliary_top_level_candidate(LPVOID object, LPVOID hud, HudRect* out_rect)
+{
+    HudRect rect;
+    HudRect hud_rect;
+    BOOL primary_context;
+    BOOL tracked_auxiliary;
+    BOOL is_primary = FALSE;
+    BOOL belongs_to_primary = FALSE;
+    BOOL overlaps_hud;
+
+    if (out_rect) {
+        out_rect->valid = FALSE;
+    }
+
+    if (!object || !hud || object == hud) {
+        return FALSE;
+    }
+
+    if (!child_active_for_diagnostic(object)) {
+        return FALSE;
+    }
+
+    if (!layer_read_top_level_hit_rect(object, &rect) || layer_rect_looks_fullscreen(&rect)) {
+        return FALSE;
+    }
+
+    primary_context = layer_any_primary_menu_active();
+    tracked_auxiliary = layer_is_tracked_auxiliary_object(object);
+
+    /*
+     * 新对象仍然必须从“主菜单确实打开”的上下文里第一次被证明；没有主菜单时绝不凭几何关系发现新面板。
+     * 唯一例外是 layer1d 已经在前一阶段确认并且本帧重新通过顶层链/active/vtable/相交验证的短生命周期对象。
+     */
+    if (!primary_context && !tracked_auxiliary) {
+        return FALSE;
+    }
+
+    overlaps_hud = layer_read_top_level_hit_rect(hud, &hud_rect) && layer_rects_intersect(&rect, &hud_rect);
+
+    if (tracked_auxiliary) {
+        /* 脱离主菜单以后继续置顶的目的只是在解决 HUD 覆盖，因此不再相交时就没有继续保留的理由。 */
+        if (!overlaps_hud) {
+            return FALSE;
+        }
+    } else {
+        /* parent 链只在主菜单仍存在的合法上下文里追，避免主 root 生命周期结束后去追一个可能已经失效的旧 parent。 */
+        is_primary = layer_is_primary_menu_object(object);
+        belongs_to_primary = layer_belongs_to_primary_menu_tree(object);
+
+        if (!is_primary && !belongs_to_primary && !overlaps_hud) {
+            return FALSE;
+        }
+    }
+
+    if (out_rect) {
+        *out_rect = rect;
+    }
+    return TRUE;
+}
+
+/*
+ * 从正向 Draw 链的开头扫描到 HUD 为止，判断 wanted 是否确实位于 HUD 之前。
+ * 这里只读 object+0x08，不对 manager+0x18 或 object+0x0C 作任何假设，更不会写链。
+ */
+static BOOL layer_object_is_before_hud_in_draw_chain(LPVOID manager, LPVOID hud, LPVOID wanted)
+{
+    LPVOID node;
+    DWORD guard = 0u;
+
+    if (!manager || !hud || !wanted || wanted == hud) {
+        return FALSE;
+    }
+
+    node = *(LPVOID*)((BYTE*)manager + 0x1Cu);
+    while (node && guard < 128u) {
+        if (node == wanted) {
+            return TRUE;
+        }
+        if (node == hud) {
+            return FALSE;
+        }
+        node = *(LPVOID*)((BYTE*)node + 0x08u);
+        ++guard;
+    }
+
+    return FALSE;
+}
+
+/* 根据 vtable 找已经安装的动态 Draw Hook。 */
+static DynamicLayerHook* layer_find_dynamic_hook_for_object(LPVOID object)
+{
+    BYTE* vtable;
+    DWORD i;
+
+    if (!object) {
+        return (DynamicLayerHook*)0;
+    }
+
+    vtable = *(BYTE**)object;
+    if (!vtable) {
+        return (DynamicLayerHook*)0;
+    }
+
+    for (i = 0u; i < g_layer_dynamic_hook_count; ++i) {
+        if (g_layer_dynamic_hooks[i].vtable == vtable) {
+            return &g_layer_dynamic_hooks[i];
+        }
+    }
+
+    return (DynamicLayerHook*)0;
+}
+
+/* 判断 object 是否属于三个已知主菜单 vtable。已知类继续使用各自专用 wrapper，不重复安装动态 Hook。 */
+static BOOL layer_object_uses_known_target_vtable(LPVOID object)
+{
+    BYTE* vtable;
+    LayerTargetHook* hooks[3];
+    DWORD i;
+
+    if (!object) {
+        return FALSE;
+    }
+
+    vtable = *(BYTE**)object;
+    if (!vtable) {
+        return FALSE;
+    }
+
+    hooks[0] = &g_layer_equipment;
+    hooks[1] = &g_layer_skill;
+    hooks[2] = &g_layer_inventory;
+
+    for (i = 0u; i < 3u; ++i) {
+        LPVOID target = (hooks[i]->target_slot ? *hooks[i]->target_slot : (LPVOID)0);
+
+        /*
+         * 不能只看 draw_slot：某个已知主菜单如果专用 Hook 因结构异常而 fail-open，draw_slot 可能仍为空。
+         * 这时动态系统也绝不能“换一个名字重新 Hook 同一 vtable”，否则就绕过了原来的安全停用。
+         */
+        if ((hooks[i]->draw_slot && hooks[i]->draw_slot == vtable + 0x08u) ||
+            (target && *(BYTE**)target == vtable)) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+/*
+ * 前置声明：输入覆盖判断需要识别“当前 vtable+0x08 已经安装了哪一种延后绘制 wrapper”，
+ * 所以四个 wrapper 的地址必须在定义前先声明。真正函数体仍放在后面，避免把实现拆散。
+ */
+static int __fastcall layer_equipment_draw_hook(LPVOID self, LPVOID unused_edx, DWORD draw_context);
+static int __fastcall layer_skill_draw_hook(LPVOID self, LPVOID unused_edx, DWORD draw_context);
+static int __fastcall layer_inventory_draw_hook(LPVOID self, LPVOID unused_edx, DWORD draw_context);
+static int __fastcall layer_dynamic_auxiliary_draw_hook(LPVOID self, LPVOID unused_edx, DWORD draw_context);
+static int __fastcall layer_main_hud_draw_hook(LPVOID self, LPVOID unused_edx, DWORD draw_context);
+
+/*
+ * 给一个已经由“当前菜单上下文 + 顶层链 + 几何关系”证明相关的额外 vtable 安装 Draw wrapper。
+ *
+ * 安全条件：
+ *   - vtable 和原版 Draw 都必须落在主 EXE 已确认地址范围/.text；
+ *   - +0x58 仍必须是已经解析的通用布局函数，证明它属于同一套 JMM UI 基类；
+ *   - 不覆盖主 HUD，也不覆盖三个已知主菜单已经安装的专用 wrapper；
+ *   - 最多记录 16 个 vtable，满了以后完全失败开放。
+ */
+static BOOL ensure_dynamic_layer_hook_for_object(LPVOID object)
+{
+    BYTE* vtable;
+    BYTE* draw_slot;
+    DWORD original_address;
+    DynamicLayerHook* item;
+
+    if (!object || object == (g_layer_main_hud_global_slot ? *g_layer_main_hud_global_slot : (LPVOID)0)) {
+        return FALSE;
+    }
+
+    if (layer_object_uses_known_target_vtable(object)) {
+        return TRUE;
+    }
+
+    item = layer_find_dynamic_hook_for_object(object);
+    if (item) {
+        return read_u32(item->draw_slot) == (DWORD)&layer_dynamic_auxiliary_draw_hook;
+    }
+
+    if (g_layer_dynamic_hook_count >= LAYER_DYNAMIC_HOOK_MAX) {
+        if (!g_layer_dynamic_hook_capacity_logged) {
+            g_layer_dynamic_hook_capacity_logged = TRUE;
+            append_runtime_line("[警告] 辅助GUI动态Draw Hook数量已达16类；后续未知辅助面板保持原版绘制");
+        }
+        return FALSE;
+    }
+
+    vtable = *(BYTE**)object;
+    if (!vtable || (DWORD)vtable < 0x00400000u || (DWORD)vtable >= 0x00600000u) {
+        return FALSE;
+    }
+
+    draw_slot = vtable + 0x08u;
+
+    /* 主 HUD 的 vtable+0x08 已经有专用 wrapper，动态系统绝不能覆盖同一个槽。 */
+    if (draw_slot == g_main_hud_draw_slot || read_u32(draw_slot) == (DWORD)&layer_main_hud_draw_hook) {
+        return FALSE;
+    }
+
+    original_address = read_u32(draw_slot);
+    if (!layer_address_is_game_text(original_address)) {
+        return FALSE;
+    }
+
+    /*
+     * layer1b 曾要求所有额外面板的 +0x58 都必须等于主 HUD 的通用布局函数，但这对“独立左侧面板”没有证据。
+     * layer1d 只 Hook Draw，因此不再人为要求它和主 HUD 使用同一个布局虚函数；vtable 在 EXE、原 Draw 在 .text、
+     * 对象来自当前顶层链且已通过菜单上下文/几何候选验证，已经是本轮真正需要的安全条件。
+     */
+
+    item = &g_layer_dynamic_hooks[g_layer_dynamic_hook_count];
+    item->vtable = vtable;
+    item->draw_slot = draw_slot;
+    item->original_draw = (FnUIDraw)original_address;
+
+    if (!patch_u32(draw_slot, (DWORD)&layer_dynamic_auxiliary_draw_hook)) {
+        item->vtable = (BYTE*)0;
+        item->draw_slot = (BYTE*)0;
+        item->original_draw = (FnUIDraw)0;
+        return FALSE;
+    }
+
+    ++g_layer_dynamic_hook_count;
+    return TRUE;
+}
+
+/*
+ * 每帧 manager Draw 开始前，只读扫描 HUD 之前的顶层对象，把“当前菜单相关且会与 HUD 发生层级竞争”的
+ * 独立辅助类准备好。这里只安装 vtable Draw wrapper，不改变任何对象次序、坐标或输入状态。
+ */
+static void ensure_dynamic_layer_hooks_for_current_menu(LPVOID manager, LPVOID hud)
+{
+    LPVOID node;
+    DWORD guard = 0u;
+
+    if (!manager || !hud || !layer_any_primary_menu_active()) {
+        return;
+    }
+
+    node = *(LPVOID*)((BYTE*)manager + 0x1Cu);
+    while (node && node != hud && guard < 128u) {
+        LPVOID next = *(LPVOID*)((BYTE*)node + 0x08u);
+        HudRect rect;
+
+        if (layer_is_auxiliary_top_level_candidate(node, hud, &rect)) {
+            /*
+             * 只有动态 Hook 真正已经存在/安装成功以后，才把这个独立对象加入短生命周期跟踪。
+             * 三个已知主菜单自己有专用 wrapper，不需要跟踪；这里记录的是它们之外的独立面板。
+             */
+            if (ensure_dynamic_layer_hook_for_object(node) && !layer_is_primary_menu_object(node)) {
+                layer_track_auxiliary_object(node);
+            }
+        }
+
+        node = next;
+        ++guard;
+    }
+}
+
+/*
+ * 只有已经真的装有“延后到 HUD 后绘制” wrapper 的对象，才允许参与输入 root 覆盖。
+ * 这样可以保证视觉优先级和输入优先级始终成对出现，不会出现“输入已经在上面、画面还在下面”的新不一致。
+ */
+static BOOL layer_object_has_active_deferred_draw_wrapper(LPVOID object)
+{
+    BYTE* vtable;
+    DWORD draw_value;
+
+    if (!object) {
+        return FALSE;
+    }
+
+    vtable = *(BYTE**)object;
+    if (!vtable) {
+        return FALSE;
+    }
+
+    draw_value = read_u32(vtable + 0x08u);
+    if (draw_value == (DWORD)&layer_equipment_draw_hook ||
+        draw_value == (DWORD)&layer_skill_draw_hook ||
+        draw_value == (DWORD)&layer_inventory_draw_hook ||
+        draw_value == (DWORD)&layer_dynamic_auxiliary_draw_hook) {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+/*
+ * 完整镜像原版 0x4B4800 对普通顶层 root 的“是否参与输入选择”门槛。
+ * 原版先读取 object+0x50 的 JMM 属性 0x0D，只有值等于 1 才继续做矩形和 active 判断。
+ * layer1d 手工选择菜单候选时也必须遵守同一门槛，不能把一个纯绘制面板强行变成输入 root。
+ */
+static BOOL layer_top_level_root_accepts_mouse_input(LPVOID object)
+{
+    LPVOID property_table;
+
+    if (!object || !g_original_ui_property_get) {
+        return FALSE;
+    }
+
+    property_table = *(LPVOID*)((BYTE*)object + 0x50u);
+    if (!property_table) {
+        return FALSE;
+    }
+
+    return (g_original_ui_property_get(property_table, 0x0D) == 1) ? TRUE : FALSE;
+}
+
+/*
+ * 找出当前鼠标点上“应该压在 HUD 上方”的最高辅助 root。
+ *
+ * layer1a/layer1d 的补画顺序严格保留原正向链顺序：越靠近 HUD 的候选越晚补画，因此视觉上越高。
+ * 这里同样从 head 走到 HUD，并不断覆盖 winner；最终得到的最后一个命中候选正好就是视觉上最高的那个。
+ */
+static LPVOID layer_find_input_override_root(LPVOID manager, LPVOID hud, const POINT* point)
+{
+    LPVOID node;
+    LPVOID winner = (LPVOID)0;
+    DWORD guard = 0u;
+
+    if (!manager || !hud || !point) {
+        return (LPVOID)0;
+    }
+
+    node = *(LPVOID*)((BYTE*)manager + 0x1Cu);
+    while (node && node != hud && guard < 128u) {
+        HudRect rect;
+
+        if (layer_is_auxiliary_top_level_candidate(node, hud, &rect) &&
+            layer_object_has_active_deferred_draw_wrapper(node) &&
+            layer_top_level_root_accepts_mouse_input(node) &&
+            point_in_hud_rect(point->x, point->y, &rect)) {
+            winner = node;
+        }
+
+        node = *(LPVOID*)((BYTE*)node + 0x08u);
+        ++guard;
+    }
+
+    return winner;
+}
+
+/*
+ * 0x4B4790 -> 0x4B4800 的单次顶层 root 选择 Hook。
+ *
+ * 先完整调用原版 picker。只有原版最终选择了“主 HUD 本体”，才允许考虑覆盖；如果原版选中了别的窗口、
+ * 返回 NULL、处于 FRONTEND/Strategy 切换、主 HUD 没居中或功能开关关闭，全部原样返回。
+ *
+ * 命中候选后也不写 manager+0x40。我们只是把候选指针作为 0x4B4800 的返回值交还给原版 0x4B4790；
+ * 0x4B4790 随后仍会调用原版 0x4B44D0，由游戏自己完成 current-root/focus 生命周期。
+ */
+static LPVOID __fastcall ui_top_level_pick_layer_hook(LPVOID self, LPVOID unused_edx, const POINT* point)
+{
+    LPVOID original_result;
+    LPVOID hud;
+    LPVOID replacement;
+
+    (void)unused_edx;
+
+    if (!g_original_ui_top_level_pick) {
+        return (LPVOID)0;
+    }
+
+    original_result = g_original_ui_top_level_pick(self, point);
+
+    if (!g_auxiliary_ui_above_hud || !g_gameplay_profile_active || !g_center_main_hud ||
+        g_strategy_transition_in_progress || !g_layer_main_hud_global_slot || !point) {
+        return original_result;
+    }
+
+    hud = *g_layer_main_hud_global_slot;
+    if (!hud || original_result != hud) {
+        return original_result;
+    }
+
+    replacement = layer_find_input_override_root(self, hud, point);
+    if (!replacement) {
+        return original_result;
+    }
+
+    if (g_layer_input_override_log_count < 16u) {
+        char line[512];
+        HudRect rect;
+        ++g_layer_input_override_log_count;
+        line[0] = '\0';
+        str_append(line, (DWORD)sizeof(line), "[运行] 辅助GUI输入root覆盖 HUD->");
+        append_hex32(line, (DWORD)sizeof(line), (DWORD)replacement);
+        str_append(line, (DWORD)sizeof(line), " 鼠标=");
+        append_int(line, (DWORD)sizeof(line), point->x);
+        str_append(line, (DWORD)sizeof(line), ",");
+        append_int(line, (DWORD)sizeof(line), point->y);
+        if (layer_read_top_level_hit_rect(replacement, &rect)) {
+            str_append(line, (DWORD)sizeof(line), " root矩形=");
+            append_int(line, (DWORD)sizeof(line), rect.left);
+            str_append(line, (DWORD)sizeof(line), ",");
+            append_int(line, (DWORD)sizeof(line), rect.top);
+            str_append(line, (DWORD)sizeof(line), ",");
+            append_int(line, (DWORD)sizeof(line), rect.right);
+            str_append(line, (DWORD)sizeof(line), ",");
+            append_int(line, (DWORD)sizeof(line), rect.bottom);
+        }
+        append_runtime_line(line);
+    }
+
+    return replacement;
+}
+
+static BOOL layer_is_current_top_level_object(LPVOID object)
+{
+    if (!g_layer_ui_manager || !object) {
+        return FALSE;
+    }
+
+    return *(LPVOID*)((BYTE*)g_layer_ui_manager + 0x20u) == object;
+}
+
+/* 返回 control ID 对应的“一次性日志 bit”。 */
+static DWORD layer_log_bit_for_id(DWORD control_id)
+{
+    if (control_id == 0x0Bu) {
+        return 0x01u;
+    }
+    if (control_id == 0x0Du) {
+        return 0x02u;
+    }
+    if (control_id == 0x0Eu) {
+        return 0x04u;
+    }
+    return 0u;
+}
+
+/*
+ * 把一个目标对象加入“等主 HUD 画完以后再画”的小队列。
+ * 队列顺序就是原版 manager 第一次遇到它们的顺序，因此三个辅助窗口彼此之间的原始相对层级仍然保留。
+ */
+static BOOL layer_defer_target_draw(LPVOID object, FnUIDraw original_draw,
+                                    DWORD draw_context, DWORD control_id)
+{
+    DWORD i;
+    DWORD bit;
+
+    if (!object || !original_draw || g_deferred_layer_count >= 16u) {
+        return FALSE;
+    }
+
+    /* 理论上一个顶层对象一帧只出现一次；这里仍防止异常链表把同一指针重复加入。 */
+    for (i = 0u; i < g_deferred_layer_count; ++i) {
+        if (g_deferred_layer_draws[i].object == object) {
+            return TRUE;
+        }
+    }
+
+    g_deferred_layer_draws[g_deferred_layer_count].object = object;
+    g_deferred_layer_draws[g_deferred_layer_count].original_draw = original_draw;
+    g_deferred_layer_draws[g_deferred_layer_count].draw_context = draw_context;
+    g_deferred_layer_draws[g_deferred_layer_count].control_id = control_id;
+    ++g_deferred_layer_count;
+
+    /* 只在第一次真正发生图层调整时写一条日志，方便实机确认哪个菜单确实原本在 HUD 下面。 */
+    bit = layer_log_bit_for_id(control_id);
+    if (bit && !(g_layer_runtime_logged_mask & bit)) {
+        char line[256];
+        g_layer_runtime_logged_mask |= bit;
+        line[0] = '\0';
+        str_append(line, (DWORD)sizeof(line), "[运行] 辅助GUI绘制层调整 ID=");
+        append_hex32(line, (DWORD)sizeof(line), control_id);
+        str_append(line, (DWORD)sizeof(line), " 原顺序位于主HUD之前；本帧改为HUD之后绘制");
+        append_runtime_line(line);
+    }
+
+    return TRUE;
+}
+
+/*
+ * 三个 target wrapper 共用这一段判断。
+ *
+ * 注意 active 判断只是为了“非显示状态完全不改原版顺序”。它只读取基础 UI 的 active 字段，
+ * 不会调用输入函数，也不会改变 +0xA8 / hit child。
+ *
+ * 这里还显式要求 `hook->disabled == FALSE` 和 `depth == 1`：
+ *   - 某个类一旦因为结构不符被 fail-open 禁用，即使旧 vtable wrapper 还留在内存里，也只能直通原版 Draw；
+ *   - 如果原游戏递归调用 UI manager Draw，递归层 depth 会变成 2，所有 layer1d wrapper 同样只直通原版。
+ */
+static int layer_target_draw_common(LPVOID self, DWORD draw_context, LayerTargetHook* hook)
+{
+    if (!hook || !hook->original_draw) {
+        return 1;
+    }
+
+    if (!hook->disabled &&
+        g_layer_draw_scope_depth == 1u &&
+        g_layer_draw_scope_active &&
+        g_layer_draw_pass_enabled &&
+        !g_layer_main_hud_drawn &&
+        layer_is_current_top_level_object(self) &&
+        hook->target_slot && *hook->target_slot == self &&
+        ui_object_active_for_diagnostic(self)) {
+        if (layer_defer_target_draw(self, hook->original_draw, draw_context, hook->control_id)) {
+            /* manager 原版完全不使用顶层 Draw 的返回值；返回 1 也与这些 UI Draw 的正常成功值一致。 */
+            return 1;
+        }
+    }
+
+    return hook->original_draw(self, draw_context);
+}
+
+static int __fastcall layer_equipment_draw_hook(LPVOID self, LPVOID unused_edx, DWORD draw_context)
+{
+    (void)unused_edx;
+    return layer_target_draw_common(self, draw_context, &g_layer_equipment);
+}
+
+static int __fastcall layer_skill_draw_hook(LPVOID self, LPVOID unused_edx, DWORD draw_context)
+{
+    (void)unused_edx;
+    return layer_target_draw_common(self, draw_context, &g_layer_skill);
+}
+
+static int __fastcall layer_inventory_draw_hook(LPVOID self, LPVOID unused_edx, DWORD draw_context)
+{
+    (void)unused_edx;
+    return layer_target_draw_common(self, draw_context, &g_layer_inventory);
+}
+
+
+/*
+ * 独立辅助顶层对象共用的 Draw wrapper。
+ *
+ * 同一个 wrapper 可以服务多个 vtable，因为进入时通过 self->vtable 在 g_layer_dynamic_hooks 中找回
+ * 对应的原版 Draw。只有当前对象确实位于 HUD 前、仍符合当前菜单候选条件、并且正处在外层 manager Draw
+ * 的那一次顶层遍历时才延迟；同类对象从其它内部路径调用 Draw 时完整直通原版。
+ */
+static int __fastcall layer_dynamic_auxiliary_draw_hook(LPVOID self, LPVOID unused_edx, DWORD draw_context)
+{
+    DynamicLayerHook* hook;
+    LPVOID hud;
+
+    (void)unused_edx;
+
+    hook = layer_find_dynamic_hook_for_object(self);
+    if (!hook || !hook->original_draw) {
+        return 1;
+    }
+
+    hud = (g_layer_main_hud_global_slot ? *g_layer_main_hud_global_slot : (LPVOID)0);
+
+    if (g_layer_draw_scope_depth == 1u &&
+        g_layer_draw_scope_active &&
+        g_layer_draw_pass_enabled &&
+        !g_layer_main_hud_drawn &&
+        hud &&
+        layer_is_current_top_level_object(self) &&
+        layer_object_is_before_hud_in_draw_chain(g_layer_ui_manager, hud, self) &&
+        layer_is_auxiliary_top_level_candidate(self, hud, (HudRect*)0)) {
+        if (layer_defer_target_draw(self, hook->original_draw, draw_context, 0u)) {
+            /*
+             * 主菜单已经关闭但这个独立面板仍然由短生命周期跟踪保留时，写一次诊断，
+             * 方便实机直接确认 layer1d 正在处理这次封版前的最后边界。
+             */
+            if (!layer_any_primary_menu_active() && layer_is_tracked_auxiliary_object(self)) {
+                layer_log_detached_tracked_auxiliary_once(self);
+            }
+            if (g_layer_dynamic_defer_log_count < 16u) {
+                char line[512];
+                HudRect rect;
+                ++g_layer_dynamic_defer_log_count;
+                line[0] = '\0';
+                str_append(line, (DWORD)sizeof(line), "[运行] 辅助GUI独立面板延后绘制 对象=");
+                append_hex32(line, (DWORD)sizeof(line), (DWORD)self);
+                str_append(line, (DWORD)sizeof(line), " vtable=");
+                append_hex32(line, (DWORD)sizeof(line), (DWORD)(*(LPVOID*)self));
+                if (layer_read_top_level_hit_rect(self, &rect)) {
+                    str_append(line, (DWORD)sizeof(line), " 矩形=");
+                    append_int(line, (DWORD)sizeof(line), rect.left);
+                    str_append(line, (DWORD)sizeof(line), ",");
+                    append_int(line, (DWORD)sizeof(line), rect.top);
+                    str_append(line, (DWORD)sizeof(line), ",");
+                    append_int(line, (DWORD)sizeof(line), rect.right);
+                    str_append(line, (DWORD)sizeof(line), ",");
+                    append_int(line, (DWORD)sizeof(line), rect.bottom);
+                }
+                append_runtime_line(line);
+            }
+            return 1;
+        }
+    }
+
+    return hook->original_draw(self, draw_context);
+}
+
+/*
+ * 主 HUD Draw wrapper。
+ *
+ * 这里先调用原版 HUD Draw。只有它完整返回以后，才逐个调用之前被延迟的辅助 GUI 原版 Draw。
+ * 每次补画前临时把 manager+0x20 设置成对应对象，因为原版 manager 本来就会在该对象 Draw 时这样做；
+ * 补画全部结束后再恢复成 HUD，保证 manager 自己从 HUD 返回以后仍能沿 HUD+0x08 继续原来的遍历。
+ */
+static int __fastcall layer_main_hud_draw_hook(LPVOID self, LPVOID unused_edx, DWORD draw_context)
+{
+    int result;
+    DWORD i;
+
+    (void)unused_edx;
+
+    if (!g_original_main_hud_draw) {
+        return 1;
+    }
+
+    result = g_original_main_hud_draw(self, draw_context);
+
+    if (g_layer_draw_scope_depth == 1u &&
+        g_layer_draw_scope_active &&
+        g_layer_draw_pass_enabled &&
+        g_layer_main_hud_global_slot &&
+        *g_layer_main_hud_global_slot == self &&
+        layer_is_current_top_level_object(self)) {
+        g_layer_main_hud_drawn = TRUE;
+
+        for (i = 0u; i < g_deferred_layer_count; ++i) {
+            DeferredLayerDraw* item = &g_deferred_layer_draws[i];
+            if (!item->object || !item->original_draw) {
+                continue;
+            }
+
+            *(LPVOID*)((BYTE*)g_layer_ui_manager + 0x20u) = item->object;
+            item->original_draw(item->object, item->draw_context);
+        }
+
+        /* 原版 manager 接下来会从“当前 HUD 对象”的 +0x08 继续走，所以必须恢复 current。 */
+        *(LPVOID*)((BYTE*)g_layer_ui_manager + 0x20u) = self;
+        g_deferred_layer_count = 0u;
+    }
+
+    return result;
+}
+
+/* 根据 control ID 返回对应 wrapper 地址。 */
+static LPVOID layer_wrapper_for_target(DWORD control_id)
+{
+    if (control_id == 0x0Bu) {
+        return (LPVOID)&layer_equipment_draw_hook;
+    }
+    if (control_id == 0x0Du) {
+        return (LPVOID)&layer_skill_draw_hook;
+    }
+    if (control_id == 0x0Eu) {
+        return (LPVOID)&layer_inventory_draw_hook;
+    }
+    return (LPVOID)0;
+}
+
+/*
+ * 目标对象在 ASI 初始化很早期可能还没有创建，因此不能要求初始化时立刻拿到它的 vtable。
+ * 这个函数会在每次 manager Draw 开始前尝试一次；某个对象第一次存在时才安装它自己的 +0x08 Hook。
+ */
+static BOOL ensure_layer_target_draw_hook(LayerTargetHook* hook)
+{
+    LPVOID object;
+    BYTE* vtable;
+    BYTE* draw_slot;
+    DWORD original_address;
+    LPVOID wrapper;
+
+    if (!hook || !hook->target_slot) {
+        return FALSE;
+    }
+
+    /* 已经确认当前类不兼容时不再每帧重复探测；原版 Draw 会继续正常执行。 */
+    if (hook->disabled) {
+        return FALSE;
+    }
+
+    object = *hook->target_slot;
+    if (!object) {
+        /* “对象这时还不存在”不是错误；下一帧继续等即可。 */
+        return TRUE;
+    }
+
+    vtable = *(BYTE**)object;
+    if (!vtable || (DWORD)vtable < 0x00400000u || (DWORD)vtable >= 0x00600000u) {
+        layer_disable_target_hook(hook, "对象 vtable 不在 ComeOn.exe 已确认地址范围");
+        return FALSE;
+    }
+
+    draw_slot = vtable + 0x08u;
+    wrapper = layer_wrapper_for_target(hook->control_id);
+    if (!wrapper) {
+        layer_disable_target_hook(hook, "没有对应的 layer1d Draw wrapper");
+        return FALSE;
+    }
+
+    /*
+     * 已经安装过以后，同类的新对象应继续使用同一个类 vtable，因此 draw_slot 也应该完全相同。
+     * 若突然变成另一套 vtable，不尝试“猜着再 Hook”；保留已经安装的旧类 wrapper，并停止这个 target 的新调整。
+     */
+    if (hook->installed) {
+        if (hook->draw_slot == draw_slot && read_u32(draw_slot) == (DWORD)wrapper) {
+            return TRUE;
+        }
+        layer_disable_target_hook(hook, "已安装后 target 改用了不同 vtable/Draw 槽");
+        return FALSE;
+    }
+
+    original_address = read_u32(draw_slot);
+    if (!layer_address_is_game_text(original_address)) {
+        layer_disable_target_hook(hook, "vtable+0x08 原版 Draw 不在主 EXE .text");
+        return FALSE;
+    }
+
+    /* 三个目标都继承同一基础布局类；+0x58 必须仍然是已解析的原版通用布局函数。 */
+    if (!g_original_main_hud_layout || read_u32(vtable + MAIN_HUD_LAYOUT_SLOT) != (DWORD)g_original_main_hud_layout) {
+        layer_disable_target_hook(hook, "vtable+0x58 不再指向已确认通用布局函数");
+        return FALSE;
+    }
+
+    hook->draw_slot = draw_slot;
+    hook->original_draw = (FnUIDraw)original_address;
+
+    if (!patch_u32(draw_slot, (DWORD)wrapper)) {
+        hook->draw_slot = (BYTE*)0;
+        hook->original_draw = (FnUIDraw)0;
+        layer_disable_target_hook(hook, "VirtualProtect/写回 vtable+0x08 失败");
+        return FALSE;
+    }
+
+    hook->installed = TRUE;
+    return TRUE;
+}
+
+/* 三个对象谁已经创建就安装谁；不存在的对象不会被当成错误。 */
+static void ensure_all_layer_target_draw_hooks(void)
+{
+    (void)ensure_layer_target_draw_hook(&g_layer_equipment);
+    (void)ensure_layer_target_draw_hook(&g_layer_skill);
+    (void)ensure_layer_target_draw_hook(&g_layer_inventory);
+}
+
+/*
+ * 唯一 manager Draw callsite 的 scope wrapper。
+ *
+ * 绝大部分工作仍由原版 g_original_ui_manager_draw 完成；这个 wrapper 只负责：
+ *   - 在进入前清空本帧小状态；
+ *   - 确认 GAMEPLAY + 主 HUD 居中已启用 + HUD 真正在顶层绘制链；
+ *   - 让三个 target/HUD 的 Draw wrapper 知道“当前是同一次顶层绘制”；
+ *   - 原版 manager 返回后清理状态。
+ */
+static void __fastcall ui_manager_draw_layer_scope_hook(LPVOID self, LPVOID unused_edx, DWORD draw_context)
+{
+    LPVOID hud = (LPVOID)0;
+    LPVOID original_current_after_draw = (LPVOID)0;
+
+    (void)unused_edx;
+
+    if (!g_original_ui_manager_draw) {
+        return;
+    }
+
+    /*
+     * 理论上原游戏不会递归进入这个总 Draw。为了让“极端递归”也真正保持原版：
+     *   1. 先把 depth 临时加到 2；
+     *   2. target/HUD wrapper 只允许 depth==1 时做 layer1d 行为，因此递归这一层一定直通原版 Draw；
+     *   3. 原版递归返回后把 depth 减回 1，外层队列和标志完全继续使用。
+     *
+     * 旧写法虽然没有覆盖外层全局变量，但 depth 仍是 1，递归 Draw 里的 vtable wrapper 仍可能误以为自己属于
+     * 外层那一帧并加入外层延迟队列。这里把这个隐患彻底堵住。
+     */
+    if (g_layer_draw_scope_depth != 0u) {
+        ++g_layer_draw_scope_depth;
+        g_original_ui_manager_draw(self, draw_context);
+        --g_layer_draw_scope_depth;
+        return;
+    }
+
+    ++g_layer_draw_scope_depth;
+
+    /* 对象创建可能晚于 ASI 初始化，因此每帧开头只做三个非常小的“是否已安装”检查。 */
+    ensure_all_layer_target_draw_hooks();
+
+    if (g_layer_main_hud_global_slot) {
+        hud = *g_layer_main_hud_global_slot;
+    }
+
+    g_layer_ui_manager = self;
+    g_deferred_layer_count = 0u;
+    g_layer_main_hud_drawn = FALSE;
+    g_layer_draw_scope_active = TRUE;
+
+    /*
+     * 先刷新上一帧已经确认过的独立辅助对象。
+     * 即使这一帧物品/技能/装备主 root 已经全部 inactive，只要独立面板自身仍合法存在，它就会保住短生命周期资格。
+     * 新面板仍然不会在这里被发现；新发现只允许发生在下面“主菜单上下文成立”的扫描里。
+     */
+    if (g_auxiliary_ui_above_hud &&
+        g_gameplay_profile_active &&
+        g_center_main_hud &&
+        !g_strategy_transition_in_progress &&
+        hud &&
+        layer_draw_chain_contains(self, hud)) {
+        layer_refresh_tracked_auxiliary_objects(self, hud);
+    } else {
+        layer_clear_all_tracked_auxiliary_objects();
+    }
+
+    /*
+     * layer1d 不再写顶层链。这里仅在当前主菜单上下文成立时，为 HUD 之前的独立辅助面板准备 Draw wrapper。
+     * 三个已知主菜单仍使用 layer1a 已经实机证明有效的专用 wrapper。
+     */
+    if (g_auxiliary_ui_above_hud &&
+        g_gameplay_profile_active &&
+        g_center_main_hud &&
+        !g_strategy_transition_in_progress &&
+        hud &&
+        layer_draw_chain_contains(self, hud)) {
+        ensure_dynamic_layer_hooks_for_current_menu(self, hud);
+    }
+
+    /*
+     * layer1d 诊断只在真正接近游戏内稳定状态时执行，而且每个目标最多写一次日志。
+     * 它记录“原始链索引”，用于确认延后某个菜单是否还会跨过别的顶层 UI；不会修改任何链表节点。
+     */
+    if (g_gameplay_profile_active && g_center_main_hud &&
+        !g_strategy_transition_in_progress && hud && layer_draw_chain_contains(self, hud)) {
+        layer_log_chain_relation_once(self, hud, &g_layer_equipment);
+        layer_log_chain_relation_once(self, hud, &g_layer_skill);
+        layer_log_chain_relation_once(self, hud, &g_layer_inventory);
+    }
+
+    /*
+     * 只有真正游戏内、独立图层开关开启、主 HUD 确实启用居中、当前不处于 Strategy 设备切换，
+     * 而且 HUD 在同一顶层链，才改变这一次绘制顺序。其它所有状态都完整调用原版 manager Draw。
+     */
+    g_layer_draw_pass_enabled =
+        g_auxiliary_ui_above_hud &&
+        g_gameplay_profile_active &&
+        g_center_main_hud &&
+        !g_strategy_transition_in_progress &&
+        hud &&
+        layer_draw_chain_contains(self, hud);
+
+    g_original_ui_manager_draw(self, draw_context);
+
+    /*
+     * 先记住原版 manager Draw 返回时自己留下的 current 值。正常样本很可能已经是 NULL，
+     * 但 layer1d 不应该凭猜测把它强制清零；如果未来兼容版本保留其它哨兵/对象，这个值也必须原样恢复。
+     */
+    original_current_after_draw = *(LPVOID*)((BYTE*)self + 0x20u);
+
+    /*
+     * 正常情况下 deferred 会在 HUD Draw wrapper 里被清空。
+     * 如果某个未知版本在我们预扫描以后又动态移除了 HUD，宁可把延迟对象在本帧末尾补画一次，
+     * 也不能让菜单整帧消失。这个分支只是安全兜底，并会最多写一条日志提醒继续调查。
+     */
+    if (g_deferred_layer_count != 0u) {
+        DWORD i;
+        for (i = 0u; i < g_deferred_layer_count; ++i) {
+            DeferredLayerDraw* item = &g_deferred_layer_draws[i];
+            if (item->object && item->original_draw) {
+                *(LPVOID*)((BYTE*)self + 0x20u) = item->object;
+                item->original_draw(item->object, item->draw_context);
+            }
+        }
+        /* 补画结束后恢复“原版 manager Draw 返回时的值”，而不是假定必须为 NULL。 */
+        *(LPVOID*)((BYTE*)self + 0x20u) = original_current_after_draw;
+        g_deferred_layer_count = 0u;
+
+        if (!g_layer_unexpected_flush_logged) {
+            g_layer_unexpected_flush_logged = TRUE;
+            append_runtime_line("[警告] 辅助GUI图层：本帧预扫描找到主HUD，但HUD Draw未经过Hook；已在帧末安全补画延迟GUI");
+        }
+    }
+
+    g_layer_draw_scope_active = FALSE;
+    g_layer_draw_pass_enabled = FALSE;
+    g_layer_main_hud_drawn = FALSE;
+    g_layer_ui_manager = (LPVOID)0;
+    --g_layer_draw_scope_depth;
+}
+
+/*
+ * 安装 layer1d 绘制层 + 单次输入 root 优先级 Hook。
+ *
+ * 这里会同时验证：
+ *   - manager Draw 包装 callsite 唯一；
+ *   - call 真正落到“主 HUD 特殊 pass + manager+0x1C 正向链 + object+0x08 Draw”的函数；
+ *   - 函数里两次读取的是同一个主 HUD 全局槽；
+ *   - 主 HUD vtable+0x08 仍然指向当前 EXE .text 内的原版 Draw。
+ *
+ * 任何一项不成立都整项拒绝，不会只装半个图层系统。
+ */
+static BOOL install_auxiliary_ui_draw_layer_hook(const TextRegion* region)
+{
+    BYTE* wrapper;
+    BYTE* call_instruction;
+    BYTE* manager_draw;
+    DWORD manager_address;
+    DWORD hud_slot_a;
+    DWORD hud_slot_b;
+    DWORD main_hud_draw_address;
+    BYTE* input_pick_site;
+    BYTE* input_pick_call;
+    BYTE* input_picker;
+    BYTE* input_hit_rect_call;
+    BYTE* input_hit_rect;
+    BYTE* input_property_get_call;
+    BYTE* input_property_get;
+
+    if (!region || !g_main_hud_draw_slot ||
+        !g_top_button_0b_target_slot || !g_top_button_0d_target_slot || !g_top_button_0e_target_slot) {
+        return FALSE;
+    }
+
+    g_layer_text_start = region->start;
+    g_layer_text_end = region->start + region->size;
+
+    wrapper = find_unique_pattern(region,
+                                  UI_MANAGER_DRAW_CALLSITE_PATTERN,
+                                  UI_MANAGER_DRAW_CALLSITE_MASK,
+                                  (DWORD)sizeof(UI_MANAGER_DRAW_CALLSITE_PATTERN));
+    if (!wrapper) {
+        return FALSE;
+    }
+
+    manager_address = read_u32(wrapper + 3u);
+    call_instruction = wrapper + 8u;
+    manager_draw = decode_rel32_target(call_instruction);
+
+    if (manager_address < 0x00400000u || manager_address >= 0x00600000u ||
+        !manager_draw || !layer_address_is_game_text((DWORD)manager_draw)) {
+        return FALSE;
+    }
+
+    /* 验证 manager Draw 开头的稳定结构，避免误把别的 `mov ecx / call / ret` 包装函数当成目标。 */
+    if (manager_draw[0] != 0x56 || manager_draw[1] != 0x8B || manager_draw[2] != 0xF1 ||
+        manager_draw[3] != 0x8B || manager_draw[4] != 0x0D ||
+        manager_draw[9] != 0x57 ||
+        manager_draw[10] != 0x8B || manager_draw[11] != 0x7C || manager_draw[12] != 0x24 || manager_draw[13] != 0x0C ||
+        manager_draw[14] != 0x85 || manager_draw[15] != 0xC9 ||
+        manager_draw[18] != 0xE8 ||
+        manager_draw[27] != 0x8B || manager_draw[28] != 0x0D ||
+        manager_draw[33] != 0x57 || manager_draw[34] != 0xE8 ||
+        manager_draw[39] != 0x8B || manager_draw[40] != 0x4E || manager_draw[41] != 0x1C ||
+        /* 0x31: mov eax,[ecx]；0x33: push edi；0x34: call [eax+0x08]，这是顶层对象真正 Draw。 */
+        manager_draw[49] != 0x8B || manager_draw[50] != 0x01 ||
+        manager_draw[51] != 0x57 ||
+        manager_draw[52] != 0xFF || manager_draw[53] != 0x50 || manager_draw[54] != 0x08) {
+        return FALSE;
+    }
+
+    /*
+     * manager Draw 在遍历顶层链以前还有一次独立 HUD 特殊 pass（本体已逆向到 0x004C3090）。
+     * layer1d 不 Hook、也不重放这个特殊 pass；这里只确认该 CALL 仍然落在游戏 .text，防止结构已经变化。
+     * 因为它本来就早于所有顶层窗口绘制，所以本轮只改变菜单与主 HUD 顶层 Draw 的相对先后，
+     * 不会让特殊 pass 被额外执行第二次。
+     */
+    if (!layer_address_is_game_text((DWORD)decode_rel32_target(manager_draw + 34u))) {
+        return FALSE;
+    }
+
+    hud_slot_a = read_u32(manager_draw + 5u);
+    hud_slot_b = read_u32(manager_draw + 29u);
+    if (hud_slot_a != hud_slot_b || hud_slot_a < 0x00400000u || hud_slot_a >= 0x00600000u) {
+        return FALSE;
+    }
+
+    main_hud_draw_address = read_u32(g_main_hud_draw_slot);
+    if (!layer_address_is_game_text(main_hud_draw_address)) {
+        return FALSE;
+    }
+
+    /*
+     * 定位 0x4B4790 -> 0x4B4800 的唯一顶层 root picker call。
+     * call 位于签名 +15；picker 内部必须同时保留“manager+0x18 起步、manager+0x20 当前节点、
+     * object+0x0C 反向前进、调用矩形函数”的结构。我们只验证这些实际依赖，不再假定链表头尾是 NULL。
+     */
+    input_pick_site = find_unique_pattern(region,
+                                          UI_TOP_LEVEL_PICK_CALLSITE_PATTERN,
+                                          UI_TOP_LEVEL_PICK_CALLSITE_MASK,
+                                          (DWORD)sizeof(UI_TOP_LEVEL_PICK_CALLSITE_PATTERN));
+    if (!input_pick_site) {
+        return FALSE;
+    }
+
+    input_pick_call = input_pick_site + 15u;
+    if (input_pick_call[0] != 0xE8) {
+        return FALSE;
+    }
+
+    input_picker = decode_rel32_target(input_pick_call);
+    if (!input_picker || !layer_address_is_game_text((DWORD)input_picker)) {
+        return FALSE;
+    }
+
+    if (input_picker[0] != 0x53 || input_picker[1] != 0x8B || input_picker[2] != 0xD9 ||
+        input_picker[0x4Cu] != 0x8B || input_picker[0x4Du] != 0x73 || input_picker[0x4Eu] != 0x18 ||
+        input_picker[0x51u] != 0x89 || input_picker[0x52u] != 0x73 || input_picker[0x53u] != 0x20 ||
+        input_picker[0x65u] != 0x8B || input_picker[0x66u] != 0xCE || input_picker[0x67u] != 0xE8 ||
+        input_picker[0x9Fu] != 0x8B || input_picker[0xA0u] != 0x43 || input_picker[0xA1u] != 0x20 ||
+        input_picker[0xA2u] != 0x8B || input_picker[0xA3u] != 0x4B || input_picker[0xA4u] != 0x1C ||
+        input_picker[0xADu] != 0x8B || input_picker[0xAEu] != 0x40 || input_picker[0xAFu] != 0x0C ||
+        input_picker[0xB0u] != 0x89 || input_picker[0xB1u] != 0x43 || input_picker[0xB2u] != 0x20) {
+        return FALSE;
+    }
+
+    input_hit_rect_call = input_picker + 0x67u;
+    input_hit_rect = decode_rel32_target(input_hit_rect_call);
+    if (!input_hit_rect || !layer_address_is_game_text((DWORD)input_hit_rect)) {
+        return FALSE;
+    }
+
+    /* picker+0x5B 是 `push 0x0D` 后调用 JMM 属性读取函数 0x4D0210 的 rel32 CALL。 */
+    input_property_get_call = input_picker + 0x5Bu;
+    if (input_property_get_call[0] != 0xE8) {
+        return FALSE;
+    }
+    input_property_get = decode_rel32_target(input_property_get_call);
+    if (!input_property_get || !layer_address_is_game_text((DWORD)input_property_get)) {
+        return FALSE;
+    }
+
+    /* 到这里所有验证都完成，下面才真正写任何 Hook。 */
+    g_layer_ui_manager = (LPVOID)manager_address;
+    g_layer_main_hud_global_slot = (LPVOID*)hud_slot_a;
+    g_original_ui_manager_draw = (FnUIManagerDraw)manager_draw;
+    g_original_main_hud_draw = (FnUIDraw)main_hud_draw_address;
+    g_original_ui_top_level_pick = (FnUITopLevelPick)input_picker;
+    g_original_ui_get_hit_rect = (FnUIGetHitRect)input_hit_rect;
+    g_original_ui_property_get = (FnUIPropertyGet)input_property_get;
+
+    g_layer_equipment.target_slot = g_top_button_0b_target_slot;
+    g_layer_skill.target_slot = g_top_button_0d_target_slot;
+    g_layer_inventory.target_slot = g_top_button_0e_target_slot;
+
+    /*
+     * 写 Hook 的顺序刻意从“最容易恢复”到“总入口”：HUD Draw -> input picker call -> manager Draw call。
+     * 任一后续步骤失败，都把前面已经写过的槽恢复原值，绝不留下半套 layer1d。
+     */
+    if (!patch_u32(g_main_hud_draw_slot, (DWORD)&layer_main_hud_draw_hook)) {
+        return FALSE;
+    }
+
+    if (!patch_rel32_call(input_pick_call, (LPVOID)&ui_top_level_pick_layer_hook)) {
+        patch_u32(g_main_hud_draw_slot, main_hud_draw_address);
+        g_original_ui_top_level_pick = (FnUITopLevelPick)0;
+        g_original_ui_get_hit_rect = (FnUIGetHitRect)0;
+        g_original_ui_property_get = (FnUIPropertyGet)0;
+        return FALSE;
+    }
+
+    if (!patch_rel32_call(call_instruction, (LPVOID)&ui_manager_draw_layer_scope_hook)) {
+        patch_rel32_call(input_pick_call, (LPVOID)input_picker);
+        patch_u32(g_main_hud_draw_slot, main_hud_draw_address);
+        g_original_ui_manager_draw = (FnUIManagerDraw)0;
+        g_original_main_hud_draw = (FnUIDraw)0;
+        g_original_ui_top_level_pick = (FnUITopLevelPick)0;
+        g_original_ui_get_hit_rect = (FnUIGetHitRect)0;
+        g_original_ui_property_get = (FnUIPropertyGet)0;
+        g_layer_main_hud_global_slot = (LPVOID*)0;
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 /*
  * 安装“只居中底部主 HUD”的 vtable hook。
  *
@@ -4213,9 +6143,11 @@ static BOOL install_main_hud_center_hook(const TextRegion* region)
     BYTE* generic_layout;
     DWORD vtable_address;
     BYTE* destructor_slot;
+    BYTE* draw_slot;
     BYTE* event_slot;
     BYTE* layout_slot;
     DWORD destructor_slot_value;
+    DWORD draw_slot_value;
     DWORD event_slot_value;
     DWORD layout_slot_value;
     const BYTE* event_code;
@@ -4242,9 +6174,11 @@ static BOOL install_main_hud_center_hook(const TextRegion* region)
     }
 
     destructor_slot = (BYTE*)(vtable_address + MAIN_HUD_DESTRUCTOR_SLOT);
+    draw_slot = (BYTE*)(vtable_address + MAIN_HUD_DRAW_SLOT);
     event_slot = (BYTE*)(vtable_address + MAIN_HUD_EVENT_SLOT);
     layout_slot = (BYTE*)(vtable_address + MAIN_HUD_LAYOUT_SLOT);
     destructor_slot_value = read_u32(destructor_slot);
+    draw_slot_value = read_u32(draw_slot);
     event_slot_value = read_u32(event_slot);
     layout_slot_value = read_u32(layout_slot);
 
@@ -4265,6 +6199,11 @@ static BOOL install_main_hud_center_hook(const TextRegion* region)
     }
 
     if (layout_slot_value != (DWORD)generic_layout) {
+        return FALSE;
+    }
+
+    /* +0x08 必须仍然指向主 HUD 自己的原版 Draw；layer1 后面只会包装这个槽，不改其它虚函数。 */
+    if (draw_slot_value < 0x00400000u || draw_slot_value >= 0x00600000u) {
         return FALSE;
     }
 
@@ -4301,19 +6240,25 @@ static BOOL install_main_hud_center_hook(const TextRegion* region)
     if (event_code[0x113] != 0x83 || event_code[0x114] != 0xF8 || event_code[0x115] != 0x0E ||
         event_code[0x118] != 0x8B || event_code[0x119] != 0x0D ||
         event_code[0x1BB] != 0x83 || event_code[0x1BC] != 0xF8 || event_code[0x1BD] != 0x0B ||
-        event_code[0x1C0] != 0x8B || event_code[0x1C1] != 0x0D) {
+        event_code[0x1C0] != 0x8B || event_code[0x1C1] != 0x0D ||
+        event_code[0x1E5] != 0x83 || event_code[0x1E6] != 0xF8 || event_code[0x1E7] != 0x0D ||
+        event_code[0x1EA] != 0x8B || event_code[0x1EB] != 0x0D) {
         return FALSE;
     }
 
     g_top_button_0e_target_slot = (LPVOID*)read_u32(event_code + 0x11Au);
     g_top_button_0b_target_slot = (LPVOID*)read_u32(event_code + 0x1C2u);
+    g_top_button_0d_target_slot = (LPVOID*)read_u32(event_code + 0x1ECu);
 
     if ((DWORD)g_top_button_0e_target_slot < 0x00400000u ||
         (DWORD)g_top_button_0e_target_slot >= 0x00600000u ||
         (DWORD)g_top_button_0b_target_slot < 0x00400000u ||
-        (DWORD)g_top_button_0b_target_slot >= 0x00600000u) {
+        (DWORD)g_top_button_0b_target_slot >= 0x00600000u ||
+        (DWORD)g_top_button_0d_target_slot < 0x00400000u ||
+        (DWORD)g_top_button_0d_target_slot >= 0x00600000u) {
         g_top_button_0e_target_slot = (LPVOID*)0;
         g_top_button_0b_target_slot = (LPVOID*)0;
+        g_top_button_0d_target_slot = (LPVOID*)0;
         return FALSE;
     }
 
@@ -4327,13 +6272,16 @@ static BOOL install_main_hud_center_hook(const TextRegion* region)
 
     g_original_main_hud_destructor = (FnMainHudDestructor)destructor_slot_value;
     g_original_main_hud_layout = (FnUILayout)generic_layout;
+    g_main_hud_draw_slot = draw_slot;
 
     if (!patch_u32(destructor_slot, (DWORD)&main_hud_destructor_hook)) {
         g_original_main_hud_destructor = (FnMainHudDestructor)0;
         g_original_main_hud_event = (FnMainHudEvent)0;
         g_original_main_hud_layout = (FnUILayout)0;
         g_top_button_0b_target_slot = (LPVOID*)0;
+        g_top_button_0d_target_slot = (LPVOID*)0;
         g_top_button_0e_target_slot = (LPVOID*)0;
+        g_main_hud_draw_slot = (BYTE*)0;
         return FALSE;
     }
 
@@ -4344,7 +6292,9 @@ static BOOL install_main_hud_center_hook(const TextRegion* region)
         g_original_main_hud_event = (FnMainHudEvent)0;
         g_original_main_hud_layout = (FnUILayout)0;
         g_top_button_0b_target_slot = (LPVOID*)0;
+        g_top_button_0d_target_slot = (LPVOID*)0;
         g_top_button_0e_target_slot = (LPVOID*)0;
+        g_main_hud_draw_slot = (BYTE*)0;
         return FALSE;
     }
 
@@ -4372,6 +6322,7 @@ typedef struct DisplayFixConfig {
     BOOL enable;
     BOOL fix_font_dpi;
     BOOL center_main_hud;
+    BOOL auxiliary_ui_above_hud;
     DWORD base_height;
     DWORD aspect_width;
     DWORD aspect_height;
@@ -4391,6 +6342,7 @@ static void load_config(DisplayFixConfig* config)
     config->enable = TRUE;
     config->fix_font_dpi = TRUE;
     config->center_main_hud = TRUE;
+    config->auxiliary_ui_above_hud = TRUE;
     config->base_height = 480u;
     config->aspect_width = 0u;
     config->aspect_height = 0u;
@@ -4407,6 +6359,7 @@ static void load_config(DisplayFixConfig* config)
     config->enable = g_GetPrivateProfileIntA("Display", "Enable", 1, g_ini_path) ? TRUE : FALSE;
     config->fix_font_dpi = g_GetPrivateProfileIntA("Font", "FixDPI", 1, g_ini_path) ? TRUE : FALSE;
     config->center_main_hud = g_GetPrivateProfileIntA("GUI", "CenterMainHUD", 1, g_ini_path) ? TRUE : FALSE;
+    config->auxiliary_ui_above_hud = g_GetPrivateProfileIntA("GUI", "AuxiliaryUIAboveHUD", 1, g_ini_path) ? TRUE : FALSE;
     {
         int configured_height = g_GetPrivateProfileIntA("Display", "BaseHeight", 480, g_ini_path);
 
@@ -4495,6 +6448,7 @@ static void initialize_display_fix(void)
     BOOL layout_result = FALSE;
     BOOL jmm_context_result = FALSE;
     BOOL hud_result = FALSE;
+    BOOL layer_result = FALSE;
     BOOL global_release_result = FALSE;
     BOOL world_press_result = FALSE;
     BOOL strategy_state_result = FALSE;
@@ -4515,7 +6469,7 @@ static void initialize_display_fix(void)
     make_sibling_path(module_path, "DisplayFix.ini", g_ini_path, (DWORD)sizeof(g_ini_path));
     make_sibling_path(module_path, "DisplayFix.log", g_log_path, (DWORD)sizeof(g_log_path));
 
-    log_line("DisplayFix 外传 v0.2.1");
+    log_line("DisplayFix 外传 v0.2.3-stripe1");
     log_line("架构：Win32/x86 ASI，基于内容签名的运行时补丁");
 
     if (!resolve_required_apis()) {
@@ -4582,6 +6536,13 @@ static void initialize_display_fix(void)
 
     target_width = calculate_target_width(config.base_height, config.aspect_width, config.aspect_height);
     log_uint("[信息] 目标宽度(TargetWidth)=", target_width);
+
+    /*
+     * stripe1 的实验变量只有最终宽度 8 像素对齐。
+     * 这里把余数直接写进日志，用户不需要自己再拿计算器判断本轮是不是实际用了 8 像素边界。
+     * 正常情况下这个值必须始终是 0；如果不是 0，就说明宽度计算逻辑出现了新的回归。
+     */
+    log_uint("[信息] stripe1目标宽度8像素对齐余数=", target_width & 7u);
     log_uint("[信息] 目标高度(TargetHeight)=", config.base_height);
 
     /*
@@ -4602,6 +6563,7 @@ static void initialize_display_fix(void)
     g_target_height = config.base_height;
     g_native_base_width = (config.base_height >= 600u) ? 800u : 640u;
     g_center_main_hud = config.center_main_hud;
+    g_auxiliary_ui_above_hud = config.auxiliary_ui_above_hud;
 
     hud_delta = ((LONG)g_target_width - (LONG)g_native_base_width) / 2;
     log_uint("[信息] 原生基准宽度(NativeBaseWidth)=", g_native_base_width);
@@ -4732,6 +6694,32 @@ static void initialize_display_fix(void)
         log_line("[信息] 边缘锚定的顶层UI按设计保持不变");
     } else {
         log_line("[失败] 主HUD根对象/事件/布局特征验证失败；已跳过HUD Hook");
+    }
+
+    /*
+     * layer1d：继续保留 layer1a 已实机证明正确的“HUD 后延迟绘制”，但彻底删除 layer1b 的顶层链重排。
+     * 输入侧只 Hook 原版 0x4B4790 -> 顶层 picker 的那一次 call：只有原版选中 HUD、鼠标同时落在已经延后绘制的菜单 root 时，
+     * 才把 picker 返回值换成该菜单；随后 manager+0x40、+0x20/+0x24/+0x30、child hit-test 全部继续由原版处理。
+     * 绘制侧会动态纳入当前菜单体系里与 HUD 相交的独立顶层辅助面板，用来覆盖用户实机看到的左侧装备面板。
+     */
+    if (hud_result && config.center_main_hud && config.auxiliary_ui_above_hud) {
+        layer_result = install_auxiliary_ui_draw_layer_hook(&text_region);
+    }
+
+    if (layer_result) {
+        log_line("[成功] 辅助GUI layer1d 已安装：保留HUD后延迟绘制，并同步单次顶层输入root优先级");
+        log_line("[信息] layer1d 不再写 manager+0x18/+0x1C 或 object+0x08/+0x0C；layer1b 顶层链重排路线已撤销");
+        log_line("[信息] 输入只在原版picker已经选中主HUD、且鼠标命中已延后绘制的活动菜单root时覆盖这一次返回值；manager+0x40仍由原版0x4B44D0更新");
+        log_line("[信息] 当前菜单体系里与HUD相交的独立顶层辅助面板会动态安装Draw wrapper，并按原Draw链顺序在HUD后绘制");
+        log_line("[信息] 独立辅助面板一旦在合法菜单上下文中确认，会做短生命周期跟踪；主窗口先关闭时，只要面板自身仍active且仍与HUD相交，就继续保持HUD上方");
+        log_line("[信息] UI manager 的原版HUD特殊绘制pass保持原样，只执行一次；不Hook、不重放该pass");
+        log_line("[信息] layer1d 不改X/Y、child、active、GetCursorPos、self+0xA8、键盘快捷键或按钮业务；test1~test7位移/坐标补偿路线未继承");
+    } else if (!config.auxiliary_ui_above_hud) {
+        log_line("[信息] GUI.AuxiliaryUIAboveHUD=0；辅助GUI完全保持原版绘制层与输入root优先级");
+    } else if (!config.center_main_hud) {
+        log_line("[信息] GUI.CenterMainHUD=0；主HUD未居中，因此不安装辅助GUI layer1d 绘制/输入Hook");
+    } else if (hud_result) {
+        log_line("[警告] 辅助GUI layer1d 安装结构验证失败；已保持原版输入root与绘制顺序，主HUD基线修复仍继续工作");
     }
 
     /*
