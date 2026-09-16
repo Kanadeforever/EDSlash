@@ -37,7 +37,7 @@ def detect_profile(path: Path) -> str:
 
 def main() -> int:
     if len(sys.argv) < 2:
-        print("用法：python source\\BladeSwordQOL\\tools\\verify_compatibility.py <ComeOn.exe> [更多 EXE ...]")
+        print("用法：python tools\\verify_compatibility.py <ComeOn.exe> [更多 EXE ...]")
         return 1
 
     failed = False

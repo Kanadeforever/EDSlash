@@ -6,7 +6,7 @@ cd /d "%~dp0"
 REM BladeSwordQOL v0.1-dev1 一键离线构建。  
 REM 所有 C 源码统一编译进一个 Win32/x86 ASI；本体和外传不再分别生成 DLL。  
 REM 包根固定为 docs\source\release 三目录。  
-REM 本脚本位于 source\BladeSwordQOL\，因此正式 release 在项目目录向上两级。  
+REM 本脚本直接位于 source\，因此项目包根就是 source 的上一级目录。  
 set "PROJECT_DIR=%~dp0"
 for %%I in ("%~dp0..") do set "PACKAGE_ROOT=%%~fI\"
 set "BUILD_DIR=%PROJECT_DIR%_build"

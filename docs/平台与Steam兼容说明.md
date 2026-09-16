@@ -47,9 +47,9 @@ ResJM.Lib.jpn
 
 DirectShow/ActiveMovie/MovieManager 的历史逆向地址仍是知识，但此前实验没有证明 ComeOn.exe 进程内 ComeOn.dll 就是 Steam launcher 开场动画实际实例。统一项目不继续开发 launcher 影片补丁。
 
-## 5. 当前统一版测试要求
+## 5. 当前统一版实机状态与后续测试矩阵
 
-本体、外传现在不再各自发行 DisplayFix ASI；同一个 `BladeSwordQOL.asi` 必须分别验证：
+本体、外传现在不再各自发行 DisplayFix ASI；用户已经用同一个 `BladeSwordQOL.asi` 完成本体与外传实机测试并确认两边均可工作。后续若扩大兼容声明，仍应按以下矩阵分别验证：
 
 - 本体 Steam；
 - 本体非 Steam（若有测试环境）；
