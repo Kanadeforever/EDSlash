@@ -14,9 +14,9 @@ set "RELEASE_DIR=%PACKAGE_ROOT%release"
 set "LLVM_BIN="
 
 if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
-if exist "%RELEASE_DIR%" rmdir /s /q "%RELEASE_DIR%"
 mkdir "%BUILD_DIR%"
-mkdir "%RELEASE_DIR%"
+REM release 由主插件和独立 Controller 共用，不得删除其它目标的产物。  
+if not exist "%RELEASE_DIR%" mkdir "%RELEASE_DIR%"
 
 for /f "delims=" %%I in ('where clang.exe 2^>nul') do if not defined LLVM_BIN for %%J in ("%%I") do set "LLVM_BIN=%%~dpJ"
 if defined LLVM_BIN goto :llvm_found
@@ -85,16 +85,16 @@ copy /y template\BladeSwordQOL.ini "%RELEASE_DIR%\BladeSwordQOL.ini" >nul || got
 echo [8/11] 运行结构与防回归验证...  
 "%PYTHON_EXE%" %PYTHON_ARGS% tools\verify_build.py "%RELEASE_DIR%\BladeSwordQOL.asi" || goto :build_failed
 
-echo [9/11] 检查 release 文件数量...  
-for /f %%N in ('dir /b /a-d "%RELEASE_DIR%" ^| find /c /v ""') do set "RELEASE_FILE_COUNT=%%N"
-if not "%RELEASE_FILE_COUNT%"=="2" goto :release_invalid
+echo [9/11] 检查主插件必需产物...  
+if not exist "%RELEASE_DIR%\BladeSwordQOL.asi" goto :release_invalid
+if not exist "%RELEASE_DIR%\BladeSwordQOL.ini" goto :release_invalid
 
 echo [10/11] 清理临时构建目录...  
 rmdir /s /q "%BUILD_DIR%"
 
 echo [11/11] 完成。  
-echo [成功] 单一 ASI 已生成：%RELEASE_DIR%BladeSwordQOL.asi  
-echo [成功] 本体/外传共用：%RELEASE_DIR%BladeSwordQOL.ini  
+echo [成功] 单一 ASI 已生成：%RELEASE_DIR%\BladeSwordQOL.asi  
+echo [成功] 本体/外传共用：%RELEASE_DIR%\BladeSwordQOL.ini  
 pause
 exit /b 0
 
@@ -114,7 +114,7 @@ pause
 exit /b 1
 
 :release_invalid
-echo [失败] release 必须严格只有 BladeSwordQOL.asi 和 BladeSwordQOL.ini。  
+echo [失败] release 缺少主插件 BladeSwordQOL.asi 或 BladeSwordQOL.ini。  
 pause
 exit /b 1
 

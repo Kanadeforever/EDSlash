@@ -1,0 +1,106 @@
+#include "Control.h"
+#include <math.h>
+#include <string.h>
+
+float Control_Axis(int value, int deadzone)
+{
+    /* 死区以内视为松杆；死区以外重新缩放，避免刚跨过死区就突然跳到很快的速度。 */
+    int magnitude = value < 0 ? -value : value;
+    if (magnitude <= deadzone) return 0.0f;
+    if (magnitude > 32767) magnitude = 32767;
+    return (float)(magnitude - deadzone) / (float)(32767 - deadzone) * (value < 0 ? -1.0f : 1.0f);
+}
+
+void Control_WorldDirection(float sx, float sy, float *wx, float *wy)
+{
+    /* 原版等距投影的逆变换：世界 X=画面 X+2Y，世界 Y=2Y-画面 X。
+       只转换方向，随后归一化，防止斜推时前探距离翻倍。 */
+    float x = sx + 2.0f * sy, y = 2.0f * sy - sx;
+    float length = sqrtf(x*x + y*y);
+    *wx = length > 0.0f ? x / length : 0.0f;
+    *wy = length > 0.0f ? y / length : 0.0f;
+}
+
+void Control_MoveGoal(int x, int y, float sx, float sy, bool run, int *mx, int *my)
+{
+    float dx, dy;
+    Control_WorldDirection(sx, sy, &dx, &dy);
+    /* 角色坐标每 64 单位是一格。原版 opcode1/2 收地图格，绝不能直接塞几千的世界坐标。
+       走路目标放在近处，跑步放远；原版仍负责路线、碰撞与是否允许开始移动。 */
+    float lead = run ? 8.0f : 3.0f;
+    *mx = (int)((float)x / 64.0f + dx * lead);
+    *my = (int)((float)y / 64.0f + dy * lead);
+}
+
+Intent Control_Step(ControlState *s, const PadInput *in)
+{
+    Intent out;
+    memset(&out, 0, sizeof out);
+    bool neutral = !in->buttons && !in->lt && !in->rt &&
+        in->lx == 0 && in->ly == 0 && in->rx == 0 && in->ry == 0;
+    if (!in->connected || !in->focused) {
+        /* 拔线或切出游戏后清掉本插件拥有的持续操作；重新接回必须先松开所有控制。 */
+        s->ready = false; s->running = false; s->start_pending = false;
+        s->previous = in->buttons; s->blocked = in->buttons; s->chord = false;
+        s->previous_layer = LAYER_NONE; out.reset = true;
+        return out;
+    }
+    if (!s->ready) {
+        s->previous = in->buttons;
+        if (neutral) {
+            /* 中立帧也是旧按钮屏蔽的结束点，否则断线前的 X 会在重连后多吞一次。 */
+            s->ready = true; s->blocked = 0; s->chord = false;
+        }
+        out.reset = true;
+        return out;
+    }
+    uint32_t edge = in->buttons & ~s->previous;
+    uint32_t combo = KEY(PAD_BACK) | KEY(PAD_START);
+    if ((in->buttons & combo) == combo && !s->chord) {
+        s->mouse = !s->mouse; s->running = false; s->chord = true;
+        s->start_pending = false; out.mode_changed = true; out.reset = true;
+        out.rumble_ms = s->mouse ? 200 : 1500;
+    }
+    /* 组合键任意一键还没松开时，继续吞掉这两键，防止返回手柄时顺便打开系统菜单。 */
+    if (s->chord) {
+        edge &= ~combo;
+        if (!(in->buttons & combo)) s->chord = false;
+    }
+    Layer next = s->mouse ? LAYER_MOUSE : in->menu ? LAYER_MENU :
+        in->rt ? LAYER_SKILL : in->lt ? LAYER_GUARD :
+        (in->buttons & KEY(PAD_LB)) ? LAYER_MEDICINE :
+        (in->buttons & KEY(PAD_RB)) ? LAYER_ITEM : LAYER_GAME;
+    s->blocked &= in->buttons;
+    if (next != s->previous_layer) {
+        /* 只屏蔽进入新层前就一直按着的键。同帧新按的 X 可以属于 RT 层；
+           松开 RT 但继续按 X 时，则不能突然变成左手攻击。 */
+        s->blocked |= in->buttons & s->previous;
+        out.reset = true;
+    }
+    out.layer = next;
+    out.held = in->buttons & ~s->blocked;
+    out.pressed = edge & ~s->blocked;
+    if (s->chord || out.mode_changed) {
+        out.held &= ~combo; out.pressed &= ~combo;
+    }
+    out.lx = in->lx; out.ly = in->ly; out.rx = in->rx; out.ry = in->ry;
+    bool can_move = next == LAYER_GAME || next == LAYER_SKILL || next == LAYER_MEDICINE || next == LAYER_ITEM;
+    if (can_move && (in->lx != 0 || in->ly != 0)) {
+        if (next == LAYER_GAME && (out.pressed & KEY(PAD_L3))) s->running = true;
+    } else s->running = false;
+    out.run = s->running;
+    /* START 延迟一个短窗口，让依次按下 BACK+START 也不会先弹系统菜单。 */
+    if ((next == LAYER_GAME || next == LAYER_MENU) && (out.pressed & KEY(PAD_START))) {
+        s->start_pending = true; s->start_at = in->now;
+    }
+    if (next != LAYER_GAME && next != LAYER_MENU) s->start_pending = false;
+    if (s->start_pending && in->now - s->start_at >= 120 && !s->chord) {
+        out.menu_toggle = true; s->start_pending = false;
+    }
+    if (out.mode_changed) {
+        /* 切换当帧不执行鼠标按下或角色业务；扳机也要先松开再重新按。 */
+        s->ready = false; out.held = out.pressed = 0;
+    }
+    s->previous = in->buttons; s->previous_layer = next;
+    return out;
+}
