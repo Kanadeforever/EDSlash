@@ -21,15 +21,29 @@ void Control_WorldDirection(float sx, float sy, float *wx, float *wy)
     *wy = length > 0.0f ? y / length : 0.0f;
 }
 
-void Control_MoveGoal(int x, int y, float sx, float sy, bool run, int *mx, int *my)
+void Control_Stick(int raw_x, int raw_y, int deadzone, float *x, float *y)
+{
+    /* 先把整个摇杆当作二维向量，再判断离中心的距离。
+       不能先分别砍掉横轴和纵轴：那会把接近水平/垂直的斜向吸到坐标轴上。 */
+    float fx=(float)raw_x,fy=(float)raw_y;
+    float radius=sqrtf(fx*fx+fy*fy);
+    if (radius <= deadzone || radius == 0) { *x=0;*y=0;return; }
+    /* 除以实际半径只取得方向；力度统一缩放，不改变方向角。
+       有的设备在对角线能给出超过圆周的值，只限制力度到 1，不逐轴裁剪。 */
+    float strength=(radius-deadzone)/(32767.0f-deadzone);
+    if (strength>1) strength=1;
+    *x=fx/radius*strength;*y=fy/radius*strength;
+}
+
+void Control_MoveGoal(int x, int y, float sx, float sy, int lead_tiles, int *mx, int *my)
 {
     float dx, dy;
     Control_WorldDirection(sx, sy, &dx, &dy);
-    /* 角色坐标每 64 单位是一格。原版 opcode1/2 收地图格，绝不能直接塞几千的世界坐标。
-       走路目标放在近处，跑步放远；原版仍负责路线、碰撞与是否允许开始移动。 */
-    float lead = run ? 8.0f : 3.0f;
-    *mx = (int)((float)x / 64.0f + dx * lead);
-    *my = (int)((float)y / 64.0f + dy * lead);
+    /* 原版 opcode1/2 仍然收整数地图格，不能伪造浮点参数。用更远的连续射线目标
+       减小最后一步格坐标量化的角度误差，四舍五入消除直接截断产生的方向偏置。
+       前探距离不再由走/跑决定；速度意图继续通过原生走跑协议独立传递。 */
+    *mx = (int)lroundf((float)x / 64.0f + dx * lead_tiles);
+    *my = (int)lroundf((float)y / 64.0f + dy * lead_tiles);
 }
 
 Intent Control_Step(ControlState *s, const PadInput *in)

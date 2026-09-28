@@ -106,8 +106,7 @@ bool Input_Poll(PadInput *input)
     if (!pad) return false;
     for (int i = 0; i <= PAD_RIGHT; ++i)
         if (sdl.GetGamepadButton(pad, i)) input->buttons |= KEY(i);
-    input->lx = Control_Axis(sdl.GetGamepadAxis(pad, 0), deadzone);
-    input->ly = Control_Axis(sdl.GetGamepadAxis(pad, 1), deadzone);
+    Control_Stick(sdl.GetGamepadAxis(pad,0),sdl.GetGamepadAxis(pad,1),deadzone,&input->lx,&input->ly);
     input->rx = Control_Axis(sdl.GetGamepadAxis(pad, 2), deadzone);
     input->ry = Control_Axis(sdl.GetGamepadAxis(pad, 3), deadzone);
     input->lt = sdl.GetGamepadAxis(pad, 4) >= 8000;

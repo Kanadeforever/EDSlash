@@ -152,7 +152,7 @@ static void initialize_runtime(void)
     swprintf(path, MAX_PATH, L"%lsEDSlashController.log", g_directory);
     /* 每次启动覆盖旧日志，符合实机比较需要；不把历史记录追加成一大份混合日志。 */
     log_file = _wfopen(path, L"w");
-    Log_Write("EDSlashController v0.1-dev2：调查与原生操作修正版");
+    Log_Write("EDSlashController v0.1-dev3：连续方向移动调整版");
     const Profile *candidate = g_profile;
     if (!Profile_Select() || candidate != g_profile || !Profile_Verify()) {
         Log_Write("[停止] 基线或机器码检查失败，撤回采样入口，未启用游戏动作。");

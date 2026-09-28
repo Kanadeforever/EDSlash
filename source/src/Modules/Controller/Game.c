@@ -11,6 +11,9 @@ static unsigned context_reason, context_id;
 static uintptr_t context_object;
 static unsigned native_frames;
 static unsigned scan_count,eligible_count;
+static bool move_goal_valid,move_goal_run;
+static int move_goal_x,move_goal_y,move_lead;
+static DWORD last_move_submit;
 
 static void *global(uintptr_t address) { return ReadPtr((void *)address, 0); }
 static void *world(void) { return global(g_profile->world_global); }
@@ -118,6 +121,7 @@ void Game_Release(void)
     if (guard_owned && world() == owned_world && role_valid(player()) && !Input_PhysicalDown(VK_MENU))
         submit(16, 0, 0, 0);
     movement_owner = lock_handle = 0;
+    move_goal_valid=false;
     owned_world = NULL; guard_owned = false; previous_combo = -1;
 }
 
@@ -286,7 +290,7 @@ void Game_Update(void)
     shortcuts();
     if (Input_PhysicalDown(VK_LBUTTON)) {
         /* 玩家真实鼠标正在操作时交回移动所有权，不在下一次松杆时取消鼠标导航。 */
-        movement_owner=0; return;
+        movement_owner=0;move_goal_valid=false;return;
     }
     if (g_intent.layer==LAYER_GAME && (g_intent.pressed & KEY(PAD_A))) { inspect_action(me); return; }
     bool attacking=g_intent.layer==LAYER_GAME && (g_intent.held & (KEY(PAD_X)|KEY(PAD_Y)))!=0;
@@ -298,22 +302,35 @@ void Game_Update(void)
     if (attacking) {
         /* X/Y 拥有动作，不再让移动层在同一帧继续推目标；原版技能追近仍可自行移动。 */
         movement_owner=0;
+        move_goal_valid=false;
         attack(me,(g_intent.held & KEY(PAD_Y))!=0);
     } else if (direction && !Read32(me,g_profile->active_offset)) {
         static DWORD last_move_log;
         int x,y;
-        Control_MoveGoal((int)Read32(me,0x2C),(int)Read32(me,0x30),g_intent.lx,g_intent.ly,g_intent.run,&x,&y);
-        submit(g_intent.run ? 2:1,x,y,0);
-        /* 原版会按距离改走跑标志，所以在目标提交后再同步玩家明确选择的走跑意图。 */
-        submit(3,g_intent.run ? 1:0,0,0);
-        movement_owner=Read32(me,0x73)==0x0B ? Read32(me,0x14) : 0;
+        if (!move_lead) {
+            move_lead=Config_Number(L"Movement",L"LeadTiles",12,6,32);
+            Log_Write("[移动配置] 左摇杆圆形死区，走跑共用前探=%d 格。",move_lead);
+        }
+        Control_MoveGoal((int)Read32(me,0x2C),(int)Read32(me,0x30),g_intent.lx,g_intent.ly,move_lead,&x,&y);
+        bool changed=!move_goal_valid || move_goal_x!=x || move_goal_y!=y || move_goal_run!=g_intent.run;
+        bool moving=Read32(me,0x73)==0x0B;
+        /* 新方向/新目标立即提交，不增加转向缓冲。相同目标在原版仍移动时不重复塞动作；
+           若受阻或尚未开始，只隔 120 ms 重试一次，避免帧率决定请求洪泛。 */
+        if (changed || (!moving && g_input.now-last_move_submit>=120)) {
+            submit(g_intent.run ? 2:1,x,y,0);
+            /* 不改变原版寻路与碰撞。远目标的自动跑标志仍用已存在的原生走跑协议校正。 */
+            submit(3,g_intent.run ? 1:0,0,0);
+            move_goal_valid=true;move_goal_x=x;move_goal_y=y;move_goal_run=g_intent.run;
+            last_move_submit=g_input.now;
+            movement_owner=Read32(me,0x73)==0x0B ? Read32(me,0x14) : 0;
+        }
         if (g_input.now-last_move_log>=1000) {
             Log_Write("[移动] 世界=%ld,%ld 地图目标=%d,%d 走跑=%d 提交后状态=%lu。",
                 (long)(int)Read32(me,0x2C),(long)(int)Read32(me,0x30),x,y,g_intent.run,
                 (unsigned long)Read32(me,0x73));
             last_move_log=g_input.now;
         }
-    } else if (!direction && movement_owner) {
+    } else if (!direction && (movement_owner || move_goal_valid)) {
         Game_Release();
     }
 }

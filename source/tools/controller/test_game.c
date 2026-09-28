@@ -18,6 +18,8 @@ static int last_opcode, arg1, arg2, arg3, releases, last_policy, selected, quick
 static void *last_target;
 static bool page_visible, physical_mouse, busy_gate;
 static unsigned checks;
+static unsigned move_requests;
+static bool reject_move;
 #define CHECK(e) do { ++checks; if (!(e)) { fprintf(stderr,"适配检查失败，行 %d：%s\n",__LINE__,#e); exit(1); } } while(0)
 
 void Log_Write(const char *format, ...) { (void)format; }
@@ -40,7 +42,11 @@ static int __attribute__((thiscall)) native_submit(void *self,int opcode,int a,i
 {
     CHECK(self==manager_data);
     last_opcode=opcode; arg1=a;arg2=b;arg3=c;
-    if (opcode==1 || opcode==2) { Write32(roles[0],0x73,0x0B); Write32(mouse_data,0x90,a);Write32(mouse_data,0x94,b); }
+    if (opcode==1 || opcode==2) {
+        ++move_requests;
+        if (!reject_move) Write32(roles[0],0x73,0x0B);
+        Write32(mouse_data,0x90,a);Write32(mouse_data,0x94,b);
+    }
     return 1;
 }
 static int __attribute__((thiscall)) native_stop(void *self,int state,int a,int b,int c)
@@ -97,6 +103,7 @@ static void configure(Profile *profile, bool expansion)
     memset(&g_input,0,sizeof g_input);g_input.connected=g_input.focused=true;g_input.now=1000;
     memset(&g_intent,0,sizeof g_intent);g_intent.layer=LAYER_GAME;
     page_visible=physical_mouse=busy_gate=false;releases=0;last_opcode=0;
+    move_requests=0;reject_move=false;
 }
 
 static void exercise(bool expansion)
@@ -128,8 +135,18 @@ static void exercise(bool expansion)
     g_intent.held=0;g_intent.lx=1;Game_Update();
     CHECK(Read32(mouse_data,0x90)>100 && Read32(mouse_data,0x94)<100);
     CHECK(last_opcode==3 && arg1==0);
-    g_intent.run=true;Game_Update();CHECK(last_opcode==3 && arg1==1);
+    unsigned sent=move_requests;Game_Update();CHECK(move_requests==sent);
+    int old_goal_x=(int)Read32(mouse_data,0x90),old_goal_y=(int)Read32(mouse_data,0x94);
+    g_intent.run=true;Game_Update();CHECK(last_opcode==3 && arg1==1 && move_requests==sent+1);
+    CHECK((int)Read32(mouse_data,0x90)==old_goal_x && (int)Read32(mouse_data,0x94)==old_goal_y);
+    g_intent.lx=-1;Game_Update();CHECK(move_requests==sent+2 && Read32(mouse_data,0x90)<100);
     g_intent.lx=0;Game_Update();CHECK(Read32(roles[0],0x73)==1);
+    /* 原版拒绝移动时，同一目标只限频重试；松杆再推必须立即产生新请求。 */
+    reject_move=true;g_intent.lx=1;Game_Update();sent=move_requests;
+    g_input.now+=16;Game_Update();CHECK(move_requests==sent);
+    g_input.now+=120;Game_Update();CHECK(move_requests==sent+1);
+    g_intent.lx=0;Game_Update();g_intent.lx=1;Game_Update();CHECK(move_requests==sent+2);
+    g_intent.lx=0;Game_Update();reject_move=false;
     g_intent.layer=LAYER_MEDICINE;g_intent.pressed=KEY(PAD_X);g_intent.held=KEY(PAD_X);Game_Update();
     CHECK(quick_slot==2 && releases==2);
     g_intent.layer=LAYER_ITEM;Game_Update();CHECK(quick_slot==8 && releases==2);

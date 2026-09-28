@@ -90,8 +90,8 @@ int main(void)
         CHECK(fabsf(sx*vectors[i][1]-sy*vectors[i][0])<0.0001f);
         CHECK(sx*vectors[i][0]+sy*vectors[i][1]>0);
         int mx,my;
-        Control_MoveGoal(6400,6400,(float)vectors[i][0],(float)vectors[i][1],false,&mx,&my);
-        CHECK(mx>=96 && mx<=103 && my>=96 && my<=103);
+        Control_MoveGoal(6400,6400,(float)vectors[i][0],(float)vectors[i][1],12,&mx,&my);
+        CHECK(mx>=88 && mx<=112 && my>=88 && my<=112);
         CHECK(mx!=100 || my!=100);
     }
     CHECK(Control_Axis(7999,8000)==0);

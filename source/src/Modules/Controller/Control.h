@@ -31,6 +31,7 @@ typedef struct {
 /* 纯规则层不读游戏内存。测试程序可以直接喂入按键，检查组合键是否误触发基础动作。 */
 Intent Control_Step(ControlState *state, const PadInput *input);
 float Control_Axis(int value, int deadzone);
+void Control_Stick(int raw_x, int raw_y, int deadzone, float *x, float *y);
 void Control_WorldDirection(float screen_x, float screen_y, float *world_x, float *world_y);
-void Control_MoveGoal(int world_x, int world_y, float sx, float sy, bool run, int *map_x, int *map_y);
+void Control_MoveGoal(int world_x, int world_y, float sx, float sy, int lead_tiles, int *map_x, int *map_y);
 #endif

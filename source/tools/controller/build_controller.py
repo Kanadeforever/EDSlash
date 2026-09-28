@@ -126,6 +126,9 @@ def main():
     test=BUILD/'test_control.exe'
     subprocess.run([cc,*flags,'-I'+str(MODULE),str(MODULE/'Control.c'),str(Path(__file__).with_name('test_control.c')),'-lm','-o',str(test)],check=True,env=env)
     subprocess.run([str(test)],check=True,env=env)
+    motion_test=BUILD/'test_motion.exe'
+    subprocess.run([cc,*flags,'-I'+str(MODULE),str(MODULE/'Control.c'),str(Path(__file__).with_name('test_motion.c')),'-lm','-o',str(motion_test)],check=True,env=env)
+    subprocess.run([str(motion_test)],check=True,env=env)
     game_test=BUILD/'test_game.exe'
     subprocess.run([cc,*flags,'-I'+str(MODULE),str(MODULE/'Control.c'),str(MODULE/'Game.c'),str(Path(__file__).with_name('test_game.c')),'-luser32','-lm','-o',str(game_test)],check=True,env=env)
     subprocess.run([str(game_test)],check=True,env=env)
@@ -147,11 +150,11 @@ def main():
     config=RELEASE/'EDSlashController.ini'
     if not config.exists(): shutil.copyfile(SOURCE/'template/EDSlashController.ini',config)
     # 许可证放中文名文档中，发布包必须连同 docs 一起携带。
-    report={'版本':'v0.1-dev2','双样本静态复核':samples_verified,'实机验收':{'本体':'待测试','外传':'待测试'},
+    report={'版本':'v0.1-dev3','双样本静态复核':samples_verified,'实机验收':{'本体':'待测试','外传':'待测试'},
             'ASI_SHA256':hashlib.sha256(output.read_bytes()).hexdigest(),'导入库':imports,
             'SDL_SHA256':hashlib.sha256(dll).hexdigest()}
     (RELEASE/'手柄构建验证.json').write_bytes((json.dumps(report,ensure_ascii=False,indent=2)+'\n').replace('\n','\r\n').encode('utf-8'))
-    print('独立手柄 v0.1-dev2 修正版构建完成；两作调查与操作的实机结果均待确认。')
+    print('独立手柄 v0.1-dev3 构建完成；两作连续转向与走跑手感仍待实机确认。')
 
 
 if __name__=='__main__':
