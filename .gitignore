@@ -5,6 +5,9 @@ AGENTS.md
 参考资料/
 pyghidra_mcp_projects/
 __pycache__/
+vendor/
+.build/
+
 
 # Prerequisites
 *.d

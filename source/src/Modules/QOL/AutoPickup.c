@@ -247,6 +247,14 @@ void AutoPickup_AfterInputFrame(void)
     run_native_pickup_scan();
 }
 
+void AutoPickup_Disable(void)
+{
+    /* 拾取过滤和输入入口是两处 Hook。只装好输入入口而过滤安装失败时，
+     * 不允许残留的输入包装继续发起扫描，否则可能绕过玩家选择的物品类别。 */
+    g_policy = AUTO_PICKUP_POLICY_OFF;
+    g_native_pickup_scan_active = 0;
+}
+
 int AutoPickup_AllowPickupCandidate(unsigned long ground_item)
 {
     PickupItemClass item_class;

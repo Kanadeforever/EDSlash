@@ -6,7 +6,7 @@
 
 运行本目录 `build.bat`，需要 Python 3 与可运行的 Clang/lld-link。脚本从 PATH、LLVM 常见安装位置和 Visual Studio 查询工具定位编译器。主插件输出 `../release/BladeSwordQOL.asi` 与 `BladeSwordQOL.ini`。
 
-当前主构建保留 release 中其它目标的产物，不再删除整个 release。主插件代码与既有显示修复行为本轮未变。
+当前主构建保留 release 中其它目标的产物，不再删除整个 release。当前源码已新增 QoL，并扩展 Runtime；这些新增单元已加入主构建的编译/链接列表。
 
 ## 独立手柄插件
 
@@ -31,8 +31,16 @@
 python tools\controller\build_controller.py
 ```
 
-中间文件保留在 `_build_controller/`，不会被复制进正式源码包。所有产物验证通过后才更新 release。手柄 ASI 使用系统 Win32 导入，不适用主插件的“Import Directory=0”限制；构建器保证不额外依赖 libgcc 或 libwinpthread DLL。
+中间文件保留在 `.build/Controller/`，不会被复制进正式源码包。所有产物验证通过后才更新 release。手柄 ASI 使用系统 Win32 导入，不适用主插件的“Import Directory=0”限制；构建器保证不额外依赖 libgcc 或 libwinpthread DLL。
 
 ## 测试与接档
 
 当前为 `EDSlashController v0.1-dev5` 战斗输入衔接修正版。dev3 移动保持用户暂定手感；dev4 已有本体方向改善但衔接失败的反馈，dev5 恢复旧历史处理和输入时序，仍待两作实机确认，完整手柄设计尚未全部实现。具体实现范围、缺项与两作测试步骤见 [手柄模块接档说明](../docs/手柄模块接档说明.md) 和 [手柄实机验证说明](../docs/手柄实机验证说明.md)。编译通过、模拟回放通过均不能代替实机验收。
+
+## 当前构建检查记录（2026-10-01）
+
+两份配置模板放在 config/，所有构建和校验入口已同步。主构建包含 DisplayFix、QoL 和 Runtime 桥接/跳转工具，使用 .build/Main；独立手柄使用 .build/Controller，两者保留共享 release 中其它目标的产物和已有玩家 INI。主 build.bat 也支持 --no-pause。
+
+两目标完整编译、链接和发布检查通过，空手柄发布目录默认 INI 复制通过。主 ASI 保持零导入表，独立手柄保持 Win32 系统导入和动态 SDL。新增 Runtime 回滚测试可运行 `python tools/run_runtime_checks.py`，需与手柄相同的 32 位 MinGW GCC，当前 23 项通过。
+
+本体 dev5 已有用户反馈正常；新增 QoL、两插件同场运行、外传及所有持续技能不能据离线通过写成全面实机验收。最新地址、踩坑、测试与下一步见 ../docs/完整接档说明.md 第十二节。

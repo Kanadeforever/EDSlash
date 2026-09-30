@@ -9,6 +9,6 @@ echo [成功] 独立手柄基础版已构建，两作实机测试仍需分别完
 if /i not "%~1"=="--no-pause" pause
 exit /b 0
 :failed
-echo [失败] 构建未完成，保留 _build_controller 用于诊断。  
+echo [失败] 构建未完成，保留 .build\Controller 用于诊断。  
 if /i not "%~1"=="--no-pause" pause
 exit /b 1

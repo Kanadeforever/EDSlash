@@ -195,10 +195,16 @@ static int __cdecl qol_pickup_entry(int ground_item, int action_this)
 
 static void rollback_hooks(void)
 {
-    X86Detour_Remove(&g_pickup_entry_detour);
-    X86Detour_Remove(&g_input_update_detour);
-    X86Detour_Remove(&g_ground_update_detour);
-    HookManager_ReleaseOwned(RUNTIME_MODULE_QOL);
+    /* 先关闭自动业务，再尝试恢复物理入口，部分回滚失败也不会变成无过滤拾取。 */
+    AutoPickup_Disable();
+    /* 每个入口都要尝试撤销，不能因第一处失败就跳过其余入口。
+     * 有入口未撤销时保留所有权，防止后续模块覆盖仍然生效的物理跳转。 */
+    int pickup_removed = X86Detour_Remove(&g_pickup_entry_detour);
+    int input_removed = X86Detour_Remove(&g_input_update_detour);
+    int ground_removed = X86Detour_Remove(&g_ground_update_detour);
+    if (pickup_removed && input_removed && ground_removed) {
+        HookManager_ReleaseOwned(RUNTIME_MODULE_QOL);
+    }
 }
 
 static int install_ground_hook(const GameProfile* profile)
@@ -240,6 +246,9 @@ static int install_auto_pickup_hooks(const GameProfile* profile)
                            5ul)) {
         return 0;
     }
+    /* 安装第一处入口后立刻保存原函数。若后面的拾取 Hook 安装失败而
+     * 第一处撤销又失败，残留包装函数仍须能够继续调用原版输入更新。 */
+    g_original_input_update = input_update_from_address(g_input_update_detour.gateway);
 
     if (!X86Detour_Install(&g_pickup_entry_detour,
                            pickup_target,
@@ -248,7 +257,6 @@ static int install_auto_pickup_hooks(const GameProfile* profile)
         return 0;
     }
 
-    g_original_input_update = input_update_from_address(g_input_update_detour.gateway);
     g_original_pickup_entry = pickup_entry_from_address(g_pickup_entry_detour.gateway);
 
     return g_original_input_update && g_original_pickup_entry ? 1 : 0;

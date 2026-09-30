@@ -14,7 +14,10 @@ typedef enum SharedHookId {
     SHARED_HOOK_UI_ROOT_PICKER = 3,
     SHARED_HOOK_WORLD_MOUSE_PRESS = 4,
     SHARED_HOOK_GLOBAL_MOUSE_RELEASE = 5,
-    SHARED_HOOK_COUNT = 6
+    SHARED_HOOK_GROUND_ITEM_UPDATE = 6,
+    SHARED_HOOK_INPUT_FRAME = 7,
+    SHARED_HOOK_PICKUP_ENTRY = 8,
+    SHARED_HOOK_COUNT = 9
 } SharedHookId;
 
 typedef enum RuntimeModuleId {
@@ -33,7 +36,7 @@ RuntimeModuleId HookManager_GetOwner(SharedHookId hook_id);
 
 /*
  * 释放某个模块当前声明的全部共享 Hook 所有权。
- * 这不是“卸载已经写进游戏内存的机器码 Hook”；v0.1-dev1 只用它处理模块初始化尚未真正开始时的声明回滚。
+ * 这不是“卸载已经写进游戏内存的机器码 Hook”；这里只回滚尚未完成初始化时的所有权声明。
  * 以后如果做热卸载，必须另行设计真正的物理 Hook 撤销生命周期，不能误把这个函数当卸载器。
  */
 void HookManager_ReleaseOwned(RuntimeModuleId owner);

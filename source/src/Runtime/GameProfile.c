@@ -1,5 +1,7 @@
 #include "GameProfile.h"
 
+#define GAME_IMAGE_BASE 0x00400000ul
+
 /*
  * 两个已确认游戏的 PE32 基本身份。
  *
@@ -15,14 +17,46 @@ static const GameProfile PROFILE_DAOJIAN = {
     GAME_ID_DAOJIAN,
     "刀剑封魔录",
     0x00173000ul,
-    0x0010F0EFul
+    0x0010F0EFul,
+    {
+        0x00128158ul,
+        0x00128240ul
+    },
+    {
+        0x00012B30ul,
+        0x000127D0ul,
+        0x000CE3D0ul,
+        0x0001C270ul,
+        0x00052730ul,
+        0x00158E4Cul,
+        0x00158E50ul,
+        0x00128CD4ul,
+        0x001288F8ul,
+        0x001496CCul
+    }
 };
 
 static const GameProfile PROFILE_WAIZHUAN = {
     GAME_ID_WAIZHUAN,
     "刀剑封魔录外传：上古传说",
     0x001A5000ul,
-    0x00127BCFul
+    0x00127BCFul,
+    {
+        0x0015119Cul,
+        0x00151254ul
+    },
+    {
+        0x0001A860ul,
+        0x0001A500ul,
+        0x000E3280ul,
+        0x000247F0ul,
+        0x0005E8B0ul,
+        0x00189E34ul,
+        0x00189E38ul,
+        0x00151E2Cul,
+        0x001519FCul,
+        0x00179DC4ul
+    }
 };
 
 /* 小工具：从内存里按小端序读取 16 位数字。 */
@@ -46,7 +80,7 @@ const GameProfile* GameProfile_Detect(void)
      * 两款游戏的 PE ImageBase 都固定为 0x00400000，并且当前支持样本没有 ASLR。
      * 因为这个函数运行在游戏已经正常启动、ASI 已经被 LoadLibrary 之后，所以这里可以直接读取主 EXE 映像。
      */
-    const unsigned char* image = (const unsigned char*)0x00400000ul;
+    const unsigned char* image = (const unsigned char*)GAME_IMAGE_BASE;
     unsigned long pe_offset;
     const unsigned char* pe;
     const unsigned char* file_header;
@@ -73,14 +107,14 @@ const GameProfile* GameProfile_Detect(void)
     }
 
     file_header = pe + 4ul;
-    machine = read_u16(file_header + 0ul);
+    machine = read_u16(file_header);
     if (machine != 0x014Cu) {
         /* 0x014C 就是 Intel i386。项目只支持原游戏的 Win32/x86。 */
         return (const GameProfile*)0;
     }
 
     optional_header = pe + 24ul;
-    optional_magic = read_u16(optional_header + 0ul);
+    optional_magic = read_u16(optional_header);
     if (optional_magic != 0x010Bu) {
         /* 0x010B 表示 PE32；PE32+ / x64 必须拒绝。 */
         return (const GameProfile*)0;
@@ -90,10 +124,13 @@ const GameProfile* GameProfile_Detect(void)
     entry_point = read_u32(optional_header + 0x10ul);
     image_size = read_u32(optional_header + 0x38ul);
 
-    if (entry_point == PROFILE_DAOJIAN.entry_point_rva && image_size == PROFILE_DAOJIAN.image_size) {
+    if (entry_point == PROFILE_DAOJIAN.entry_point_rva &&
+        image_size == PROFILE_DAOJIAN.image_size) {
         return &PROFILE_DAOJIAN;
     }
-    if (entry_point == PROFILE_WAIZHUAN.entry_point_rva && image_size == PROFILE_WAIZHUAN.image_size) {
+
+    if (entry_point == PROFILE_WAIZHUAN.entry_point_rva &&
+        image_size == PROFILE_WAIZHUAN.image_size) {
         return &PROFILE_WAIZHUAN;
     }
 

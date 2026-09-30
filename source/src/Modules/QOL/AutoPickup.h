@@ -18,6 +18,9 @@ int AutoPickup_Initialize(const RuntimeContext* runtime,
 /* 游戏原输入刷新完成后调用，用于在主线程按设定周期触发一次原生拾取动作。 */
 void AutoPickup_AfterInputFrame(void);
 
+/* 安装失败回滚时先停自动扫描；即使输入 Hook 未能撤销也只执行原版输入。 */
+void AutoPickup_Disable(void);
+
 /*
  * 物品进入原版 PickupEntry 前调用。
  * 返回 1 表示继续原版拾取；返回 0 表示这一次自动扫描忽略该物品。

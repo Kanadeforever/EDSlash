@@ -12,7 +12,7 @@ from zipfile import ZipFile
 SOURCE = Path(__file__).resolve().parents[2]
 ROOT = SOURCE.parent
 MODULE = SOURCE / 'src/Modules/Controller'
-BUILD = SOURCE / '_build_controller'
+BUILD = SOURCE / '.build/Controller'
 RELEASE = ROOT / 'release'
 
 
@@ -131,7 +131,7 @@ def main():
     subprocess.run([sys.executable,str(Path(__file__).with_name('generate_profiles.py'))],check=True)
     samples_verified=verify_baselines(metadata)
     cc,env=compiler()
-    BUILD.mkdir(exist_ok=True); RELEASE.mkdir(exist_ok=True)
+    BUILD.mkdir(parents=True,exist_ok=True); RELEASE.mkdir(exist_ok=True)
     flags=['-std=c11','-O2','-Wall','-Wextra','-Werror','-static-libgcc','-finput-charset=UTF-8','-fexec-charset=UTF-8']
     test=BUILD/'test_control.exe'
     subprocess.run([cc,*flags,'-I'+str(MODULE),str(MODULE/'Control.c'),str(Path(__file__).with_name('test_control.c')),'-lm','-o',str(test)],check=True,env=env)
@@ -158,7 +158,7 @@ def main():
     subprocess.run([str(load_test),str(output),str(sdl)],check=True,env=env)
     for src,dest in [(output,RELEASE/output.name),(sdl,RELEASE/sdl.name)]: shutil.copyfile(src,dest)
     config=RELEASE/'EDSlashController.ini'
-    if not config.exists(): shutil.copyfile(SOURCE/'template/EDSlashController.ini',config)
+    if not config.exists(): shutil.copyfile(SOURCE/'config/EDSlashController.ini',config)
     # 许可证放中文名文档中，发布包必须连同 docs 一起携带。
     report={'版本':'v0.1-dev5','双样本静态复核':samples_verified,'实机验收':{'本体':'待测试','外传':'待测试'},
             'ASI_SHA256':hashlib.sha256(output.read_bytes()).hexdigest(),'导入库':imports,

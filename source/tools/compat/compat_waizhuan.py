@@ -1,20 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-DisplayFix layer1d：外传 ComeOn.exe / Steam ComeOn.dll 兼容性只读检查工具。
+DisplayFix 外传 ComeOn.exe 兼容性只读检查工具。
 
-这个工具只读取 EXE/DLL，不写入任何字节，也不会生成补丁文件。兼容判断依赖机器码、调用关系和 vtable
-结构，而不是整个文件 SHA-256 白名单。
-
-layer1d 从外传 v0.2.1 稳定运行基线重新开线。外传 Steam 两条已封版兼容路径是硬红线：
-- ResJM.Lib 多语言 CreateFileA 低层调用点兜底必须继续存在；
-- ComeOn.dll CreateWindowExA class-atom guard 必须继续保留官方 EDIT WndProc/OpenGL 路径。
-
-同时继承本体同层级的深度结构验证：Strategy/JMM/HUD、0x09~0x0E 六路窗口、键盘快捷键、
-0x0B 装备 / 0x0D 技能 / 0x0E 物品三个菜单类，以及 layer1d 所需的 UI manager Draw / 顶层链架构。
-
-layer1d 不移动辅助 GUI，也不修改 child tree、GetCursorPos、self+0xA8、快捷键或 active；运行时不写顶层链；绘制使用 HUD 后延迟 Draw，输入只覆盖原版 picker 的单次返回值。
-因此工具仍会验证 +0x30/self+0xA8 等原版输入结构，但这些结构只作为“输入必须保持原样”的兼容证据。
-乾坤袋对象地址也只保留为逆向证据，本版不手工移动。
+工具不写目标文件，只验证当前 DisplayFix 依赖的机器码、调用关系、vtable、主 HUD、
+辅助菜单、Strategy 生命周期和 Steam 兼容入口是否仍然符合已确认结构。
+验证某个原版输入结构存在，只代表运行时依赖的前提仍成立，不代表插件会修改该路径。
 """
 
 from __future__ import annotations
@@ -29,13 +19,13 @@ import sys
 # 1. 已确认的机器码签名
 # -------------------------------------------------------------------------------------------------
 
-# test4 证据：物品 control 0x17 切换的乾坤袋/辅助面板构造写槽指令。
-# Steam / 非 Steam 用户样本完全一致。layer1d 运行时不改这个对象的坐标/业务，但兼容性验证仍确认“vtable + 写槽”存在，作为完整逆向接档证据。
+# 验证流程 证据：物品 control 0x17 切换的乾坤袋/辅助面板构造写槽指令。
+# Steam / 非 Steam 用户样本完全一致。辅助GUI方案 运行时不改这个对象的坐标/业务，但兼容性验证仍确认“vtable + 写槽”存在，作为完整逆向接档证据。
 BAG_AUX_PANEL_VTABLE = 0x0055395C
 BAG_AUX_PANEL_SLOT = 0x0058CCB8
 BAG_AUX_PANEL_CTOR_WRITE = bytes.fromhex("C7 06 5C 39 55 00 89 35 B8 CC 58 00")
 
-# layer1d：UI manager Draw 包装函数。
+# 辅助GUI方案：UI manager Draw 包装函数。
 # 机器码语义：mov eax,[ecx] / mov ecx,<manager> / push eax / call <manager Draw> / ret。
 # manager 绝对地址和 E8 rel32 会因本体/外传及版本位置变化，所以对应字节使用通配。
 UI_MANAGER_DRAW_WRAPPER = bytes([
@@ -47,7 +37,7 @@ UI_MANAGER_DRAW_WRAPPER = bytes([
 ])
 UI_MANAGER_DRAW_WRAPPER_MASK = "xxx????xx????x"
 
-# layer1d：0x4B4790 风格顶层 root picker callsite。
+# 辅助GUI方案：0x4B4790 风格顶层 root picker callsite。
 # 语义：lea POINT / mov ecx,manager / push POINT / call picker / push result / call set-current-root / mov eax,[manager+0x40]。
 UI_TOP_LEVEL_PICK_CALLSITE = bytes([
     0x8D,0x44,0x24,0x0C,
@@ -129,7 +119,7 @@ RES_MAP2 = bytes([
 ])
 RES_MAP2_MASK = "xxxxxxxxxxxxxxx????xxxxxxxxxxxxxxx????x????xxxxxxxxxxxx"
 
-# v0.1-clean1：Steam 多语言兜底依赖的低层 CreateFileA 调用上下文。
+# 当前实现：Steam 多语言兜底依赖的低层 CreateFileA 调用上下文。
 # 关键指令是中间的 `FF 15 E4 11 55 00`，也就是通过游戏 IAT 0x005511E4 调用 CreateFileA。
 # clean1 只把这一条 6 字节 CALL 等长改成 rel32 CALL + NOP，不修改 IAT 本身。
 RESJM_CREATEFILE_CALL = bytes([
@@ -162,8 +152,8 @@ JMM_LAYOUT_MASK = "xxxxxxxxxxxxxxx????xxxxxxxxxxxxxxxxxx"
 
 # 0x004087A0：从分辨率对象读取 +0x228 Width / +0x22C Height，
 # 然后调用 JMM/UI 管理器 0x4B35F0 的包装函数。
-# GUI 管理器绝对地址和 E8 rel32 都通配。test3~test5 曾实验性 hook 这条 CALL；
-# v0.3-test8 已停止安装该运行时 hook，但仍验证结构并保留研究证据，供 Steam 专项后续使用。
+# GUI 管理器绝对地址和 E8 rel32 都通配。验证流程 曾实验性 hook 这条 CALL；
+# 当前实现 已停止安装该运行时 hook，但仍验证结构并保留研究证据，供 Steam 专项后续使用。
 JMM_APPLY_CALLSITE = bytes([
     0x8B, 0x81, 0x2C, 0x02, 0x00, 0x00,
     0x8B, 0x89, 0x28, 0x02, 0x00, 0x00,
@@ -178,7 +168,7 @@ JMM_APPLY_CALLSITE_MASK = "xxxxxxxxxxxxxxxxx????x????x"
 JMM_LOAD_FUNCTION_HEAD = bytes.fromhex("81 EC 00 01 00 00 53 55 56 57 68")
 
 
-# test13：0x00404A00 风格高层状态切换函数头，并覆盖“离开旧状态 3”的清理分支。
+# 验证流程：0x00404A00 风格高层状态切换函数头，并覆盖“离开旧状态 3”的清理分支。
 # jump table 地址、两个 E8 rel32 和日志函数 E8 都用 ? 通配。
 STRATEGY_EXIT_CALLSITE = bytes([
     0x8B, 0xCE, 0xE8, 0, 0, 0, 0,
@@ -204,7 +194,7 @@ STRATEGY_ENTER_CALLSITE = bytes([
 ])
 STRATEGY_ENTER_CALLSITE_MASK = "xxx????x????x????x????xxxxxx????x????x????x????xxx"
 
-# test15：原游戏启动前端的 mode 4 显示模式应用。
+# 验证流程：原游戏启动前端的 mode 4 显示模式应用。
 #
 # 0x004053D8 一带已静态确认：
 #   push ebx              ; 当前启动路径里 ebx=0，也就是 force=0
@@ -225,7 +215,7 @@ FRONTEND_MODE4_APPLY_MASK = "xxxxxxxxxxxxx????"
 
 
 # 0x004060D6 一带：UI manager 的按下分派已经返回 0，主循环准备把同一次按下交给世界输入。
-# test8 只改 0x004060EB -> 0x00473F10 这一条 CALL；0x004B44F0 完全保持原版。
+# 验证流程 只改 0x004060EB -> 0x00473F10 这一条 CALL；0x004B44F0 完全保持原版。
 WORLD_MOUSE_PRESS_CALLSITE = bytes([
     0x8B, 0x0D, 0, 0, 0, 0,
     0x3B, 0xCF,
@@ -252,7 +242,7 @@ GLOBAL_MOUSE_RELEASE_CALLSITE = bytes([
 GLOBAL_MOUSE_RELEASE_CALLSITE_MASK = "xxxxxxxxxxxx????xx????x????xxxx"
 
 
-# test2：主 HUD 每帧调用原版键盘快捷键处理函数的上下文。
+# 验证流程：主 HUD 每帧调用原版键盘快捷键处理函数的上下文。
 # 第三条 E8（签名起点 +26）在本体为 0x004C2F45 -> 0x004C42B0，
 # 在外传为 0x004D7505 -> 0x004D8890。绝对地址不同，但周围对象字段访问完全同形。
 HUD_KEYBOARD_SHORTCUT_CALLSITE = bytes([
@@ -273,11 +263,11 @@ HUD_KEYBOARD_SHORTCUT_CALLSITE = bytes([
 HUD_KEYBOARD_SHORTCUT_CALLSITE_MASK = "xxxxxxxxxxxxx????xxx????xxx????xxxxxxxxxxxxxxxx"
 
 
-# test5：继续验证原版通用 child hit-test 函数开头；当前运行时明确不再 Hook 它。
+# 验证流程：继续验证原版通用 child hit-test 函数开头；当前运行时明确不再 Hook 它。
 #
-# 历史 test1~test7 曾平移顶层物品/装备/技能窗口；下面保留相关输入机器码只用于证明原版命中结构仍存在，layer1d 不再平移窗口。
+# 历史 验证流程 曾平移顶层物品/装备/技能窗口；下面保留相关输入机器码只用于证明原版命中结构仍存在，辅助GUI方案 不再平移窗口。
 # 原版通用命中函数会在内部单独调用 GetCursorPos，再直接用得到的屏幕 X/Y 和 child +0x14/+0x18 比较。
-# test4 曾改这一处 6 字节 `FF 15 <GetCursorPos_IAT>`，但实机证明方向错误；test5 只验证它仍是原版 `FF 15`，绝不写入。
+# 验证流程 曾改这一处 6 字节 `FF 15 <GetCursorPos_IAT>`，但实机证明方向错误；验证流程 只验证它仍是原版 `FF 15`，绝不写入。
 # 全局 GetCursorPos IAT、顶层 press 分派和世界点击全部保持原版。
 UI_CHILD_HITTEST_CURSOR = bytes([
     0x83,0xEC,0x08,
@@ -437,7 +427,7 @@ def find_masked(data: bytes, pattern: bytes, mask: str) -> list[int]:
 def find_all(data: bytes, pattern: bytes) -> list[int]:
     """返回 pattern 在 data 中所有不重叠命中的起始偏移。
 
-    这是一个通用的精确字节搜索辅助函数。当前 test14 主线主要使用通配签名搜索，
+    这是一个通用的精确字节搜索辅助函数。当前 验证流程 主线主要使用通配签名搜索，
     保留这个函数只是方便以后对绝对地址写入/读取做额外交叉验证。
     """
 
@@ -540,7 +530,7 @@ def verify_modal_menu_class(
         slot_file = va_to_file_offset(slot_va, image_base, sections)
         slots[slot_offset] = u32(data, slot_file)
 
-    # layer1d 实际只会 Hook +0x08 Draw，所以离线兼容验证必须先证明这个槽仍指向当前 PE 的可执行代码。
+    # 辅助GUI方案 实际只会 Hook +0x08 Draw，所以离线兼容验证必须先证明这个槽仍指向当前 PE 的可执行代码。
     try:
         va_to_file_offset(slots[0x08], image_base, sections)
     except Exception as exc:
@@ -557,7 +547,7 @@ def verify_modal_menu_class(
     if len(hit_code) < 31 or hit_code[0:4] != bytes.fromhex("56 8B F1 E8"):
         raise RuntimeError(f"{name} vtable+0x30 函数头不符合已确认命中更新形状。")
 
-    # +3 的 E8 必须调用同一个通用 direct-child hit-test；layer1d 不修改这条路径；验证它只是为了确认原版输入结构没有变化。
+    # +3 的 E8 必须调用同一个通用 direct-child hit-test；辅助GUI方案 不修改这条路径；验证它只是为了确认原版输入结构没有变化。
     hit_child_target = rel32_target(hit_va + 3, data, hit_file + 3)
     if hit_child_target != child_hittest_va:
         raise RuntimeError(
@@ -587,7 +577,7 @@ def verify_modal_menu_class(
     if len(event_code) < 0x40:
         raise RuntimeError(f"{name} vtable+0x24 事件函数超出文件范围。")
 
-    # 每个类继续验证关键 self+0xA8 动作证据，用来保证 layer1d 没有建立在错误输入结构之上；不复制整个业务函数。
+    # 每个类继续验证关键 self+0xA8 动作证据，用来保证 辅助GUI方案 没有建立在错误输入结构之上；不复制整个业务函数。
     if control_id == 0x0B:
         if event_code[0:28] != bytes.fromhex(
             "8B 81 A8 00 00 00 85 C0 74 0F 83 78 28 5D 75 09 8B 01 6A 00 6A 00 FF 50 1C C2 0C 00"
@@ -648,7 +638,7 @@ def verify_one(path: Path) -> list[str]:
 
     _name, text_rva, _virtual_size, raw_size, raw_pointer = text
 
-    # test4 继续验证乾坤袋/物品辅助对象地址证据：构造函数必须唯一地把该类实例写入已确认全局槽。
+    # 验证流程 继续验证乾坤袋/物品辅助对象地址证据：构造函数必须唯一地把该类实例写入已确认全局槽。
     bag_aux_ctor_hits = []
     start = 0
     while True:
@@ -681,7 +671,7 @@ def verify_one(path: Path) -> list[str]:
 
     mode_off = require_unique("分辨率模式派发", find_masked(text_data, RES_MODE, RES_MODE_MASK))
 
-    # test13 不再主动调用这个函数，但游戏自己的 0x407000 Strategy-enter 函数会立即 call 它。
+    # 验证流程 不再主动调用这个函数，但游戏自己的 0x407000 Strategy-enter 函数会立即 call 它。
     # 因此仍然必须验证 mode_off 前 0x4A 字节确实是原版 0x404D30 风格函数头，后面还会把
     # Strategy-enter 内部的 CALL 目标与这里解析出的地址做交叉验证。
     if mode_off < 0x4A:
@@ -695,7 +685,7 @@ def verify_one(path: Path) -> list[str]:
         raise RuntimeError("分辨率模式派发没有位于已确认的原版 SetDisplayMode 包装函数内。")
     display_mode_va = image_base + text_rva + display_mode_off
 
-    # test14/test15 都依赖原版 0x404D30 的“同 mode + force=0 早退”语义。
+    # 验证流程 都依赖原版 0x404D30 的“同 mode + force=0 早退”语义。
     # 0x404D4D 开始应为：
     #   cmp [esi+0x04],eax
     #   jne ...
@@ -710,17 +700,17 @@ def verify_one(path: Path) -> list[str]:
         and early_return[9:11] == bytes.fromhex("85 C9")
         and early_return[11:13] == bytes.fromhex("0F 84")
     ):
-        raise RuntimeError("原版显示模式函数缺少 test14 依赖的同-mode/force=0 早退结构。")
+        raise RuntimeError("原版显示模式函数缺少 验证流程 依赖的同-mode/force=0 早退结构。")
 
     # ---------------------------------------------------------------------------------------------
-    # test15：游戏自己的 Strategy 状态进入/离开证据 + 临时 force 参数入口。
+    # 验证流程：游戏自己的 Strategy 状态进入/离开证据 + 临时 force 参数入口。
     #
     # 状态切换函数唯一命中后：
     #   +0x1E 是“离开旧状态 3”时 call 0x407040；
     #   +0x97 是“新状态 3 / BeforeStrategy”时 call 0x407000。
     #
     # 进入函数本身必须把 self+0x280 的显示模式写到 self+0x08，然后立即 call 我们上面已经解析的
-    # 原版显示模式函数。这样才能证明 test15 仍借用游戏真实 Strategy 进入时刻，而不是换一个猜测 gate。
+    # 原版显示模式函数。这样才能证明 验证流程 仍借用游戏真实 Strategy 进入时刻，而不是换一个猜测 gate。
     # ---------------------------------------------------------------------------------------------
     strategy_exit_site_off = require_unique(
         "外传 Strategy exit callsite",
@@ -776,11 +766,11 @@ def verify_one(path: Path) -> list[str]:
         )
 
     # ---------------------------------------------------------------------------------------------
-    # test15 新增：原游戏“标题/前端就是 mode 4”的独立证据。
+    # 验证流程 新增：原游戏“标题/前端就是 mode 4”的独立证据。
     #
-    # 这条签名不参与运行时 patch，只用于防止我们错误地把某个历史兼容 EXE 的前端语义也假定成 640x480。
+    # 这条签名不参与运行时 patch，只用于防止我们错误地把某个其它兼容 EXE 的前端语义也假定成 640x480。
     # 命中以后，再把最后的 E8 CALL 解出来，并要求它和上面解析的 0x404D30 是同一个函数。
-    # 这样 test15 的 exit `mode=4, force=1` 就不是凭经验写死，而是由当前 EXE 自己的启动路径证明。
+    # 这样 验证流程 的 exit `mode=4, force=1` 就不是凭经验写死，而是由当前 EXE 自己的启动路径证明。
     # ---------------------------------------------------------------------------------------------
     frontend_mode4_off = require_unique(
         "原版前端 mode 4 应用",
@@ -820,13 +810,13 @@ def verify_one(path: Path) -> list[str]:
     # ---------------------------------------------------------------------------------------------
     # 0x4087A0 风格 GUI/JMM 分辨率应用包装函数。
     #
-    # v0.3-test14 继续把这条包装函数作为 Steam delayed JMM apply 的关键结构证据：
+    # 当前实现 继续把这条包装函数作为 Steam delayed JMM apply 的关键结构证据：
     #   1. 先要求整个包装函数签名唯一；
     #   2. 包装函数 +16 必须仍能解析出 UI manager，+21 必须是 E8；
     #   3. 解码 rel32 后，目标必须落在 PE 中并匹配 0x4B35F0 已确认函数头；
     #   4. 0x4B35F0 +0x1E 还必须 call 到已确认的资源路径构造函数 0x4EB9E0 风格函数头，
-    #      因为 test10 要从其中解析游戏资源根目录缓冲区，避免过早重放 JMM。
-    # test10 仍然不改写 0x4087B5 这条 CALL；非 Steam 自然 JMM apply 保持原版。
+    #      因为 验证流程 要从其中解析游戏资源根目录缓冲区，避免过早重放 JMM。
+    # 验证流程 仍然不改写 0x4087B5 这条 CALL；非 Steam 自然 JMM apply 保持原版。
     # ---------------------------------------------------------------------------------------------
     jmm_apply_va = image_base + text_rva + jmm_apply_off
     jmm_call_va = jmm_apply_va + 21
@@ -843,7 +833,7 @@ def verify_one(path: Path) -> list[str]:
             f"target=0x{jmm_load_va:08X}。"
         )
 
-    # test10 新增：0x4B35F0 +0x1E 必须是 E8，目标函数头应为
+    # 验证流程 新增：0x4B35F0 +0x1E 必须是 E8，目标函数头应为
     # `56 57 BF <root-buffer> 83 C9 FF 33 C0 ...`。BF 的 imm32 是游戏资源根目录缓冲区。
     jmm_path_call_va = jmm_load_va + 0x1E
     jmm_path_call_file = va_to_file_offset(jmm_path_call_va, image_base, sections)
@@ -868,10 +858,10 @@ def verify_one(path: Path) -> list[str]:
         )
 
     # ---------------------------------------------------------------------------------------------
-    # v0.3-test8 世界鼠标按下 callsite。
+    # 当前实现 世界鼠标按下 callsite。
     #
-    # test7 曾包装更早的 0x4B44F0，但实机导致普通地图左键与 Alt+F4 一起失效；反汇编确认
-    # 0x4B44F0 依赖调用者保留下来的 ESI。test8 因此只验证/修改 0x4060EB -> 0x473F10。
+    # 验证流程 曾包装更早的 0x4B44F0，但实机导致普通地图左键与 Alt+F4 一起失效；反汇编确认
+    # 0x4B44F0 依赖调用者保留下来的 ESI。验证流程 因此只验证/修改 0x4060EB -> 0x473F10。
     # ---------------------------------------------------------------------------------------------
     world_press_off = require_unique(
         "世界鼠标按下 callsite",
@@ -884,8 +874,8 @@ def verify_one(path: Path) -> list[str]:
         raise RuntimeError("世界鼠标按下 callsite +21 不是 E8 CALL。")
     world_press_target_va = rel32_target(world_press_call_va, data, world_press_call_file)
 
-    # test13 明确不再把 callsite 开头的 world_global 当 gameplay gate。
-    # 用户 test12 实机已经证明该对象在主菜单也可能存在；这里仅验证 test8 已通过的世界点击目标函数。
+    # 验证流程 明确不再把 callsite 开头的 world_global 当 gameplay gate。
+    # 用户 验证流程 实机已经证明该对象在主菜单也可能存在；这里仅验证 验证流程 已通过的世界点击目标函数。
 
     world_press_target_file = va_to_file_offset(world_press_target_va, image_base, sections)
     world_press_head = data[world_press_target_file : world_press_target_file + 26]
@@ -899,7 +889,7 @@ def verify_one(path: Path) -> list[str]:
         )
 
     # ---------------------------------------------------------------------------------------------
-    # v0.3-test8 全局鼠标释放 callsite。
+    # 当前实现 全局鼠标释放 callsite。
     # ---------------------------------------------------------------------------------------------
     global_release_off = require_unique(
         "全局鼠标释放 callsite",
@@ -924,9 +914,9 @@ def verify_one(path: Path) -> list[str]:
 
 
     # ---------------------------------------------------------------------------------------------
-    # test2/test3 键盘快捷键 callsite。
+    # 验证流程 键盘快捷键 callsite。
     #
-    # 这是本轮“鼠标和键盘统一走同一套模态布局”的关键静态证据。DisplayFix 不改快捷键判断本身，
+    # 这是“鼠标和键盘统一走同一套模态布局”的关键静态证据。DisplayFix 不改快捷键判断本身，
     # 只包住第三条原版 thiscall：原函数先执行，随后再执行绝对锚定。
     # ---------------------------------------------------------------------------------------------
     keyboard_off = require_unique(
@@ -955,7 +945,7 @@ def verify_one(path: Path) -> list[str]:
 
 
     # ---------------------------------------------------------------------------------------------
-    # test5 逆向证据：通用 child hit-test 内部 GetCursorPos 调用点必须保持原版。
+    # 验证流程 逆向证据：通用 child hit-test 内部 GetCursorPos 调用点必须保持原版。
     #
     # 这里验证的是“按钮命中补偿可以安全安装”的机器码事实，而不是验证某个截图坐标：
     #   1. 整个函数头在 .text 中必须唯一；
@@ -985,7 +975,7 @@ def verify_one(path: Path) -> list[str]:
     # ---------------------------------------------------------------------------------------------
     # vtable +0x00：主 HUD scalar deleting destructor。
     #
-    # test13 仍 hook 这一槽，但只用于清掉最近 HUD 实例缓存；它不再决定 FRONTEND/GAMEPLAY。
+    # 验证流程 仍 hook 这一槽，但只用于清掉最近 HUD 实例缓存；它不再决定 FRONTEND/GAMEPLAY。
     # 原版函数头仍必须是 push esi / mov esi,ecx / call <real dtor>，保证缓存清理桥接调用约定正确。
     # ---------------------------------------------------------------------------------------------
     destructor_slot_va = vtable_va + 0x00
@@ -1002,7 +992,7 @@ def verify_one(path: Path) -> list[str]:
     # ---------------------------------------------------------------------------------------------
     # vtable +0x58：主 HUD 的布局函数。
     #
-    # v0.2-test1 就依赖这一槽完成“只移动底部主 HUD，不碰小地图和右侧按钮”。
+    # 当前实现 就依赖这一槽完成“只移动底部主 HUD，不碰小地图和右侧按钮”。
     # 所以这里继续要求它必须精确指向我们在 .text 中唯一找到的 JMM 通用布局函数。
     # ---------------------------------------------------------------------------------------------
     layout_slot_va = vtable_va + 0x58
@@ -1018,12 +1008,12 @@ def verify_one(path: Path) -> list[str]:
     # ---------------------------------------------------------------------------------------------
     # vtable +0x24：主 HUD 真正的鼠标释放/事件分派函数。
     #
-    # test2 在这里不再只验证 0x0B / 0x0E。反汇编已经确认主 HUD 的六个主圆形按钮 0x09~0x0E
+    # 验证流程 在这里不再只验证 0x0B / 0x0E。反汇编已经确认主 HUD 的六个主圆形按钮 0x09~0x0E
     # 都使用完全相同的“读取 target global -> 查询 active -> 再读同一 global -> vtable+0x1C”结构。
-    # 六个 target global 都用于结构识别与排除误判；历史 test5 曾只移动 0x0B/0x0D/0x0E。layer1d 不移动任何一路，但仍要求六路原版结构全部成立。
+    # 六个 target global 都用于结构识别与排除误判；历史 验证流程 曾只移动 0x0B/0x0D/0x0E。辅助GUI方案 不移动任何一路，但仍要求六路原版结构全部成立。
     #
-    # 0x0B / 0x0E 仍然具有额外意义：历史鼠标点击穿透/释放 fallback 只对这两路做过实机闭环，
-    # 所以 test2 只扩大“布局读取”，不扩大那条输入行为补丁。
+    # 0x0B / 0x0E 仍然具有额外意义：既有鼠标点击穿透/释放 fallback 只对这两路做过实机闭环，
+    # 所以 验证流程 只扩大“布局读取”，不扩大那条输入行为补丁。
     # ---------------------------------------------------------------------------------------------
     event_slot_va = vtable_va + 0x24
     event_slot_file_offset = va_to_file_offset(event_slot_va, image_base, sections)
@@ -1089,10 +1079,10 @@ def verify_one(path: Path) -> list[str]:
 
 
     # ---------------------------------------------------------------------------------------------
-    # 历史 test6/test7 曾围绕三个菜单类的输入路径做过失败实验；layer1d 已彻底停止这些运行时修改。
+    # 历史 验证流程 曾围绕三个菜单类的输入路径做过失败实验；辅助GUI方案 已彻底停止这些运行时修改。
     # 但这些失败实验留下了很有价值的类结构证据，所以兼容工具继续把三类的
     # constructor/vtable/+0x08/+0x24/+0x30/+0x58 全部闭合并输出。
-    # 目的正好相反：确认 layer1d 只需要 Hook +0x08 Draw，+0x30/self+0xA8 仍可完全交还原版。
+    # 目的正好相反：确认 辅助GUI方案 只需要 Hook +0x08 Draw，+0x30/self+0xA8 仍可完全交还原版。
     # ---------------------------------------------------------------------------------------------
     modal_classes: dict[int, dict[str, int]] = {}
     modal_classes[0x0B] = verify_modal_menu_class(
@@ -1136,9 +1126,9 @@ def verify_one(path: Path) -> list[str]:
     )
 
     # ---------------------------------------------------------------------------------------------
-    # layer1d：UI manager 顶层 Draw 架构。
+    # 辅助GUI方案：UI manager 顶层 Draw 架构。
     #
-    # 这里只读验证，不打补丁。运行时 layer1d 会 Hook 包装函数内部那条 manager Draw CALL，原因是同一个包装函数
+    # 这里只读验证，不打补丁。运行时 辅助GUI方案 会 Hook 包装函数内部那条 manager Draw CALL，原因是同一个包装函数
     # 在游戏里存在多个外层调用者；Hook 包装函数内部可以天然覆盖它们，而无需对场景 callsite 逐个猜测。
     # ---------------------------------------------------------------------------------------------
     draw_wrapper_off = require_unique(
@@ -1156,7 +1146,7 @@ def verify_one(path: Path) -> list[str]:
     manager_draw_file = va_to_file_offset(manager_draw_va, image_base, sections)
     manager_code = data[manager_draw_file : manager_draw_file + 72]
     if len(manager_code) < 55:
-        raise RuntimeError("UI manager Draw 函数长度不足，无法验证 layer1d 顶层绘制结构。")
+        raise RuntimeError("UI manager Draw 函数长度不足，无法验证 辅助GUI方案 顶层绘制结构。")
 
     # 与 ASI 安装时相同的关键结构：先读取 HUD global、执行 HUD 特殊 pass，再开始 manager+0x1C 顶层链，
     # 每个顶层对象最终通过 vtable+0x08 Draw。
@@ -1192,7 +1182,7 @@ def verify_one(path: Path) -> list[str]:
     va_to_file_offset(main_hud_draw_va, image_base, sections)
 
     # ---------------------------------------------------------------------------------------------
-    # layer1d：顶层输入 root picker。运行时只 Hook 这一条 rel32 CALL，不直接写 manager+0x40。
+    # 辅助GUI方案：顶层输入 root picker。运行时只 Hook 这一条 rel32 CALL，不直接写 manager+0x40。
     # ---------------------------------------------------------------------------------------------
     input_pick_off = require_unique(
         "顶层输入 root picker callsite",
@@ -1205,7 +1195,7 @@ def verify_one(path: Path) -> list[str]:
     input_picker_file = va_to_file_offset(input_picker_va, image_base, sections)
     input_picker_code = data[input_picker_file : input_picker_file + 0xB3]
     if len(input_picker_code) < 0xB3:
-        raise RuntimeError("顶层 root picker 长度不足，无法验证 layer1d 输入结构。")
+        raise RuntimeError("顶层 root picker 长度不足，无法验证 辅助GUI方案 输入结构。")
 
     if not (
         input_picker_code[0:3] == bytes.fromhex("53 8B D9")
@@ -1250,47 +1240,47 @@ def verify_one(path: Path) -> list[str]:
         f"Strategy enter callsite VA=0x{strategy_enter_call_va:08X} -> 0x{strategy_enter_va:08X}",
         f"Strategy exit callsite VA=0x{strategy_exit_call_va:08X} -> 0x{strategy_exit_va:08X}",
         f"Strategy enter 内部显示模式 CALL -> 0x{strategy_display_target:08X}（与原版显示模式函数交叉一致）",
-        f"Strategy enter force 参数机器码=6A {strategy_enter_head[4]:02X}（test14/test15 进入游戏时临时改为 01 后恢复）",
+        f"Strategy enter force 参数机器码=6A {strategy_enter_head[4]:02X}（验证流程 进入游戏时临时改为 01 后恢复）",
         "原版显示模式函数已确认存在：同 mode ID 且 force=0 时早退；进入/退出都需要在对应时刻强制重应用",
         f"原版前端 mode 4 应用 VA=0x{frontend_mode4_va:08X} -> 0x{frontend_mode4_target:08X}（与显示模式函数交叉一致）",
         f"当前内部/扩展分支={hidden_width}x{hidden_height}",
         f"第一处分辨率映射 VA=0x{image_base + text_rva + map1_off:08X}",
         f"第二处分辨率映射 VA=0x{image_base + text_rva + map2_off:08X}",
         f"JMM 布局选择器 VA=0x{image_base + text_rva + jmm_off:08X}",
-        f"GUI/JMM 分辨率应用包装 VA=0x{jmm_apply_va:08X} -> JMM/UI 广播 0x{jmm_load_va:08X}（test10 Steam delayed JMM 上下文）",
+        f"GUI/JMM 分辨率应用包装 VA=0x{jmm_apply_va:08X} -> JMM/UI 广播 0x{jmm_load_va:08X}（验证流程 Steam delayed JMM 上下文）",
         f"JMM 资源路径构造 VA=0x{jmm_path_builder_va:08X} -> 资源根缓冲区 0x{resource_root_va:08X}",
         f"ResJM.Lib CreateFileA 低层 CALL VA=0x{resjm_call_va:08X}（clean1 语言兜底依赖；IAT 0x005511E4 保持原样）",
         f"世界鼠标按下 callsite VA=0x{world_press_va:08X} -> 0x{world_press_target_va:08X}（仅点击穿透保护，不参与 gameplay gate）",
         f"全局鼠标释放 callsite VA=0x{global_release_va:08X} -> 0x{global_release_target_va:08X}（顶部窗口 fallback）",
-        f"键盘快捷键 callsite VA=0x{keyboard_call_va:08X} -> 0x{keyboard_target_va:08X}（layer1d 保持原版，不 Hook）",
-        f"通用 child hit-test VA=0x{child_hittest_va:08X}，GetCursorPos callsite=0x{child_cursor_call_va:08X} -> IAT 0x{child_cursor_iat:08X}（仅作原版输入证据；layer1d 不改写）",
-        f"layer1d Draw 包装 VA=0x{draw_wrapper_va:08X}，UI manager=0x{ui_manager_va:08X} -> Draw 0x{manager_draw_va:08X}",
-        f"UI manager HUD 特殊 pass=0x{hud_special_pass_va:08X}（layer1d 只验证，不 Hook/不重放）",
-        f"layer1d 顶层输入 picker callsite=0x{input_pick_call_va:08X} -> 0x{input_picker_va:08X}",
+        f"键盘快捷键 callsite VA=0x{keyboard_call_va:08X} -> 0x{keyboard_target_va:08X}（辅助GUI方案 保持原版，不 Hook）",
+        f"通用 child hit-test VA=0x{child_hittest_va:08X}，GetCursorPos callsite=0x{child_cursor_call_va:08X} -> IAT 0x{child_cursor_iat:08X}（仅作原版输入证据；辅助GUI方案 不改写）",
+        f"辅助GUI方案 Draw 包装 VA=0x{draw_wrapper_va:08X}，UI manager=0x{ui_manager_va:08X} -> Draw 0x{manager_draw_va:08X}",
+        f"UI manager HUD 特殊 pass=0x{hud_special_pass_va:08X}（辅助GUI方案 只验证，不 Hook/不重放）",
+        f"辅助GUI方案 顶层输入 picker callsite=0x{input_pick_call_va:08X} -> 0x{input_picker_va:08X}",
         f"顶层输入原版矩形函数=0x{input_hit_rect_va:08X}，JMM 属性读取=0x{input_property_get_va:08X}（key 0x0D）",
         f"主 HUD vtable+0x08 Draw=0x{main_hud_draw_va:08X}",
         f"主 HUD 根类构造 VA=0x{hud_va:08X}",
         f"主 HUD vtable=0x{vtable_va:08X}",
-        f"vtable+0x00 -> 0x{destructor_slot_target:08X}（test15 仅清理 HUD 实例缓存，不参与 profile 生命周期）",
+        f"vtable+0x00 -> 0x{destructor_slot_target:08X}（验证流程 仅清理 HUD 实例缓存，不参与 profile 生命周期）",
         f"vtable+0x24 -> 0x{event_slot_target:08X}（顶部按钮 0x09~0x0E 六条原版窗口开关已验证）",
-        f"乾坤袋/物品辅助面板构造写槽 VA=0x{bag_aux_ctor_va:08X}：vtable 0x{BAG_AUX_PANEL_VTABLE:08X} -> global slot 0x{BAG_AUX_PANEL_SLOT:08X}（只保留逆向证据；layer1d 不手工移动）",
+        f"乾坤袋/物品辅助面板构造写槽 VA=0x{bag_aux_ctor_va:08X}：vtable 0x{BAG_AUX_PANEL_VTABLE:08X} -> global slot 0x{BAG_AUX_PANEL_SLOT:08X}（只保留逆向证据；辅助GUI方案 不手工移动）",
         "六路 target global=" + ", ".join(
             f"0x{control_id:02X}:0x{target_globals[control_id]:08X}" for control_id in branch_ids
         ),
         f"六路 active query=0x{active_query_va:08X}，最终均调用各目标对象 vtable+0x1C",
         f"vtable+0x58 -> 0x{layout_slot_target:08X}（已和通用布局函数交叉验证）",
-        "layer1d 三菜单类证据=" + "; ".join(
+        "辅助GUI方案 三菜单类证据=" + "; ".join(
             f"ID0x{cid:02X}: ctor=0x{info['ctor']:08X}, vtable=0x{info['vtable']:08X}, "
             f"+0x08=0x{info['draw']:08X}, +0x24=0x{info['event']:08X}, +0x30=0x{info['hit']:08X}, +0x58=0x{info['layout']:08X}"
             for cid, info in modal_classes.items()
         ),
-        "layer1d 运行边界：只可能 Hook 三菜单 vtable+0x08 Draw；+0x30/self+0xA8/GetCursorPos/快捷键全部保持原版",
+        "辅助GUI方案 运行边界：只可能 Hook 三菜单 vtable+0x08 Draw；+0x30/self+0xA8/GetCursorPos/快捷键全部保持原版",
     ]
 
 
 
 # -------------------------------------------------------------------------------------------------
-# 5. Steam ComeOn.dll 专项验证（v0.2.1 继承 v0.2.0 正式封版结构）
+# 5. Steam ComeOn.dll 专项验证（当前实现 继承 当前实现 正式封版结构）
 # -------------------------------------------------------------------------------------------------
 
 def rva_to_file_offset(
@@ -1317,7 +1307,7 @@ def require_bytes_at_rva(
     """
     要求某个固定 RVA 的文件字节完全匹配。
 
-    ComeOn.dll 本轮不是靠模糊猜测 patch 任意相似代码，而是建立在已经反汇编闭合的 Steam 2.01 DLL 上。
+    ComeOn.dll 不靠模糊猜测 patch 任意相似代码，而是建立在已经反汇编闭合的 Steam 2.01 DLL 上。
     因此对 callback/初始化片段使用固定 RVA + 精确字节，比只搜一个很短的 opcode 串更能防止误适配。
     """
 
@@ -1331,7 +1321,7 @@ def require_bytes_at_rva(
 
 def verify_steam_dll(path: Path) -> list[str]:
     """
-    验证 Steam ComeOn.dll 中 v0.2.1 继续依赖、并由 v0.2.0 正式封版的 CreateWindowExA callback 结构。
+    验证 Steam ComeOn.dll 中 当前实现 继续依赖、并由 当前实现 正式封版的 CreateWindowExA callback 结构。
 
     本函数不要求整个 DLL SHA-256 永远固定；SHA 只作为报告信息。
     当前兼容门槛是：CreateFileA 多语言 Hook、CreateWindowExA callback、对 lpClassName 的直接字符串解引用，
@@ -1359,7 +1349,7 @@ def verify_steam_dll(path: Path) -> list[str]:
         raise RuntimeError('Steam ComeOn.dll 缺少 CreateWindowExA callback 使用的 "EDIT" 类名。')
 
     # RVA 0x54E8：先安装游戏 CreateFileA Hook（长度 7，callback RVA 0x3E30）。
-    # 这部分必须继续存在，因为 v0.2.0 明确保留官方多语言逻辑。
+    # 这部分必须继续存在，因为 当前实现 明确保留官方多语言逻辑。
     require_bytes_at_rva(
         data,
         sections,
@@ -1390,7 +1380,7 @@ def verify_steam_dll(path: Path) -> list[str]:
         "CreateWindowExA callback 函数头",
     )
 
-    # callback post-create 起点是 test3 的真正补丁位置。
+    # callback post-create 起点是 验证流程 的真正补丁位置。
     # 这里先从 context+0x2C 取 lpClassName，只检查 NULL，随后就直接把它当 char* 与 "EDIT" 比较。
     # Win32 允许 lpClassName 是 MAKEINTATOM，因此这条原始路径存在把低地址 atom 当指针解引用的风险。
     require_bytes_at_rva(
@@ -1403,8 +1393,8 @@ def verify_steam_dll(path: Path) -> list[str]:
         "CreateWindowExA callback lpClassName 直接字符串解析入口",
     )
 
-    # v0.2.0 会在运行时把 RVA 0x2841 的前 6 字节改跳 ASI guard；磁盘原文件必须保持原始结构。
-    # 后面的 EDIT 子类化则必须继续存在，因为正式版不再像 test2 那样禁用官方 WndProc。
+    # 当前实现 会在运行时把 RVA 0x2841 的前 6 字节改跳 ASI guard；磁盘原文件必须保持原始结构。
+    # 后面的 EDIT 子类化则必须继续存在，因为正式版不再像 验证流程 那样禁用官方 WndProc。
     require_bytes_at_rva(
         data,
         sections,
@@ -1433,8 +1423,8 @@ def verify_steam_dll(path: Path) -> list[str]:
         "USER32!CreateWindowExA 全局 Hook 安装块仍存在：callback RVA=0x2830, overwrite=12",
         'CreateWindowExA callback 的 EDIT -> SetWindowLongA(GWL_WNDPROC) 子类化链已确认',
         "RVA 0x2841 原始 lpClassName 路径会在只检查 NULL 后直接解引用 class 参数",
-        "RVA 0x2889 原始 EDIT WndProc 子类化块仍完整存在（layer1d 继续保留）",
-        "layer1d 继续沿用 v0.2.1：0x2841 前置 class-atom guard，同时保留普通字符串类名与官方 EDIT 处理",
+        "RVA 0x2889 原始 EDIT WndProc 子类化块仍完整存在（辅助GUI方案 继续保留）",
+        "辅助GUI方案 继续沿用 当前实现：0x2841 前置 class-atom guard，同时保留普通字符串类名与官方 EDIT 处理",
     ]
 
 

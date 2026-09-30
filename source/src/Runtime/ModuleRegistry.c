@@ -1,13 +1,15 @@
 #include "ModuleRegistry.h"
 #include "../Modules/DisplayFix/DisplayFixModule.h"
+#include "../Modules/QOL/QOLModule.h"
 
 /*
- * 官方模块表是“一个 ASI、内部多模块”的核心。
- * v0.1-dev1 只有 DisplayFix；下一阶段加入手柄时，只需要新增 ControllerModule 并在这里登记，
- * 不需要增加第二个 ASI、第二套游戏识别、第二个 DllMain，也不需要重新设计加载顺序。
+ * 模块表是“一个 ASI、内部多模块”的统一入口。
+ * 每个功能模块只负责自己的初始化函数，游戏识别、加载顺序和唯一 DllMain 都由 Runtime 统一管理。
+ * 这样新增功能时不会复制启动框架，也不会让多个模块分别判断当前游戏版本。
  */
 static const ModuleDescriptor MODULES[] = {
-    { RUNTIME_MODULE_DISPLAY_FIX, "DisplayFix", DisplayFixModule_Initialize }
+    { RUNTIME_MODULE_DISPLAY_FIX, "DisplayFix", DisplayFixModule_Initialize },
+    { RUNTIME_MODULE_QOL, "QOL", QOLModule_Initialize }
 };
 
 /*
@@ -31,7 +33,7 @@ int ModuleRegistry_InitializeAll(const struct RuntimeContext* runtime)
 
         /*
          * 表项自己如果写坏（空函数、非法 ID），只把这一项视为失败并继续后面的模块。
-         * 统一 ASI 的目标就是“一个功能坏了不要拖死所有其它功能”，所以这里不能再沿用旧式全局早退。
+         * 统一 ASI 的目标就是“一个功能坏了不要拖死所有其它功能”，所以这里不能因为一个模块失败就全局早退。
          */
         if (module->initialize &&
             module->module_id > RUNTIME_MODULE_NONE &&

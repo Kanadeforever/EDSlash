@@ -1,5 +1,6 @@
 #include "Runtime.h"
 #include "ModuleRegistry.h"
+#include "Win32Bridge.h"
 
 /* 全工程只存在这一份 RuntimeContext。 */
 static RuntimeContext g_runtime;
@@ -27,6 +28,12 @@ int Runtime_Initialize(void* self_module)
 
     g_runtime.self_module = self_module;
     g_runtime.profile = profile;
+
+    /*
+     * Runtime 的 Win32 桥只依赖已经识别出的 Profile。
+     * 桥初始化失败不会阻止不依赖它的模块继续启动；需要系统 API 的模块会自行检查是否可用。
+     */
+    (void)RuntimeWin32_Initialize(profile);
 
     /*
      * 官方模块全部通过同一个 ModuleRegistry 启动。

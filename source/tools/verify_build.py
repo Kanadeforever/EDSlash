@@ -312,6 +312,7 @@ def compare_required_ini_interface(
 
 def main() -> None:
     """命令行入口：接收最终 ASI 路径，然后验证 ASI 与两份 INI。"""
+    sys.stdout.reconfigure(encoding="utf-8")
     if len(sys.argv) != 2:
         fail("用法：python tools\\verify_build.py release\\BladeSwordQOL.asi")
 
@@ -325,17 +326,17 @@ def main() -> None:
     package_root = Path(__file__).resolve().parents[2]
 
     release_ini_path = package_root / "release" / "BladeSwordQOL.ini"
-    template_ini_path = source_root / "template" / "BladeSwordQOL.ini"
+    template_ini_path = source_root / "config" / "BladeSwordQOL.ini"
 
     # 第一部分只验证最终 ASI 本身。
     validate_asi(asi_path)
 
     # 第二部分只验证 release/template 两份 INI 的配置接口与值格式。
     release_ini = load_ini(release_ini_path, "release\\BladeSwordQOL.ini")
-    template_ini = load_ini(template_ini_path, "source\\template\\BladeSwordQOL.ini")
+    template_ini = load_ini(template_ini_path, "source\\config\\BladeSwordQOL.ini")
 
     validate_ini(release_ini, "release\\BladeSwordQOL.ini")
-    validate_ini(template_ini, "source\\template\\BladeSwordQOL.ini")
+    validate_ini(template_ini, "source\\config\\BladeSwordQOL.ini")
     compare_required_ini_interface(release_ini, template_ini)
 
     print("[成功] BladeSwordQOL 构建产物验证全部通过")

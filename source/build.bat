@@ -9,12 +9,12 @@ REM 包根固定为 docs\source\release 三目录。
 REM 本脚本直接位于 source\，因此项目包根就是 source 的上一级目录。  
 set "PROJECT_DIR=%~dp0"
 for %%I in ("%~dp0..") do set "PACKAGE_ROOT=%%~fI\"
-set "BUILD_DIR=%PROJECT_DIR%_build"
+set "BUILD_DIR=%PROJECT_DIR%.build\Main"
 set "RELEASE_DIR=%PACKAGE_ROOT%release"
 set "LLVM_BIN="
 
-if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
-mkdir "%BUILD_DIR%"
+REM 主目标只清理自己的子目录，保留独立手柄的构建缓存。  
+if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 REM release 由主插件和独立 Controller 共用，不得删除其它目标的产物。  
 if not exist "%RELEASE_DIR%" mkdir "%RELEASE_DIR%"
 
@@ -67,6 +67,14 @@ echo [4/11] 编译本体 Profile 后端...
 echo [5/11] 编译外传 Profile 后端...  
 "%CLANG_EXE%" -target i686-pc-windows-msvc -finput-charset=UTF-8 -fexec-charset=UTF-8 -ffreestanding -fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -Isrc -c src\Modules\DisplayFix\Backend_WaiZhuan.c -o "%BUILD_DIR%\Backend_WaiZhuan.obj" || goto :build_failed
 
+REM 编译已在模块表登记的 QoL 以及它依赖的系统桥和入口跳转工具。  
+"%CLANG_EXE%" -target i686-pc-windows-msvc -finput-charset=UTF-8 -fexec-charset=UTF-8 -ffreestanding -fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -Isrc -c src\Runtime\Win32Bridge.c -o "%BUILD_DIR%\Win32Bridge.obj" || goto :build_failed
+"%CLANG_EXE%" -target i686-pc-windows-msvc -finput-charset=UTF-8 -fexec-charset=UTF-8 -ffreestanding -fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -Isrc -c src\Runtime\X86Detour.c -o "%BUILD_DIR%\X86Detour.obj" || goto :build_failed
+"%CLANG_EXE%" -target i686-pc-windows-msvc -finput-charset=UTF-8 -fexec-charset=UTF-8 -ffreestanding -fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -Isrc -c src\Modules\QOL\QOLModule.c -o "%BUILD_DIR%\QOLModule.obj" || goto :build_failed
+"%CLANG_EXE%" -target i686-pc-windows-msvc -finput-charset=UTF-8 -fexec-charset=UTF-8 -ffreestanding -fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -Isrc -c src\Modules\QOL\GroundItems.c -o "%BUILD_DIR%\GroundItems.obj" || goto :build_failed
+"%CLANG_EXE%" -target i686-pc-windows-msvc -finput-charset=UTF-8 -fexec-charset=UTF-8 -ffreestanding -fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -Isrc -c src\Modules\QOL\ItemClassifier.c -o "%BUILD_DIR%\ItemClassifier.obj" || goto :build_failed
+"%CLANG_EXE%" -target i686-pc-windows-msvc -finput-charset=UTF-8 -fexec-charset=UTF-8 -ffreestanding -fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -Isrc -c src\Modules\QOL\AutoPickup.c -o "%BUILD_DIR%\AutoPickup.obj" || goto :build_failed
+
 echo [6/11] 链接单一 BladeSwordQOL.asi...  
 "%LLD_LINK_EXE%" /dll /entry:DllMain@12 /nodefaultlib /machine:x86 /subsystem:windows /dynamicbase:no /nxcompat /implib:"%BUILD_DIR%\BladeSwordQOL.lib" /out:"%RELEASE_DIR%\BladeSwordQOL.asi" ^
   "%BUILD_DIR%\Main.obj" ^
@@ -77,10 +85,17 @@ echo [6/11] 链接单一 BladeSwordQOL.asi...
   "%BUILD_DIR%\Runtime.obj" ^
   "%BUILD_DIR%\DisplayFixModule.obj" ^
   "%BUILD_DIR%\Backend_DaoJian.obj" ^
-  "%BUILD_DIR%\Backend_WaiZhuan.obj" || goto :build_failed
+  "%BUILD_DIR%\Backend_WaiZhuan.obj" ^
+  "%BUILD_DIR%\Win32Bridge.obj" ^
+  "%BUILD_DIR%\X86Detour.obj" ^
+  "%BUILD_DIR%\QOLModule.obj" ^
+  "%BUILD_DIR%\GroundItems.obj" ^
+  "%BUILD_DIR%\ItemClassifier.obj" ^
+  "%BUILD_DIR%\AutoPickup.obj" || goto :build_failed
 
 echo [7/11] 复制统一配置...  
-copy /y template\BladeSwordQOL.ini "%RELEASE_DIR%\BladeSwordQOL.ini" >nul || goto :build_failed
+REM 已有配置属于玩家，构建只为缺少配置的干净目录生成默认值。  
+if not exist "%RELEASE_DIR%\BladeSwordQOL.ini" copy /y config\BladeSwordQOL.ini "%RELEASE_DIR%\BladeSwordQOL.ini" >nul || goto :build_failed
 
 echo [8/11] 运行结构与防回归验证...  
 "%PYTHON_EXE%" %PYTHON_ARGS% tools\verify_build.py "%RELEASE_DIR%\BladeSwordQOL.asi" || goto :build_failed
@@ -95,30 +110,30 @@ rmdir /s /q "%BUILD_DIR%"
 echo [11/11] 完成。  
 echo [成功] 单一 ASI 已生成：%RELEASE_DIR%\BladeSwordQOL.asi  
 echo [成功] 本体/外传共用：%RELEASE_DIR%\BladeSwordQOL.ini  
-pause
+if /i not "%~1"=="--no-pause" pause
 exit /b 0
 
 :llvm_missing
 echo [失败] 找不到可用的 clang.exe / lld-link.exe。  
-pause
+if /i not "%~1"=="--no-pause" pause
 exit /b 1
 
 :llvm_wrong_arch
 echo [失败] 找到的 LLVM 不能在当前 Windows 宿主运行。  
-pause
+if /i not "%~1"=="--no-pause" pause
 exit /b 1
 
 :python_missing
 echo [失败] 找不到 Python 3。  
-pause
+if /i not "%~1"=="--no-pause" pause
 exit /b 1
 
 :release_invalid
 echo [失败] release 缺少主插件 BladeSwordQOL.asi 或 BladeSwordQOL.ini。  
-pause
+if /i not "%~1"=="--no-pause" pause
 exit /b 1
 
 :build_failed
-echo [失败] 构建或验证失败；保留 _build 便于诊断。  
-pause
+echo [失败] 构建或验证失败；保留 .build\Main 便于诊断。  
+if /i not "%~1"=="--no-pause" pause
 exit /b 1
