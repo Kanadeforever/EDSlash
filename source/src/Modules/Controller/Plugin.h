@@ -16,6 +16,12 @@ typedef struct {
     uintptr_t inspect_gate, relation, template_value, hover_set, get_jm;
     uintptr_t quick_use, left_set, projection, world_to_grid;
     uintptr_t ui_property;
+    uintptr_t skill_groups, methods, game_tick, combo_timeout;
+    uintptr_t lookup, skill_eligibility, role_method, method_usable, method_distance;
+    uintptr_t facing_point, facing_direction, direction8, history_call, history_record;
+    uintptr_t retry_call;
+    uintptr_t end_call,end_record;
+    unsigned pending_offset;
     unsigned invalid_offset, interact_offset, active_offset;
 } Profile;
 typedef struct { uintptr_t address; unsigned char bytes[12]; } Signature;
@@ -45,6 +51,8 @@ void Game_Release(void);
 void Game_Keyboard(BYTE *keys);
 SHORT Game_Async(int key, SHORT native);
 void Game_Diagnose(void);
+void *Game_Resolve(uint32_t handle);
+bool Game_Enemy(void *role, void *candidate);
 
 /* GCC 的 thiscall 会把首参数放 ECX，其余压栈，并由游戏函数清栈。
    这些类型依据两份 EXE 的 ret 4/ret 0x10 等真实指令核对，不使用逻辑伪原型。 */

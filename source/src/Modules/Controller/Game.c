@@ -1,8 +1,9 @@
 #include "Plugin.h"
+#include "Combat.h"
 #include <math.h>
 #include <stdio.h>
 
-static uint32_t movement_owner, lock_handle, last_attack, last_action_log;
+static uint32_t movement_owner;
 static void *owned_world;
 static bool guard_owned;
 static int previous_combo = -1;
@@ -120,7 +121,7 @@ void Game_Release(void)
     }
     if (guard_owned && world() == owned_world && role_valid(player()) && !Input_PhysicalDown(VK_MENU))
         submit(16, 0, 0, 0);
-    movement_owner = lock_handle = 0;
+    movement_owner = 0;
     move_goal_valid=false;
     owned_world = NULL; guard_owned = false; previous_combo = -1;
 }
@@ -137,6 +138,9 @@ static bool enemy(void *me, void *candidate)
     typedef int (__cdecl *Relation)(void *, void *);
     return ((Relation)g_profile->relation)(me, candidate) != 0;
 }
+
+void *Game_Resolve(uint32_t handle) { return resolve(handle); }
+bool Game_Enemy(void *role,void *candidate) { return enemy(role,candidate); }
 
 static void *choose_target(void *me, bool inspect)
 {
@@ -195,37 +199,6 @@ static void inspect_action(void *me)
     Log_Write("[调查] 未找到可提交的目标：角色链=%u，通过交互资格=%u，附近范围=192 世界单位。",scan_count,eligible_count);
 }
 
-static void attack(void *me, bool right)
-{
-    void *m = mouse(), *hud = global(g_profile->skill_global);
-    if (!Memory_Readable(m, 0x80) || !Memory_Readable(hud, 0xC20)) return;
-    /* 首版只在原生动作允许接收输入时提交，保留原版 busy gate，不强行取消当前 Method。 */
-    if (Read32(me, g_profile->active_offset) || g_input.now - last_attack < 100) return;
-    void *target = resolve(lock_handle);
-    if (!enemy(me,target)) target = NULL;
-    int selector = ((This0)(right ? g_profile->right_get : g_profile->left_get))(hud);
-    if (selector < 0) return;
-    uint32_t saved_x = Read32(m,0x2C), saved_y = Read32(m,0x30);
-    uint32_t saved_role = Read32(m,0x3C), saved_static = Read32(m,0x40);
-    uint32_t saved_player = Read32(m,0x38);
-    float dx, dy;
-    Control_WorldDirection(facing_x, facing_y, &dx, &dy);
-    /* 无实体目标时让动作朝最后一次摇杆意图释放；清掉悬停兜底，避免 X/Y 误命中 NPC。 */
-    Write32(m,0x2C,(uint32_t)((int)Read32(me,0x2C)+(int)(dx*128.0f)));
-    Write32(m,0x30,(uint32_t)((int)Read32(me,0x30)+(int)(dy*128.0f)));
-    Write32(m,0x3C,(uint32_t)(uintptr_t)target); Write32(m,0x40,0);
-    Write32(m,0x38,(uint32_t)(uintptr_t)me);
-    ((This3)g_profile->skill_release)(m,selector,right ? 1 : 0,target);
-    Write32(m,0x2C,saved_x); Write32(m,0x30,saved_y);
-    Write32(m,0x3C,saved_role); Write32(m,0x40,saved_static);
-    Write32(m,0x38,saved_player);
-    last_attack = g_input.now;
-    if (g_input.now - last_action_log > 700) {
-        Log_Write("[动作] %s，选择=%d，目标=0x%08lx。",right ? "Y 右手" : "X 左手",selector,(unsigned long)lock_handle);
-        last_action_log = g_input.now;
-    }
-}
-
 static void shortcuts(void)
 {
     void *hud = global(g_profile->skill_global);
@@ -273,37 +246,30 @@ static void shortcuts(void)
 void Game_Update(void)
 {
     ++native_frames;
-    if (!Memory_Readable(world(),0x5C) || !Read32(world(),0x58)) { Game_Release();return; }
+    if (!Memory_Readable(world(),0x5C) || !Read32(world(),0x58)) { Game_Release();Combat_Reset();return; }
     uint32_t menu_buttons=KEY(PAD_UP)|KEY(PAD_DOWN)|KEY(PAD_LEFT)|KEY(PAD_RIGHT);
     if (g_intent.menu_toggle || (g_intent.layer==LAYER_GAME && (g_intent.pressed & menu_buttons))) {
         /* 菜单热键已注入但原版尚未处理的同一帧，也停止世界动作，避免打开菜单时多走一步。 */
         Game_Release(); return;
     }
     if (!g_profile || !g_input.connected || !g_input.focused || g_intent.layer==LAYER_NONE ||
-        g_intent.layer==LAYER_MOUSE || g_intent.layer==LAYER_MENU || Game_Menu()) { Game_Release(); return; }
+        g_intent.layer==LAYER_MOUSE || g_intent.layer==LAYER_MENU || Game_Menu()) { Game_Release();Combat_Suspend();return; }
     void *me=player();
-    if (!role_valid(me)) { Game_Release(); return; }
+    if (!role_valid(me)) { Game_Release();Combat_Reset();return; }
     if (owned_world && owned_world!=world()) Game_Release();
     if (g_intent.lx!=0 || g_intent.ly!=0) { facing_x=g_intent.lx; facing_y=g_intent.ly; }
     owned_world=world();
-    if (g_intent.layer==LAYER_GUARD) { guard_owned=true; return; }
     shortcuts();
-    if (Input_PhysicalDown(VK_LBUTTON)) {
-        /* 玩家真实鼠标正在操作时交回移动所有权，不在下一次松杆时取消鼠标导航。 */
-        movement_owner=0;move_goal_valid=false;return;
-    }
     if (g_intent.layer==LAYER_GAME && (g_intent.pressed & KEY(PAD_A))) { inspect_action(me); return; }
+    void *candidate=choose_target(me,false);
+    Combat_Update(me,candidate ? Read32(candidate,0x14):0);
+    if (g_intent.layer==LAYER_GUARD) { guard_owned=true; return; }
     bool attacking=g_intent.layer==LAYER_GAME && (g_intent.held & (KEY(PAD_X)|KEY(PAD_Y)))!=0;
     bool direction=g_intent.lx!=0 || g_intent.ly!=0;
-    void *locked=resolve(lock_handle);
-    if (!attacking || direction || !enemy(me,locked)) {
-        locked=choose_target(me,false); lock_handle=locked ? Read32(locked,0x14):0;
-    }
     if (attacking) {
-        /* X/Y 拥有动作，不再让移动层在同一帧继续推目标；原版技能追近仍可自行移动。 */
+        /* 战斗模块维护自己的目标、选择解析和重试；普通手柄不再借用鼠标释放入口。 */
         movement_owner=0;
         move_goal_valid=false;
-        attack(me,(g_intent.held & KEY(PAD_Y))!=0);
     } else if (direction && !Read32(me,g_profile->active_offset)) {
         static DWORD last_move_log;
         int x,y;
@@ -355,6 +321,10 @@ void Game_Keyboard(BYTE *keys)
 
 SHORT Game_Async(int key, SHORT native)
 {
+    /* 普通手柄世界操作不接受真实鼠标按钮再次产生攻击/转向。鼠标模式保留原版。 */
+    if (g_input.connected && g_input.focused && g_intent.layer!=LAYER_NONE &&
+        g_intent.layer!=LAYER_MOUSE &&
+        (key==VK_LBUTTON || key==VK_RBUTTON || key==VK_MBUTTON)) return 0;
     /* 原版防御直接读异步 Alt，单改 GetKeyboardState 无效。仅在本游戏线程叠加，不改系统键盘。 */
     if (g_input.connected && g_input.focused && g_intent.layer==LAYER_GUARD && key==VK_MENU)
         return (SHORT)(native | 0x8000);

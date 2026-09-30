@@ -9,6 +9,8 @@ import sys
 # 每段都从已核对的函数入口解码；不能从任意地址前退几字节猜指令边界。
 # 最后两个可选值用于只保留函数内的一段，但解码依然从真正入口开始。
 REGIONS = {
+    '技能按住属性派生': [(0x4D6180, 0x63), (0x4EB5E0, 0x63)],
+    '活动动作停止请求消费': [(0x4697F0, 0x140), (0x477450, 0x140)],
     '输入帧的原版分发顺序': [(0x405FB0, 0x261), (0x40CEC0, 0x261)],
     '每帧重试历史滚屏及防御': [(0x4748C0, 0x705), (0x483140, 0x705)],
     '技能输入总入口': [(0x4752C0, 0x32F), (0x483B40, 0x32F)],
@@ -20,6 +22,14 @@ REGIONS = {
     '点到朝向业务': [(0x429D60, 0x20), (0x432D60, 0x20)],
     '动作历史回写': [(0x475070, 0x7F), (0x4838F0, 0x7F)],
     '运行时回写调用边界': [(0x4693A0, 0x3F8, 0x469751), (0x477000, 0x3F8, 0x4773B1)],
+}
+
+# 下列不是函数入口，而是从实际控制流核对的完整基本块；每段必须完整解码。
+BLOCKS = {
+    '右键松开生成原始动作十五包': [(0x41E410, 0x53), (0x426A55, 0x53)],
+    '动作十五设置停止标记': [(0x41C3AA, 0x31), (0x42492A, 0x2D)],
+    '普通世界主按钮松开': [(0x4A1CA0, 3), (0x4BB8B0, 3)],
+    '普通世界次按钮松开': [(0x4744A0, 0xD), (0x482D20, 0xD)],
 }
 
 # 这些是已定位到真实指令边界的全局门写入。自动续段期间的关闭不能被新历史层忽略。
@@ -60,7 +70,7 @@ def main():
         binary = pefile.PE(data=data)
         base = binary.OPTIONAL_HEADER.ImageBase
         lines.extend([f'## {profile["name"]}', f'SHA-256：{digest}', ''])
-        for label, pair in REGIONS.items():
+        for label, pair in (REGIONS | BLOCKS).items():
             region = pair[index]
             start, size = region[:2]
             display_from = region[2] if len(region) > 2 else start
@@ -85,7 +95,7 @@ def main():
             ins = next(engine.disasm(actual, address))
             lines.append(f'{address:08X}  {actual.hex(" "):<30}  {ins.mnemonic} {ins.op_str}')
         lines.append('')
-        print(f'{profile["name"]}：散列通过，已完整解码 {len(REGIONS)} 组证据。')
+        print(f'{profile["name"]}：散列通过，已完整解码 {len(REGIONS)} 组函数范围与 {len(BLOCKS)} 组基本块。')
     # 全部读取和校验成功后才写结果，避免导出半份单版本证据。
     args.output.write_bytes(('\r\n'.join(lines).rstrip() + '\r\n').encode('utf-8'))
     print(f'已保存：{args.output}')

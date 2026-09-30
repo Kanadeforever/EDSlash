@@ -1,5 +1,9 @@
 # 自定义
 release/
+AGENTS.md
+.cc-history
+参考资料/
+pyghidra_mcp_projects/
 __pycache__/
 
 # Prerequisites

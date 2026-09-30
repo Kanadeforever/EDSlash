@@ -10,7 +10,7 @@ int DisplayFixWaiZhuan_Initialize(void* module);
 static int claim_display_fix_shared_hooks(void)
 {
     /*
-     * v0.1-dev1 先把 DisplayFix 已经实际占用的公共入口登记为“DisplayFix 唯一提供者”。
+     * DisplayFix 把已经实际占用的公共入口登记为唯一提供者，避免其它模块重复安装同一物理 Hook。
      * 下一阶段手柄模块如果需要 Strategy/UI Draw 等信息，应订阅 EventBus，而不能再 Claim 同一个物理入口。
      *
      * 这里特别注意“部分声明成功以后，后一个声明失败”的情况：

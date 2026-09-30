@@ -80,5 +80,17 @@ bool Profile_Verify(void)
     int32_t offset;
     if (!Memory_Readable(call, 5) || call[0] != 0xE8) return false;
     memcpy(&offset, call + 1, 4);
-    return (uintptr_t)(call + 5 + offset) == g_profile->resolver;
+    if ((uintptr_t)(call+5+offset)!=g_profile->resolver) return false;
+    call=(const BYTE *)g_profile->history_call;
+    if (!Memory_Readable(call,5) || call[0]!=0xE8) return false;
+    memcpy(&offset,call+1,4);
+    if ((uintptr_t)(call+5+offset)!=g_profile->history_record) return false;
+    call=(const BYTE *)g_profile->retry_call;
+    if (!Memory_Readable(call,5) || call[0]!=0xE8) return false;
+    memcpy(&offset,call+1,4);
+    if ((uintptr_t)(call+5+offset)!=g_profile->skill_release) return false;
+    call=(const BYTE *)g_profile->end_call;
+    if (!Memory_Readable(call,5) || call[0]!=0xE8) return false;
+    memcpy(&offset,call+1,4);
+    return (uintptr_t)(call+5+offset)==g_profile->end_record;
 }

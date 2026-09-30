@@ -4176,9 +4176,9 @@ static void layer_log_chain_relation_once(LPVOID manager, LPVOID hud, LayerTarge
     append_int(line, (DWORD)sizeof(line), hud_index);
 
     if (target_index < hud_index) {
-        str_append(line, (DWORD)sizeof(line), " 关系=菜单在HUD之前；layer1d会在HUD之后延迟绘制该菜单");
+        str_append(line, (DWORD)sizeof(line), " 关系=菜单在HUD之前；会在HUD之后延迟绘制该菜单");
     } else if (target_index > hud_index) {
-        str_append(line, (DWORD)sizeof(line), " 关系=菜单已在HUD之后；layer1d不需要调整该菜单");
+        str_append(line, (DWORD)sizeof(line), " 关系=菜单已在HUD之后；不需要调整该菜单");
     } else {
         str_append(line, (DWORD)sizeof(line), " 关系=异常同索引；本帧不会据此修改任何输入状态");
     }
@@ -5333,7 +5333,7 @@ static BOOL ensure_layer_target_draw_hook(LayerTargetHook* hook)
     draw_slot = vtable + 0x08u;
     wrapper = layer_wrapper_for_target(hook->control_id);
     if (!wrapper) {
-        layer_disable_target_hook(hook, "没有对应的 layer1d Draw wrapper");
+        layer_disable_target_hook(hook, "没有对应的延迟绘制 wrapper");
         return FALSE;
     }
 
@@ -6055,8 +6055,8 @@ static void initialize_display_fix(void)
     make_sibling_path(module_path, "BladeSwordQOL.ini", g_ini_path, (DWORD)sizeof(g_ini_path));
     make_sibling_path(module_path, "BladeSwordQOL.log", g_log_path, (DWORD)sizeof(g_log_path));
 
-    log_line("BladeSwordQOL v0.1-dev1");
-    log_line("[Runtime] 游戏Profile=刀剑封魔录 / DisplayFix后端=v0.3.4-stripe1等价迁移");
+    log_line("BladeSwordQOL");
+    log_line("[Runtime] 游戏Profile=刀剑封魔录 / DisplayFix后端已加载");
     log_line("架构：Win32/x86 ASI，基于内容签名的运行时补丁");
 
     if (!resolve_required_apis()) {
@@ -6249,7 +6249,7 @@ static void initialize_display_fix(void)
 
     if (hud_result) {
         if (config.center_main_hud) {
-            log_line("[成功] 底部主HUD视觉居中Hook已安装（v0.2-test1稳定算法）");
+            log_line("[成功] 底部主HUD视觉居中Hook已安装");
         } else {
             log_line("[信息] GUI.CenterMainHUD=0；已关闭视觉居中，但HUD诊断仍会安装");
         }
@@ -6283,13 +6283,13 @@ static void initialize_display_fix(void)
         log_line("[成功] HUD/UI共享输入与绘制基础Hook已安装；0x0B/0x0E按压动画使用原版root路径恢复");
 
         if (config.auxiliary_ui_above_hud) {
-            log_line("[成功] 辅助GUI layer1d 已安装：保留HUD后延迟绘制，并同步单次顶层输入root优先级");
-            log_line("[信息] layer1d 不再写 manager+0x18/+0x1C 或 object+0x08/+0x0C；layer1b 顶层链重排路线已撤销");
+            log_line("[成功] 辅助GUI绘制与输入优先级Hook已安装");
+            log_line("[信息] 辅助GUI不改顶层链和对象前后链，只调整当前绘制与输入root选择");
             log_line("[信息] 输入只在原版picker已经选中主HUD、且鼠标命中已延后绘制的活动菜单root时覆盖这一次返回值；manager+0x40仍由原版0x4B44D0更新");
             log_line("[信息] 当前菜单体系里与HUD相交的独立顶层辅助面板会动态安装Draw wrapper，并按原Draw链顺序在HUD后绘制");
             log_line("[信息] 独立辅助面板一旦在合法菜单上下文中确认，会做短生命周期跟踪；主窗口先关闭时，只要面板自身仍active且仍与HUD相交，就继续保持HUD上方");
             log_line("[信息] UI manager 的原版HUD特殊绘制pass保持原样，只执行一次；不Hook、不重放该pass");
-            log_line("[信息] layer1d 不改X/Y、child、active、GetCursorPos、self+0xA8、键盘快捷键或按钮业务；test1~test7位移/坐标补偿路线未继承");
+            log_line("[信息] 辅助GUI不改X/Y、child、active、GetCursorPos、self+0xA8、键盘快捷键或按钮业务");
         } else {
             log_line("[信息] GUI.AuxiliaryUIAboveHUD=0；辅助GUI保持原版绘制层/菜单root优先级");
             log_line("[信息] 0x0B/0x0E HUD按压root校正仍保留，因为它属于CenterMainHUD输入反馈兼容，不属于辅助GUI图层开关");
@@ -6297,7 +6297,7 @@ static void initialize_display_fix(void)
     } else if (!config.center_main_hud) {
         log_line("[信息] GUI.CenterMainHUD=0；主HUD未居中，因此不安装HUD/UI共享root与绘制Hook");
     } else if (hud_result) {
-        log_line("[警告] HUD/UI共享root与绘制Hook结构验证失败；0x0B/0x0E按压动画校正和辅助GUI layer1d均保持原版行为");
+        log_line("[警告] HUD/UI共享root与绘制Hook结构验证失败；按压动画校正和辅助GUI保持原版行为");
     }
 
 
@@ -6313,7 +6313,7 @@ static void initialize_display_fix(void)
 
     if (world_press_result) {
         log_line("[成功] 世界鼠标按下保护已安装，仅用于防止0x0B/0x0E点击穿透");
-        log_line("[信息] 原版0x4B44F0 UI按下分发保持完全不变（已移除test7回归）");
+        log_line("[信息] 原版0x4B44F0 UI按下分发保持完全不变");
     } else {
         log_line("[失败] 世界鼠标按下调用点验证失败；已跳过防点击穿透保护");
     }

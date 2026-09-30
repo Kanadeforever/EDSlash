@@ -69,6 +69,16 @@ def verify_baselines(data):
         call = pe.read(profile['addresses']['resolver_call'], 5)
         assert call[0] == 0xe8
         assert profile['addresses']['resolver_call']+5+struct.unpack_from('<i',call,1)[0] == profile['addresses']['resolver']
+        history_call=pe.read(profile['addresses']['history_call'],5)
+        assert history_call.hex()==profile['history_call_bytes']
+        assert history_call[0]==0xe8
+        assert profile['addresses']['history_call']+5+struct.unpack_from('<i',history_call,1)[0]==profile['addresses']['history_record']
+        retry_call=pe.read(profile['addresses']['retry_call'],5)
+        assert retry_call.hex()==profile['retry_call_bytes'] and retry_call[0]==0xe8
+        assert profile['addresses']['retry_call']+5+struct.unpack_from('<i',retry_call,1)[0]==profile['addresses']['skill_release']
+        end_call=pe.read(profile['addresses']['end_call'],5)
+        assert end_call.hex()==profile['end_call_bytes'] and end_call[0]==0xe8
+        assert profile['addresses']['end_call']+5+struct.unpack_from('<i',end_call,1)[0]==profile['addresses']['end_record']
         assert pe.read(profile['addresses']['projection'],0x45).hex() == profile['projection_bytes']
         assert pe.read(profile['addresses']['world_to_grid'],0x35).hex() == profile['grid_bytes']
         print(f'{profile["name"]}：散列、函数签名、输入调用点和坐标转换通过')
@@ -130,10 +140,10 @@ def main():
     subprocess.run([cc,*flags,'-I'+str(MODULE),str(MODULE/'Control.c'),str(Path(__file__).with_name('test_motion.c')),'-lm','-o',str(motion_test)],check=True,env=env)
     subprocess.run([str(motion_test)],check=True,env=env)
     game_test=BUILD/'test_game.exe'
-    subprocess.run([cc,*flags,'-I'+str(MODULE),str(MODULE/'Control.c'),str(MODULE/'Game.c'),str(Path(__file__).with_name('test_game.c')),'-luser32','-lm','-o',str(game_test)],check=True,env=env)
+    subprocess.run([cc,*flags,'-I'+str(MODULE),*[str(MODULE/name) for name in ['Control.c','Game.c','Combat.c','SkillResolver.c']],str(Path(__file__).with_name('test_game.c')),'-luser32','-lm','-o',str(game_test)],check=True,env=env)
     subprocess.run([str(game_test)],check=True,env=env)
     output=BUILD/'EDSlashController.asi'
-    units=['Main.c','Control.c','Profile.c','Input.c','Game.c']
+    units=['Main.c','Control.c','Profile.c','Input.c','Game.c','Combat.c','SkillResolver.c']
     subprocess.run([cc,*flags,'-shared',*[str(MODULE/name) for name in units],'-luser32','-ladvapi32','-lm','-o',str(output)],check=True,env=env)
     imports=verify_asi(output)
     archive=SOURCE/'vendor/SDL3/SDL3-3.4.14-win32-x86.zip'
@@ -150,11 +160,11 @@ def main():
     config=RELEASE/'EDSlashController.ini'
     if not config.exists(): shutil.copyfile(SOURCE/'template/EDSlashController.ini',config)
     # 许可证放中文名文档中，发布包必须连同 docs 一起携带。
-    report={'版本':'v0.1-dev3','双样本静态复核':samples_verified,'实机验收':{'本体':'待测试','外传':'待测试'},
+    report={'版本':'v0.1-dev5','双样本静态复核':samples_verified,'实机验收':{'本体':'待测试','外传':'待测试'},
             'ASI_SHA256':hashlib.sha256(output.read_bytes()).hexdigest(),'导入库':imports,
             'SDL_SHA256':hashlib.sha256(dll).hexdigest()}
     (RELEASE/'手柄构建验证.json').write_bytes((json.dumps(report,ensure_ascii=False,indent=2)+'\n').replace('\n','\r\n').encode('utf-8'))
-    print('独立手柄 v0.1-dev3 构建完成；两作连续转向与走跑手感仍待实机确认。')
+    print('独立手柄 v0.1-dev5 构建完成；两作交替攻击与连招衔接仍待实机确认。')
 
 
 if __name__=='__main__':

@@ -34,12 +34,30 @@
         "left_set": 4997760,
         "projection": 5182352,
         "world_to_grid": 4239584,
-        "ui_property": 5046800
+        "ui_property": 5046800,
+        "skill_groups": 5539576,
+        "methods": 5540944,
+        "game_tick": 5539260,
+        "combo_timeout": 5524896,
+        "lookup": 5055856,
+        "skill_eligibility": 4338128,
+        "role_method": 4328416,
+        "method_usable": 4342976,
+        "method_distance": 4341312,
+        "facing_point": 4365664,
+        "facing_direction": 4365488,
+        "direction8": 5051376,
+        "history_call": 4626323,
+        "history_record": 4673648,
+        "retry_call": 4671906,
+        "end_call": 4626896,
+        "end_record": 4673632
       },
       "offsets": {
         "invalid_offset": 1082,
         "interact_offset": 801,
-        "active_offset": 845
+        "active_offset": 845,
+        "pending_offset": 1094
       },
       "signatures": {
         "resolver": "64a1000000006aff68d83952",
@@ -58,11 +76,24 @@
         "left_set": "56578b7c240c8bf16a0fb998",
         "projection": "518b410c8b54240c56578d74",
         "world_to_grid": "51568b742410c74424040000",
-        "ui_property": "8b44240485c07c0e3b41047d"
+        "ui_property": "8b44240485c07c0e3b41047d",
+        "lookup": "8b44240485c07c108b114a3b",
+        "skill_eligibility": "8b491851b9c0855500e8d260",
+        "role_method": "8b44240453555683f8ff578b",
+        "method_usable": "5356578b7c241033c06a0066",
+        "method_distance": "8b44240453568bd95750b950",
+        "facing_point": "8b442408568bf1508b4c240c",
+        "facing_direction": "83b9bf0200001075158b4424",
+        "direction8": "8b4424048b4c2408568b5004",
+        "history_record": "8b442404568b54240c8bf183",
+        "end_record": "a1bc855400894150c3909090"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
-      "grid_bytes": "51568b742410c7442404000000008b069983e23f03c28bc88b46049983e23f5e03c28b542408c1f906c1f806890a8942048bc259c3"
+      "grid_bytes": "51568b742410c7442404000000008b069983e23f03c28bc88b46049983e23f5e03c28b542408c1f906c1f806890a8942048bc259c3",
+      "history_call_bytes": "e8d8b80000",
+      "retry_call_bytes": "e819090000",
+      "end_call_bytes": "e88bb60000"
     },
     {
       "tag": "WaiZhuan",
@@ -97,12 +128,30 @@
         "left_set": 5081184,
         "projection": 5275232,
         "world_to_grid": 4269488,
-        "ui_property": 5132016
+        "ui_property": 5132016,
+        "skill_groups": 5737648,
+        "methods": 5739016,
+        "game_tick": 5737292,
+        "combo_timeout": 5718476,
+        "lookup": 5141664,
+        "skill_eligibility": 4373008,
+        "role_method": 4362704,
+        "method_usable": 4378912,
+        "method_distance": 4377008,
+        "facing_point": 4402528,
+        "facing_direction": 4402352,
+        "direction8": 5137040,
+        "history_call": 4682739,
+        "history_record": 4733168,
+        "retry_call": 4731426,
+        "end_call": 4683312,
+        "end_record": 4733152
       },
       "offsets": {
         "invalid_offset": 1094,
         "interact_offset": 813,
-        "active_offset": 857
+        "active_offset": 857,
+        "pending_offset": 1110
       },
       "signatures": {
         "resolver": "64a1000000006aff6838ae54",
@@ -121,11 +170,24 @@
         "left_set": "56578b7c240c8bf16a0fb9e8",
         "projection": "518b410c8b54240c56578d74",
         "world_to_grid": "51568b742410c74424040000",
-        "ui_property": "8b44240485c07c0e3b41047d"
+        "ui_property": "8b44240485c07c0e3b41047d",
+        "lookup": "8b44240485c07c108b114a3b",
+        "skill_eligibility": "8b491851b940955800e8b2cd",
+        "role_method": "8b44240453555683f8ff578b",
+        "method_usable": "5356578b7c241033c06a0066",
+        "method_distance": "8b44240453568bd95750b908",
+        "facing_point": "8b442408568bf1508b4c240c",
+        "facing_direction": "83b9bf0200001075158b4424",
+        "direction8": "8b4424048b4c2408568b5004",
+        "history_record": "8b442404568b54240c8bf183",
+        "end_record": "a14c8b5700894150c3909090"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
-      "grid_bytes": "51568b742410c7442404000000008b069983e23f03c28bc88b46049983e23f5e03c28b542408c1f906c1f806890a8942048bc259c3"
+      "grid_bytes": "51568b742410c7442404000000008b069983e23f03c28bc88b46049983e23f5e03c28b542408c1f906c1f806890a8942048bc259c3",
+      "history_call_bytes": "e8f8c40000",
+      "retry_call_bytes": "e819090000",
+      "end_call_bytes": "e8abc20000"
     }
   ]
 }

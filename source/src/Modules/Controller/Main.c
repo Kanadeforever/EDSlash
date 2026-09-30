@@ -1,4 +1,5 @@
 #include "Plugin.h"
+#include "Combat.h"
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -13,6 +14,9 @@ static LONG initialized;
 static BOOL (WINAPI *original_keyboard)(PBYTE);
 static SHORT (WINAPI *original_async)(int);
 static BYTE saved_call[5];
+static BYTE saved_history_call[5];
+static BYTE saved_retry_call[5];
+static BYTE saved_end_call[5];
 static bool installed;
 static DWORD game_thread;
 static HINSTANCE self_module;
@@ -30,6 +34,7 @@ static LRESULT CALLBACK window_hook(HWND window, UINT message, WPARAM wp, LPARAM
         control.previous_layer = LAYER_NONE;
         memset(&g_intent, 0, sizeof g_intent);
         Game_Release(); Input_ReleaseMouse(); Input_Rumble(0);
+        Combat_Reset();
     }
     LRESULT result = CallWindowProcW(previous_window_proc, window, message, wp, lp);
     if (message == WM_NCDESTROY) {
@@ -113,6 +118,7 @@ static BOOL WINAPI keyboard_hook(PBYTE keys)
     g_intent = Control_Step(&control, &g_input);
     Game_Diagnose();
     if (g_intent.reset) { Game_Release(); Input_ReleaseMouse(); }
+    if (g_intent.mode_changed || !g_input.connected || !g_input.focused) Combat_Reset();
     if (g_intent.mode_changed) {
         Input_Rumble(g_intent.rumble_ms);
         Log_Write("[模式] 已切换为%s，震动 %u 毫秒。", control.mouse ? "鼠标模式" : "手柄模式", g_intent.rumble_ms);
@@ -137,6 +143,33 @@ static void __attribute__((fastcall)) resolver_hook(void *mouse, void *unused)
     Game_Update();
 }
 
+static void __attribute__((fastcall)) history_hook(void *original,void *unused,int selector,int direction,int extra)
+{
+    (void)unused;
+    /* 调用点位于原生 Runtime 建立成功之后，已经保留自动续段历史门及受控角色检查。
+       普通手柄只写自己的历史；鼠标来源继续走原记录函数，不伪造鼠标左右键标志。 */
+    if (Combat_OwnsHistory()) Combat_Record(selector,direction);
+    else ((This3)g_profile->history_record)(original,selector,direction,(void *)(intptr_t)extra);
+}
+
+static int __attribute__((fastcall)) retry_hook(void *original,void *unused,int selector,int policy,void *target)
+{
+    (void)unused;
+    /* 普通手柄不使用原版鼠标缓冲。保留原函数周围的计数、超时和其它维护，
+       只阻断这一次鼠标来源的重试；明确切入鼠标模式后完整恢复原调用。 */
+    if (!Combat_AllowsMouseRetry()) return 0;
+    return ((This3)g_profile->skill_release)(original,selector,policy,target);
+}
+
+static void __attribute__((fastcall)) end_hook(void *original,void *unused)
+{
+    (void)unused;
+    /* 此调用位于原生当前玩家 Runtime 结束链，角色活动指针已经清空。
+       只更新时间标记，不取消动作、不补发按键，保留自动续段的原生顺序。 */
+    if (Combat_OwnsHistory()) Combat_End();
+    else ((This0)g_profile->end_record)(original);
+}
+
 static void initialize_runtime(void)
 {
     /* 此时已经离开 DllMain 的 Loader 锁，允许文件散列、配置与 SDL 动态加载。
@@ -152,7 +185,7 @@ static void initialize_runtime(void)
     swprintf(path, MAX_PATH, L"%lsEDSlashController.log", g_directory);
     /* 每次启动覆盖旧日志，符合实机比较需要；不把历史记录追加成一大份混合日志。 */
     log_file = _wfopen(path, L"w");
-    Log_Write("EDSlashController v0.1-dev3：连续方向移动调整版");
+    Log_Write("EDSlashController v0.1-dev5：战斗输入衔接修正版");
     const Profile *candidate = g_profile;
     if (!Profile_Select() || candidate != g_profile || !Profile_Verify()) {
         Log_Write("[停止] 基线或机器码检查失败，撤回采样入口，未启用游戏动作。");
@@ -161,6 +194,9 @@ static void initialize_runtime(void)
     }
     original_async = *(void **)g_profile->async_iat;
     memcpy(saved_call, (void *)g_profile->resolver_call, 5);
+    memcpy(saved_history_call,(void *)g_profile->history_call,5);
+    memcpy(saved_retry_call,(void *)g_profile->retry_call,5);
+    memcpy(saved_end_call,(void *)g_profile->end_call,5);
     BYTE replacement[5] = {0xE8};
     intptr_t relative = (intptr_t)resolver_hook - (intptr_t)g_profile->resolver_call - 5;
     memcpy(replacement + 1, &relative, 4);
@@ -173,6 +209,33 @@ static void initialize_runtime(void)
     if (!patch((void *)g_profile->async_iat, &async, 4)) {
         patch((void *)g_profile->keyboard_iat, &original_keyboard, 4);
         patch((void *)g_profile->resolver_call, saved_call, 5); return;
+    }
+    BYTE history_replacement[5]={0xE8};
+    intptr_t history_relative=(intptr_t)history_hook-(intptr_t)g_profile->history_call-5;
+    memcpy(history_replacement+1,&history_relative,4);
+    if (!patch((void *)g_profile->history_call,history_replacement,5)) {
+        patch((void *)g_profile->async_iat,&original_async,4);
+        patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
+        patch((void *)g_profile->resolver_call,saved_call,5);return;
+    }
+    BYTE retry_replacement[5]={0xE8};
+    intptr_t retry_relative=(intptr_t)retry_hook-(intptr_t)g_profile->retry_call-5;
+    memcpy(retry_replacement+1,&retry_relative,4);
+    if (!patch((void *)g_profile->retry_call,retry_replacement,5)) {
+        patch((void *)g_profile->history_call,saved_history_call,5);
+        patch((void *)g_profile->async_iat,&original_async,4);
+        patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
+        patch((void *)g_profile->resolver_call,saved_call,5);return;
+    }
+    BYTE end_replacement[5]={0xE8};
+    intptr_t end_relative=(intptr_t)end_hook-(intptr_t)g_profile->end_call-5;
+    memcpy(end_replacement+1,&end_relative,4);
+    if (!patch((void *)g_profile->end_call,end_replacement,5)) {
+        patch((void *)g_profile->retry_call,saved_retry_call,5);
+        patch((void *)g_profile->history_call,saved_history_call,5);
+        patch((void *)g_profile->async_iat,&original_async,4);
+        patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
+        patch((void *)g_profile->resolver_call,saved_call,5);return;
     }
     installed = true;
     runtime_state = 1;
@@ -207,6 +270,15 @@ BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID reserved)
             int32_t displacement; memcpy(&displacement, (BYTE *)g_profile->resolver_call + 1, 4);
             if ((uintptr_t)(g_profile->resolver_call + 5 + displacement) == (uintptr_t)resolver_hook)
                 patch((void *)g_profile->resolver_call, saved_call, 5);
+            memcpy(&displacement,(BYTE *)g_profile->history_call+1,4);
+            if ((uintptr_t)(g_profile->history_call+5+displacement)==(uintptr_t)history_hook)
+                patch((void *)g_profile->history_call,saved_history_call,5);
+            memcpy(&displacement,(BYTE *)g_profile->retry_call+1,4);
+            if ((uintptr_t)(g_profile->retry_call+5+displacement)==(uintptr_t)retry_hook)
+                patch((void *)g_profile->retry_call,saved_retry_call,5);
+            memcpy(&displacement,(BYTE *)g_profile->end_call+1,4);
+            if ((uintptr_t)(g_profile->end_call+5+displacement)==(uintptr_t)end_hook)
+                patch((void *)g_profile->end_call,saved_end_call,5);
         }
     }
     return TRUE;
