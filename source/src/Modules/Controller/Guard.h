@@ -3,6 +3,7 @@
 #include "Plugin.h"
 
 /* 成对验证并安装受控角色防御扣费和方向闪避入口，不改 NPC 或物品消耗。 */
+void Guard_ApplySettings(void);
 bool Guard_Initialize(void);
 void Guard_Shutdown(void);
 void Guard_Update(void *role);

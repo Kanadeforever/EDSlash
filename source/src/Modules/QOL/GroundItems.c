@@ -244,3 +244,10 @@ int GroundItems_IsReadyForAutomaticPickup(unsigned long object_address)
     }
     return waited_long_enough(object_address);
 }
+
+/* 参数更新不清空已有掉落时间记录，避免保存设置后重新等待或过早拾取。 */
+void GroundItems_ApplySettings(int always_show_names,unsigned long drop_delay_ms)
+{
+    g_always_show_names=always_show_names;
+    g_drop_delay_ms=drop_delay_ms;
+}

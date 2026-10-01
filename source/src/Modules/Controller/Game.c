@@ -2,6 +2,7 @@
 #include "Combat.h"
 #include "Guard.h"
 #include "Feedback.h"
+#include "../../Runtime/Perf.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -151,7 +152,7 @@ static bool enemy(void *me, void *candidate)
 void *Game_Resolve(uint32_t handle) { return resolve(handle); }
 bool Game_Enemy(void *role,void *candidate) { return enemy(role,candidate); }
 
-static void *choose_target(void *me, bool inspect)
+static void *choose_target_impl(void *me, bool inspect)
 {
     scan_count=eligible_count=0;
     void *entities = global(g_profile->entities_global);
@@ -180,6 +181,13 @@ static void *choose_target(void *me, bool inspect)
         candidate = next;
     }
     return best;
+}
+
+/* 一次完整遍历只读两次时钟，不在每个敌人资格判断里增加计时调用。 */
+static void *choose_target(void *me,bool inspect)
+{
+    int64_t perf=RuntimePerf_Begin();void *target=choose_target_impl(me,inspect);
+    RuntimePerf_End(PERF_TARGET,perf);return target;
 }
 
 static void inspect_action(void *me)
@@ -243,11 +251,15 @@ static void shortcuts(void)
     static const int buttons[] = {PAD_A,PAD_B,PAD_X,PAD_Y,PAD_UP,PAD_DOWN,PAD_LEFT,PAD_RIGHT,PAD_LB,PAD_RB,PAD_BACK,PAD_START,PAD_L3,PAD_R3};
     static const int defaults[] = {'Q','W','E','R','T','Y','U','I','O','A','S','D',0,0};
     for (int i=0;i<14;++i) if (g_intent.pressed & KEY(buttons[i])) {
-        WCHAR key[16]; swprintf(key,16,L"Slot%d",i+1);
-        int vk=Config_Number(L"SkillKeys",key,defaults[i],0,255);
-        if (!vk) { Log_Write("[技能] 槽 %d 尚未配置原版热键。",i+1); continue; }
-        /* 找原版按键绑定记录，直接请求它绑定的动作，不绕过角色自己的可用技能。
-           没有绑定时明确留空；不能把 18 个键盘字母误当成固定技能 ID。 */
+        /* 自定义保存稳定技能selector；未自定义时使用原游戏当前角色绑定，默认操作不增加设置步骤。 */
+        ConfigBinding binding=RuntimeConfig_GetBinding(
+            Runtime_GetContext()->profile->game_id,Read32(Game_Player(),0x348),(unsigned)i+1);
+        if (binding.custom) {
+            /* Config的right为右手标志，Combat第三参数则是left_style，必须取反。 */
+            Combat_Request(binding.selector,ACTION_SKILL,binding.right==0);continue;
+        }
+        int vk=defaults[i];
+        if (!vk) {Log_Write("[技能] 槽%d尚未配置技能。",i+1);continue;}
         void *record=ReadPtr(hud,0xC18);
         bool found=false;
         for (unsigned n=0;record && n<128;++n) {
@@ -295,8 +307,8 @@ void Game_Update(void)
     } else if (direction && !Read32(me,g_profile->active_offset)) {
         static DWORD last_move_log;
         int x,y;
-        if (!move_lead) {
-            move_lead=Config_Number(L"Movement",L"LeadTiles",12,6,32);
+        if (move_lead!=RuntimeConfig_GetInt(CONFIG_MOVE_LEAD)) {
+            move_lead=RuntimeConfig_GetInt(CONFIG_MOVE_LEAD);
             Log_Write("[移动配置] 左摇杆圆形死区，走跑共用前探=%d 格。",move_lead);
         }
         Control_MoveGoal((int)Read32(me,0x2C),(int)Read32(me,0x30),g_intent.lx,g_intent.ly,move_lead,&x,&y);

@@ -17,7 +17,10 @@ typedef enum SharedHookId {
     SHARED_HOOK_GROUND_ITEM_UPDATE = 6,
     SHARED_HOOK_INPUT_FRAME = 7,
     SHARED_HOOK_PICKUP_ENTRY = 8,
-    SHARED_HOOK_COUNT = 9
+    SHARED_HOOK_CONTROLLER_KEYBOARD = 9,
+    SHARED_HOOK_CONTROLLER_ASYNC = 10,
+    SHARED_HOOK_CONTROLLER_RESOLVER = 11,
+    SHARED_HOOK_COUNT = 12
 } SharedHookId;
 
 typedef enum RuntimeModuleId {
@@ -25,7 +28,8 @@ typedef enum RuntimeModuleId {
     RUNTIME_MODULE_DISPLAY_FIX = 1,
     RUNTIME_MODULE_CONTROLLER = 2,
     RUNTIME_MODULE_QOL = 3,
-    RUNTIME_MODULE_COUNT = 4
+    RUNTIME_MODULE_INPUT = 4,
+    RUNTIME_MODULE_COUNT = 5
 } RuntimeModuleId;
 
 /* 第一个 Claim 成功；相同 owner 重复 Claim 也视为成功；不同 owner 抢同一个 Hook 会失败。 */

@@ -183,6 +183,8 @@
  */
 
 #include "../../Runtime/Runtime.h"
+#include "../../Runtime/Config.h"
+#include "../../Runtime/Log.h"
 
 
 /* ============================================================================================== */
@@ -304,14 +306,12 @@ typedef BOOL    (__stdcall *FnGetCursorPos)(POINT* point);
  */
 typedef BOOL  (__stdcall *FnVirtualProtect)(LPVOID address, DWORD size, DWORD new_protect, LPDWORD old_protect);
 typedef BOOL  (__stdcall *FnFlushInstructionCache)(HANDLE process, LPCVOID address, DWORD size);
-typedef UINT  (__stdcall *FnGetPrivateProfileIntA)(LPCSTR section, LPCSTR key, int default_value, LPCSTR file_name);
 typedef DWORD (__stdcall *FnGetPrivateProfileStringA)(LPCSTR section, LPCSTR key, LPCSTR default_value,
                                                        LPSTR output, DWORD output_size, LPCSTR file_name);
 
 /* 这些函数指针在初始化时取得，之后所有补丁代码都通过它们调用系统 API。 */
 static FnVirtualProtect            g_VirtualProtect = (FnVirtualProtect)0;
 static FnFlushInstructionCache     g_FlushInstructionCache = (FnFlushInstructionCache)0;
-static FnGetPrivateProfileIntA     g_GetPrivateProfileIntA = (FnGetPrivateProfileIntA)0;
 static FnGetPrivateProfileStringA  g_GetPrivateProfileStringA = (FnGetPrivateProfileStringA)0;
 
 /*
@@ -329,7 +329,7 @@ static FnGetSystemMetrics          g_GetSystemMetrics = (FnGetSystemMetrics)0;
 /* DllMain 和某些 ASI Loader 都可能尝试调用 InitializeASI；这个标志保证真正初始化只做一次。 */
 static volatile LONG g_initialized = 0;
 
-/* 保存当前 BladeSwordQOL.asi 自己的模块句柄，用来找到同目录的 BladeSwordQOL.ini。 */
+/* 保存当前 BladeSwordQOL.asi 自己的模块句柄，用来找到同目录的 EDSlash.toml。 */
 static HINSTANCE g_self_module = (HINSTANCE)0;
 
 /* 路径最大给 1024 字节，远大于这类老游戏常见安装路径。 */
@@ -583,27 +583,8 @@ static void log_text(const char* label, const char* text)
 /* 把内存里的日志一次写到 DisplayFix.log。 */
 static void flush_log_file(void)
 {
-    HANDLE file;
-    DWORD written = 0;
-    DWORD length = str_len(g_log_buffer);
-
-    /* CREATE_ALWAYS 表示每次启动都重建日志，避免旧测试内容和新测试内容混在一起。 */
-    file = GAME_CreateFileA(g_log_path,
-                            GENERIC_WRITE,
-                            FILE_SHARE_READ,
-                            (LPVOID)0,
-                            CREATE_ALWAYS,
-                            FILE_ATTRIBUTE_NORMAL,
-                            (HANDLE)0);
-
-    if (file != INVALID_HANDLE_VALUE) {
-        if (length != 0) {
-            GAME_WriteFile(file, g_log_buffer, length, &written, (LPVOID)0);
-        }
-        GAME_CloseHandle(file);
-    }
-
-    /* 同时发到调试输出；如果以后用 DebugView，可以直接看到。 */
+    /* 统一Runtime已建立日志；这里追加初始化块，不能再截断其它模块记录。 */
+    RuntimeLog_Text(g_log_buffer);
     GAME_OutputDebugStringA(g_log_buffer);
 }
 
@@ -620,34 +601,8 @@ static void flush_log_file(void)
  */
 static void append_runtime_line(const char* text)
 {
-    HANDLE file;
-    DWORD written = 0;
-    DWORD length;
-    static const char CRLF[] = "\r\n";
-
-    if (!text || text[0] == '\0') {
-        return;
-    }
-
-    file = GAME_CreateFileA(g_log_path,
-                            FILE_APPEND_DATA,
-                            FILE_SHARE_READ,
-                            (LPVOID)0,
-                            OPEN_ALWAYS,
-                            FILE_ATTRIBUTE_NORMAL,
-                            (HANDLE)0);
-
-    if (file == INVALID_HANDLE_VALUE) {
-        return;
-    }
-
-    length = str_len(text);
-    GAME_WriteFile(file, text, length, &written, (LPVOID)0);
-    GAME_WriteFile(file, CRLF, 2u, &written, (LPVOID)0);
-    GAME_CloseHandle(file);
-
-    GAME_OutputDebugStringA(text);
-    GAME_OutputDebugStringA(CRLF);
+    /* 同一路径以宽字符打开，中文安装目录也不会丢失日志。 */
+    RuntimeLog_Line(text);
 }
 
 /* ============================================================================================== */
@@ -867,10 +822,10 @@ static BOOL patch_u32(BYTE* address, DWORD value)
  * 这种做法比 test1 的“整个 callback 提前 return”窄得多，也比 test2 的“禁用 EDIT WndProc”更符合
  * CreateWindowExA API 本身的合法参数语义。
  */
-static BYTE* g_steam_createwindow_string_continue = (BYTE*)0;
-static BYTE* g_steam_createwindow_callback_end = (BYTE*)0;
-static volatile DWORD g_steam_class_atom_bypass_count = 0u;
-static volatile DWORD g_steam_last_class_atom = 0u;
+static BYTE* g_steam_createwindow_string_continue __attribute__((used)) = (BYTE*)0;
+static BYTE* g_steam_createwindow_callback_end __attribute__((used)) = (BYTE*)0;
+static volatile DWORD g_steam_class_atom_bypass_count __attribute__((used)) = 0u;
+static volatile DWORD g_steam_last_class_atom __attribute__((used)) = 0u;
 static BOOL g_steam_class_atom_runtime_logged = FALSE;
 
 /*
@@ -881,44 +836,24 @@ static BOOL g_steam_class_atom_runtime_logged = FALSE;
  * 这里绝不能调用普通 C 函数、写日志或分配内存，因为 CreateWindowExA 本身可能在系统/渲染器初始化的
  * 很早阶段调用；额外 Win32 调用可能递归创建窗口，反而制造新的时序问题。
  */
-__declspec(naked) static void steam_createwindow_class_atom_guard(void)
+/* 与旧MSVC汇编逐条等价：重放原指令后区分类名字符串与整数atom。
+ * 裸函数不生成序言，不能新增普通C调用；GNU符号使用Win32的前导下划线。
+ */
+static void __attribute__((naked,used)) steam_createwindow_class_atom_guard(void)
 {
-    __asm {
-        /* 重放被我们 6 字节 JMP 覆盖的第一条原指令：从 Hook context 取 lpClassName。 */
-        mov ecx, dword ptr [esi+2Ch]
-
-        /* 重放原 callback 对 original-forward helper 两个参数的栈清理。 */
-        add esp, 8
-
-        /* 原版随后会把真正 CreateWindowExA 的返回值 HWND 保存到 context+0x20；这里不能漏掉。 */
-        mov dword ptr [esi+20h], eax
-
-        /* NULL 原本就会直接跳到 callback 收尾；保持完全相同的行为。 */
-        test ecx, ecx
-        jz class_is_not_string
-
-        /*
-         * MAKEINTATOM 的定义就是“高 16 位为 0，低 16 位保存 atom”。
-         * 在 32 位进程里等价于无符号值 < 0x10000。
-         */
-        cmp ecx, 10000h
-        jae class_is_string
-
-        /*
-         * 命中合法 class atom。只记录两个普通 DWORD，不做任何 Win32/API 调用。
-         * 等游戏真正进入 Strategy 后，普通 C 代码再把计数写进日志，避免这里递归。
-         */
-        inc dword ptr [g_steam_class_atom_bypass_count]
-        mov dword ptr [g_steam_last_class_atom], ecx
-
-class_is_not_string:
-        /* 跳到 ComeOn.dll callback 自己的 pop esi / pop ebp / ret 8 收尾。 */
-        jmp dword ptr [g_steam_createwindow_callback_end]
-
-class_is_string:
-        /* 普通字符串类名完全回到官方 0x284E，从 "EDIT" 比较开始继续。 */
-        jmp dword ptr [g_steam_createwindow_string_continue]
-    }
+    __asm__ volatile(
+        "movl 0x2c(%esi),%ecx\n\t"
+        "addl $8,%esp\n\t"
+        "movl %eax,0x20(%esi)\n\t"
+        "testl %ecx,%ecx\n\t"
+        "jz 1f\n\t"
+        "cmpl $0x10000,%ecx\n\t"
+        "jae 2f\n\t"
+        "incl _g_steam_class_atom_bypass_count\n\t"
+        "movl %ecx,_g_steam_last_class_atom\n\t"
+        "1: jmp *_g_steam_createwindow_callback_end\n\t"
+        "2: jmp *_g_steam_createwindow_string_continue\n\t"
+    );
 }
 
 /*
@@ -6441,21 +6376,12 @@ static void load_config(DisplayFixConfig* config)
     config->aspect_width = 0u;
     config->aspect_height = 0u;
 
-    if (!g_GetPrivateProfileIntA || !g_GetPrivateProfileStringA) {
-        /* 理论上现代 Windows 都能解析到这两个 API；失败时仍使用默认值。 */
-        screen_width = get_screen_metric(SM_CXSCREEN);
-        screen_height = get_screen_metric(SM_CYSCREEN);
-        config->aspect_width = (screen_width > 0) ? (DWORD)screen_width : 4u;
-        config->aspect_height = (screen_height > 0) ? (DWORD)screen_height : 3u;
-        return;
-    }
-
-    config->enable = g_GetPrivateProfileIntA("Display", "Enable", 1, g_ini_path) ? TRUE : FALSE;
-    config->fix_font_dpi = g_GetPrivateProfileIntA("Font", "FixDPI", 1, g_ini_path) ? TRUE : FALSE;
-    config->center_main_hud = g_GetPrivateProfileIntA("GUI", "CenterMainHUD", 1, g_ini_path) ? TRUE : FALSE;
-    config->auxiliary_ui_above_hud = g_GetPrivateProfileIntA("GUI", "AuxiliaryUIAboveHUD", 1, g_ini_path) ? TRUE : FALSE;
+    config->enable = RuntimeConfig_GetInt(CONFIG_DISPLAY_ENABLED) ? TRUE : FALSE;
+    config->fix_font_dpi = RuntimeConfig_GetInt(CONFIG_FONT_DPI) ? TRUE : FALSE;
+    config->center_main_hud = RuntimeConfig_GetInt(CONFIG_CENTER_HUD) ? TRUE : FALSE;
+    config->auxiliary_ui_above_hud = RuntimeConfig_GetInt(CONFIG_AUXILIARY_UI) ? TRUE : FALSE;
     {
-        int configured_height = g_GetPrivateProfileIntA("Display", "BaseHeight", 480, g_ini_path);
+        int configured_height = RuntimeConfig_GetInt(CONFIG_BASE_HEIGHT);
 
         /*
          * v0.3-test1 起取消 480/600 白名单，也不再设置人为最大值。
@@ -6466,7 +6392,7 @@ static void load_config(DisplayFixConfig* config)
     }
 
     ratio[0] = '\0';
-    g_GetPrivateProfileStringA("Display", "AspectRatio", "Auto", ratio, (DWORD)sizeof(ratio), g_ini_path);
+    str_copy(ratio, (DWORD)sizeof(ratio), RuntimeConfig_Current()->aspect_ratio);
 
     if (str_equal_icase(ratio, "Auto")) {
         /* Auto：读取当前系统/兼容层向游戏报告的屏幕宽高。 */
@@ -6510,7 +6436,6 @@ static BOOL resolve_required_apis(void)
 
     g_VirtualProtect = (FnVirtualProtect)GAME_GetProcAddress(kernel32, "VirtualProtect");
     g_FlushInstructionCache = (FnFlushInstructionCache)GAME_GetProcAddress(kernel32, "FlushInstructionCache");
-    g_GetPrivateProfileIntA = (FnGetPrivateProfileIntA)GAME_GetProcAddress(kernel32, "GetPrivateProfileIntA");
     g_GetPrivateProfileStringA = (FnGetPrivateProfileStringA)GAME_GetProcAddress(kernel32, "GetPrivateProfileStringA");
 
     /*
@@ -6560,10 +6485,10 @@ static void initialize_display_fix(void)
 
     /* 先算出 INI 和日志路径。即使后面初始化失败，也尽量留下诊断日志。 */
     GAME_GetModuleFileNameA((HMODULE)g_self_module, module_path, (DWORD)sizeof(module_path));
-    make_sibling_path(module_path, "BladeSwordQOL.ini", g_ini_path, (DWORD)sizeof(g_ini_path));
-    make_sibling_path(module_path, "BladeSwordQOL.log", g_log_path, (DWORD)sizeof(g_log_path));
+    make_sibling_path(module_path, "EDSlash.toml", g_ini_path, (DWORD)sizeof(g_ini_path));
+    make_sibling_path(module_path, "EDSlash.log", g_log_path, (DWORD)sizeof(g_log_path));
 
-    log_line("BladeSwordQOL");
+    log_line("[DisplayFix] EDSlash统一显示后端");
     log_line("[Runtime] 游戏Profile=刀剑封魔录外传：上古传说 / DisplayFix后端已加载");
     log_line("架构：Win32/x86 ASI，基于内容签名的运行时补丁");
 
@@ -6876,7 +6801,7 @@ static void initialize_display_fix(void)
  * 也会让两个后端都尝试初始化。真正的唯一入口在 src/Main.c，Runtime 先识别游戏 Profile，
  * 然后只调用与当前游戏匹配的这个函数。
  *
- * module 是 BladeSwordQOL.asi 自己的模块句柄。后端继续用它寻找同目录 BladeSwordQOL.ini / .log，
+ * module 是 BladeSwordQOL.asi 自己的模块句柄。后端继续用它寻找同目录 EDSlash.toml / .log，
  * 因此把入口合并以后不会改变配置文件相对路径语义。
  */
 int DisplayFixWaiZhuan_Initialize(void* module)

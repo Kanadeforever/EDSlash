@@ -3,23 +3,13 @@
 #include <math.h>
 #include <string.h>
 
-/* SDL3 只通过公开的 C ABI 动态加载。SDL bool 是 C bool，不能误声明成 Win32 BOOL。
-   这些签名与 SDL3 官方 API 对照，构建不依赖本机安装 SDL SDK。 */
-typedef struct SDL_Gamepad SDL_Gamepad;
-static struct {
-    void (*SetMainReady)(void);
-    bool (*InitSubSystem)(uint32_t);
-    void (*UpdateGamepads)(void);
-    uint32_t *(*GetGamepads)(int *);
-    SDL_Gamepad *(*OpenGamepad)(uint32_t);
-    bool (*GamepadConnected)(SDL_Gamepad *);
-    bool (*GetGamepadButton)(SDL_Gamepad *, int);
-    int16_t (*GetGamepadAxis)(SDL_Gamepad *, int);
-    void (*CloseGamepad)(SDL_Gamepad *);
-    bool (*RumbleGamepad)(SDL_Gamepad *, uint16_t, uint16_t, uint32_t);
-    const char *(*GetError)(void);
-    void (*Free)(void *);
-} sdl;
+/* SDL由官方完整源码静态链接，签名来自真实头文件，不再加载SDL3.dll。 */
+#define SDL_MAIN_HANDLED
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
+#include "../../Runtime/Config.h"
+#include "../../Runtime/FileIO.h"
+#include "../../Runtime/Perf.h"
 static SDL_Gamepad *pad;
 static int init_state, deadzone = 8000, mouse_speed = 900;
 static uint32_t last_find, last_mouse;
@@ -32,102 +22,87 @@ bool Input_PhysicalDown(int key)
     return (GetAsyncKeyState(key) & 0x8000) != 0;
 }
 
-int Config_Number(const WCHAR *section, const WCHAR *key, int fallback, int minimum, int maximum)
+bool Input_Initialize(void)
 {
-    WCHAR path[MAX_PATH];
-    if (wcslen(g_directory) + 24 >= MAX_PATH) return fallback;
-    swprintf(path, MAX_PATH, L"%lsEDSlashController.ini", g_directory);
-    int value = (int)GetPrivateProfileIntW(section, key, fallback, path);
-    /* 配置越界时钳制，避免 100% 死区造成除零或极端速度让鼠标飞出屏幕。 */
-    if (value < minimum) value = minimum;
-    if (value > maximum) value = maximum;
-    return value;
-}
-
-int Config_Percent(const WCHAR *section,const WCHAR *key,int fallback)
-{
-    WCHAR path[MAX_PATH],text[32];
-    if (wcslen(g_directory)+24>=MAX_PATH) return fallback;
-    swprintf(path,MAX_PATH,L"%lsEDSlashController.ini",g_directory);
-    if (!GetPrivateProfileStringW(section,key,L"",text,32,path)) return fallback;
-    return Control_Percent(text,fallback);
-}
-
-static bool load_sdl(void)
-{
-    WCHAR path[MAX_PATH];
-    if (wcslen(g_directory) + 9 >= MAX_PATH) return false;
-    swprintf(path, MAX_PATH, L"%lsSDL3.dll", g_directory);
-    /* 使用插件旁的明确路径，不从 PATH 随机拿另一份 SDL。此函数只在输入线程执行。 */
-    HMODULE module = LoadLibraryExW(path, NULL, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
-    if (!module) {
-        Log_Write("[SDL] 无法加载插件旁的 32 位 SDL3.dll，错误码=%lu。", GetLastError()); return false;
+    if (init_state) return init_state==1;
+    /* 这里只由Loader锁外的游戏输入线程调用。只初始化输入子系统，不接管音视频。 */
+    SDL_SetMainReady();
+    if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) {
+        init_state=-1;Log_Write("[SDL][停止] 静态SDL输入初始化失败：%s",SDL_GetError());return false;
     }
-#define LOAD(field, symbol) do { \
-        FARPROC proc = GetProcAddress(module, symbol); \
-        if (!proc) { Log_Write("[SDL] 缺少导出：%s", symbol); return false; } \
-        memcpy(&sdl.field, &proc, sizeof proc); \
-    } while (0)
-    LOAD(SetMainReady, "SDL_SetMainReady");
-    LOAD(InitSubSystem, "SDL_InitSubSystem");
-    LOAD(UpdateGamepads, "SDL_UpdateGamepads");
-    LOAD(GetGamepads, "SDL_GetGamepads");
-    LOAD(OpenGamepad, "SDL_OpenGamepad");
-    LOAD(GamepadConnected, "SDL_GamepadConnected");
-    LOAD(GetGamepadButton, "SDL_GetGamepadButton");
-    LOAD(GetGamepadAxis, "SDL_GetGamepadAxis");
-    LOAD(CloseGamepad, "SDL_CloseGamepad");
-    LOAD(RumbleGamepad, "SDL_RumbleGamepad");
-    LOAD(GetError, "SDL_GetError");
-    LOAD(Free, "SDL_free");
-#undef LOAD
-    sdl.SetMainReady();
-    /* 0x2000 是 SDL_INIT_GAMEPAD，只启用手柄，不接管游戏的视频或音频系统。 */
-    if (!sdl.InitSubSystem(0x2000u)) {
-        Log_Write("[SDL] 手柄子系统初始化失败：%s", sdl.GetError()); return false;
+    init_state=1;
+    WCHAR path[MAX_PATH];
+    int length=swprintf(path,MAX_PATH,L"%lsgamecontrollerdb.txt",g_directory);
+    if (length>0 && length<MAX_PATH) {
+        DWORD attributes=GetFileAttributesW(path);
+        if (attributes==INVALID_FILE_ATTRIBUTES) {
+            Log_Write("[SDL][映射] 未提供外部数据库，继续使用内置映射。");
+        } else if (!(attributes&FILE_ATTRIBUTE_DIRECTORY)) {
+            char utf8[MAX_PATH*4];
+            /* SDL文件接口使用UTF-8，中文目录必须转换成UTF-8，不能用系统ANSI代替。 */
+            if (WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,path,-1,utf8,sizeof utf8,NULL,NULL)) {
+                int count=SDL_AddGamepadMappingsFromFile(utf8);
+                if (count<0) Log_Write("[SDL][映射] 外部文件加载失败，继续使用内置映射：%s",SDL_GetError());
+                else Log_Write("[SDL][映射] 外部文件载入%d条映射。",count);
+            } else Log_Write("[SDL][映射] 路径转换失败，继续使用内置映射。");
+        } else Log_Write("[SDL][映射] 同名路径是目录，继续使用内置映射。");
     }
-    deadzone = Config_Number(L"Input", L"Deadzone", 8000, 1000, 24000);
-    mouse_speed = Config_Number(L"Mouse", L"Speed", 900, 100, 3000);
-    Log_Write("[SDL] 游戏输入线程初始化成功；等待手柄，死区=%d。", deadzone);
+    Log_Write("[SDL] 静态SDL %d.%d.%d输入子系统已就绪。",SDL_MAJOR_VERSION,SDL_MINOR_VERSION,SDL_MICRO_VERSION);
     return true;
 }
-
-bool Input_Poll(PadInput *input)
+void Input_Shutdown(void)
 {
-    if (!init_state) init_state = load_sdl() ? 1 : -1;
+    /* 只关闭本模块打开的手柄和取得的子系统引用，不调用全局SDL_Quit。 */
+    Input_ReleaseMouse();
+    if (pad) {SDL_RumbleGamepad(pad,0,0,0);SDL_CloseGamepad(pad);pad=NULL;}
+    if (init_state==1) SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
+    init_state=0;last_find=0;
+}
+
+static bool poll_input(PadInput *input)
+{
+    if (!init_state) (void)Input_Initialize();
     if (init_state < 0) return false;
+    deadzone=RuntimeConfig_GetInt(CONFIG_DEADZONE);
+    mouse_speed=RuntimeConfig_GetInt(CONFIG_MOUSE_SPEED);
     /* 手动更新状态，不从 SDL 事件队列取走可能属于其它模块的事件。 */
-    sdl.UpdateGamepads();
-    if (pad && !sdl.GamepadConnected(pad)) {
-        sdl.CloseGamepad(pad); pad = NULL;
+    SDL_UpdateGamepads();
+    if (pad && !SDL_GamepadConnected(pad)) {
+        SDL_CloseGamepad(pad); pad = NULL;
         Log_Write("[手柄] 已断开，释放插件拥有的输入。");
     }
     if (!pad && (!last_find || input->now - last_find >= 1000)) {
         last_find = input->now;
         int count = 0;
-        uint32_t *ids = sdl.GetGamepads(&count);
+        uint32_t *ids = SDL_GetGamepads(&count);
         if (ids) {
-            for (int i = 0; i < count && !pad; ++i) pad = sdl.OpenGamepad(ids[i]);
-            sdl.Free(ids);
+            for (int i = 0; i < count && !pad; ++i) pad = SDL_OpenGamepad(ids[i]);
+            SDL_free(ids);
         }
         if (pad) Log_Write("[手柄] 已连接；请松开摇杆、扳机和按键后开始操作。");
     }
     if (!pad) return false;
     for (int i = 0; i <= PAD_RIGHT; ++i)
-        if (sdl.GetGamepadButton(pad, i)) input->buttons |= KEY(i);
-    Control_Stick(sdl.GetGamepadAxis(pad,0),sdl.GetGamepadAxis(pad,1),deadzone,&input->lx,&input->ly);
-    input->rx = Control_Axis(sdl.GetGamepadAxis(pad, 2), deadzone);
-    input->ry = Control_Axis(sdl.GetGamepadAxis(pad, 3), deadzone);
-    input->lt = sdl.GetGamepadAxis(pad, 4) >= 8000;
-    input->rt = sdl.GetGamepadAxis(pad, 5) >= 8000;
+        if (SDL_GetGamepadButton(pad, i)) input->buttons |= KEY(i);
+    Control_Stick(SDL_GetGamepadAxis(pad,0),SDL_GetGamepadAxis(pad,1),deadzone,&input->lx,&input->ly);
+    input->rx = Control_Axis(SDL_GetGamepadAxis(pad, 2), deadzone);
+    input->ry = Control_Axis(SDL_GetGamepadAxis(pad, 3), deadzone);
+    input->lt = SDL_GetGamepadAxis(pad, 4) >= 8000;
+    input->rt = SDL_GetGamepadAxis(pad, 5) >= 8000;
     return true;
+}
+
+bool Input_Poll(PadInput *input)
+{
+    int64_t perf=RuntimePerf_Begin();bool connected=poll_input(input);
+    RuntimePerf_End(PERF_SDL,perf);return connected;
 }
 
 void Input_Rumble(unsigned ms)
 {
-    if (pad && Config_Number(L"Feedback", L"Enable", 1, 0, 1)) {
-        if (!sdl.RumbleGamepad(pad, ms ? 18000 : 0, ms ? 18000 : 0, ms))
-            Log_Write("[震动] 当前设备未接受震动：%s", sdl.GetError());
+    if (pad && RuntimeConfig_GetInt(CONFIG_RUMBLE)) {
+        if (!SDL_RumbleGamepad(pad, ms ? 18000 : 0, ms ? 18000 : 0, ms))
+            Log_Write("[震动] 当前设备未接受震动：%s", SDL_GetError());
     }
 }
 

@@ -38,6 +38,4 @@ void Control_WorldDirection(float screen_x, float screen_y, float *world_x, floa
 void Control_MoveGoal(int world_x, int world_y, float sx, float sy, int lead_tiles, int *map_x, int *map_y);
 /* 检查新的手柄操作，而不是持续按住的旧操作；避免两套输入互相夺回控制。 */
 bool Control_FreshInput(const PadInput *current, const PadInput *previous);
-/* 12.50%保存为1250，避免浮点字符串受系统小数分隔符影响。 */
-int Control_Percent(const wchar_t *text,int fallback);
 #endif

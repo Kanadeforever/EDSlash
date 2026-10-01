@@ -1,4 +1,5 @@
 #include "Win32Bridge.h"
+#include "Log.h"
 
 #define GAME_IMAGE_BASE 0x00400000ul
 
@@ -13,10 +14,6 @@ typedef unsigned long (__stdcall *FnGetModuleHandleA)(const char* name);
 typedef unsigned long (__stdcall *FnGetProcAddressRaw)(unsigned long module, const char* name);
 typedef unsigned long (__stdcall *FnGetTickCount)(void);
 typedef unsigned long (__stdcall *FnGetModuleFileNameA)(unsigned long module, char* buffer, unsigned long size);
-typedef unsigned int (__stdcall *FnGetPrivateProfileIntA)(const char* section,
-                                                           const char* key,
-                                                           int fallback,
-                                                           const char* file_name);
 typedef unsigned long (__stdcall *FnVirtualQuery)(const void* address, void* info, unsigned long size);
 typedef void* (__stdcall *FnVirtualAlloc)(void* address,
                                          unsigned long size,
@@ -44,7 +41,6 @@ typedef struct MemoryBasicInformation32 {
 
 static FnGetTickCount g_get_tick_count;
 static FnGetModuleFileNameA g_get_module_file_name_a;
-static FnGetPrivateProfileIntA g_get_private_profile_int_a;
 static FnVirtualQuery g_virtual_query;
 static FnVirtualAlloc g_virtual_alloc;
 static FnVirtualFree g_virtual_free;
@@ -52,13 +48,6 @@ static FnVirtualProtect g_virtual_protect;
 static FnFlushInstructionCache g_flush_instruction_cache;
 static FnGetCurrentProcess g_get_current_process;
 static int g_ready;
-typedef unsigned long (__stdcall *FnCreateFileA)(const char*, unsigned long, unsigned long,
-                                                 void*, unsigned long, unsigned long, unsigned long);
-typedef int (__stdcall *FnWriteFile)(unsigned long, const void*, unsigned long, unsigned long*, void*);
-typedef int (__stdcall *FnCloseHandle)(unsigned long);
-static FnCreateFileA g_create_file;
-static FnWriteFile g_write_file;
-static FnCloseHandle g_close_handle;
 
 /* 用 union 在同尺寸的 32 位地址与函数指针之间传递位模式，避免数据指针转换。 */
 #define DEFINE_ADDRESS_CONVERTER(name, type) \
@@ -73,16 +62,12 @@ DEFINE_ADDRESS_CONVERTER(as_get_module_handle_a, FnGetModuleHandleA)
 DEFINE_ADDRESS_CONVERTER(as_get_proc_address_raw, FnGetProcAddressRaw)
 DEFINE_ADDRESS_CONVERTER(as_get_tick_count, FnGetTickCount)
 DEFINE_ADDRESS_CONVERTER(as_get_module_file_name_a, FnGetModuleFileNameA)
-DEFINE_ADDRESS_CONVERTER(as_get_private_profile_int_a, FnGetPrivateProfileIntA)
 DEFINE_ADDRESS_CONVERTER(as_virtual_query, FnVirtualQuery)
 DEFINE_ADDRESS_CONVERTER(as_virtual_alloc, FnVirtualAlloc)
 DEFINE_ADDRESS_CONVERTER(as_virtual_free, FnVirtualFree)
 DEFINE_ADDRESS_CONVERTER(as_virtual_protect, FnVirtualProtect)
 DEFINE_ADDRESS_CONVERTER(as_flush_instruction_cache, FnFlushInstructionCache)
 DEFINE_ADDRESS_CONVERTER(as_get_current_process, FnGetCurrentProcess)
-DEFINE_ADDRESS_CONVERTER(as_create_file, FnCreateFileA)
-DEFINE_ADDRESS_CONVERTER(as_write_file, FnWriteFile)
-DEFINE_ADDRESS_CONVERTER(as_close_handle, FnCloseHandle)
 
 #undef DEFINE_ADDRESS_CONVERTER
 
@@ -140,7 +125,6 @@ int RuntimeWin32_Initialize(const GameProfile* profile)
 
     g_get_tick_count = as_get_tick_count(resolve(get_proc_address, kernel32, "GetTickCount"));
     g_get_module_file_name_a = as_get_module_file_name_a(resolve(get_proc_address, kernel32, "GetModuleFileNameA"));
-    g_get_private_profile_int_a = as_get_private_profile_int_a(resolve(get_proc_address, kernel32, "GetPrivateProfileIntA"));
     g_virtual_query = as_virtual_query(resolve(get_proc_address, kernel32, "VirtualQuery"));
     g_virtual_alloc = as_virtual_alloc(resolve(get_proc_address, kernel32, "VirtualAlloc"));
     g_virtual_free = as_virtual_free(resolve(get_proc_address, kernel32, "VirtualFree"));
@@ -148,13 +132,9 @@ int RuntimeWin32_Initialize(const GameProfile* profile)
     g_flush_instruction_cache = as_flush_instruction_cache(resolve(get_proc_address, kernel32, "FlushInstructionCache"));
     g_get_current_process = as_get_current_process(resolve(get_proc_address, kernel32, "GetCurrentProcess"));
     /* 日志 API 单独检查，日志不可用不阻止已具备所需系统 API 的模块运行。 */
-    g_create_file = as_create_file(resolve(get_proc_address, kernel32, "CreateFileA"));
-    g_write_file = as_write_file(resolve(get_proc_address, kernel32, "WriteFile"));
-    g_close_handle = as_close_handle(resolve(get_proc_address, kernel32, "CloseHandle"));
 
     if (!g_get_tick_count ||
         !g_get_module_file_name_a ||
-        !g_get_private_profile_int_a ||
         !g_virtual_query ||
         !g_virtual_alloc ||
         !g_virtual_free ||
@@ -178,16 +158,7 @@ unsigned long RuntimeWin32_TickCount(void)
     return g_ready ? g_get_tick_count() : 0ul;
 }
 
-int RuntimeWin32_GetPrivateProfileInt(const char* section,
-                                      const char* key,
-                                      int fallback,
-                                      const char* file_name)
-{
-    if (!g_ready || !section || !key || !file_name) {
-        return fallback;
-    }
-    return (int)g_get_private_profile_int_a(section, key, fallback, file_name);
-}
+
 
 unsigned long RuntimeWin32_GetModuleFileName(void* module, char* buffer, unsigned long capacity)
 {
@@ -370,18 +341,8 @@ int RuntimeWin32_WriteCode(unsigned long address, const void* bytes, unsigned lo
 
 void RuntimeWin32_Log(void* module, const char* text)
 {
-    char path[260];
-    unsigned long length = 0ul, written, file;
-    if (!g_ready || !g_create_file || !g_write_file || !g_close_handle || !text ||
-        !RuntimeWin32_BuildSiblingPath(module, "BladeSwordQOL.log", path, 260ul)) return;
-    while (text[length]) ++length;
-    /* FILE_APPEND_DATA + OPEN_ALWAYS：保留显示后端的初始化和运行日志。
-     * 每次写完即关闭，不与后端保留长时间的文件句柄或共享私有缓冲区。 */
-    file = g_create_file(path, 4ul, 3ul, (void*)0, 4ul, 0x80ul, 0ul);
-    if (file == 0xFFFFFFFFul) return;
-    (void)g_write_file(file, text, length, &written, (void*)0);
-    (void)g_write_file(file, "\r\n", 2ul, &written, (void*)0);
-    (void)g_close_handle(file);
+    (void)module;
+    RuntimeLog_Line(text);
 }
 
 void RuntimeWin32_LogNumber(void* module, const char* label, unsigned long value)

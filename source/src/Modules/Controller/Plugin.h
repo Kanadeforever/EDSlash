@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "Control.h"
+#include "../../Runtime/Config.h"
+#include "../../Runtime/Runtime.h"
 
 /* 每一项都属于一份已经核对的非 Steam EXE，禁止在业务函数内猜另一版本的地址。 */
 typedef struct {
@@ -32,6 +34,8 @@ typedef struct {
     uintptr_t dodge_init_call,dodge_init,dodge_motion_call,dodge_motion;
     uintptr_t map_bounds,cell_passable,grid_commit,role_effect;
     uintptr_t animation_get,animation_finished,guard_angle_gate;
+    /* PlayerInit确认的全局角色类别，不能使用对象分类字段代替。 */
+    uintptr_t player_class_global,player_class_probe;
     unsigned dodge_counter_offset;
     unsigned stamina_offset;
     unsigned health_offset;
@@ -52,15 +56,15 @@ void *ReadPtr(const void *base, unsigned offset);
 void Write32(void *base, unsigned offset, uint32_t value);
 bool Memory_Patch(void *address,const void *bytes,size_t count);
 bool Profile_Select(void);
-bool Profile_Pe(void);
+bool Profile_Attach(GameId game);
 bool Profile_Verify(void);
+bool Input_Initialize(void);
+void Input_Shutdown(void);
 bool Input_Poll(PadInput *input);
 void Input_Rumble(unsigned ms);
 void Input_Mouse(bool enabled);
 void Input_ReleaseMouse(void);
 bool Input_PhysicalDown(int key);
-int Config_Number(const WCHAR *section, const WCHAR *key, int fallback, int minimum, int maximum);
-int Config_Percent(const WCHAR *section,const WCHAR *key,int fallback);
 bool Game_Menu(void);
 void Game_Update(void);
 void Game_Release(void);

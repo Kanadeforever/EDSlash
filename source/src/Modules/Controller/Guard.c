@@ -1,4 +1,5 @@
 #include "Guard.h"
+#include "../../Runtime/Perf.h"
 #include "Combat.h"
 #include <math.h>
 #include <string.h>
@@ -105,6 +106,7 @@ void Guard_RecoverHit(void *victim,void *attacker,float health_before,bool was_e
 static int __attribute__((fastcall)) receiver_hook(void *victim,void *unused,void *runtime)
 {
     (void)unused;
+    int64_t wrapper_perf=RuntimePerf_Begin();
     void *attacker=NULL,*scope=ReadPtr((void *)g_profile->world_global,0);
     bool was_enemy=false;float health_before=0;
     /* 只观测LT受击，不改变格挡方向、穿防招式或硬直。下一轮日志可区分姿态失效和穿防。 */
@@ -123,7 +125,9 @@ static int __attribute__((fastcall)) receiver_hook(void *victim,void *unused,voi
             Memory_Readable(method,0x24) && (Read32(method,0x22)&0xFFFFu)==0;
         uint32_t bits=Read32(victim,g_profile->health_offset);memcpy(&health_before,&bits,4);
     }
+    int64_t native_perf=RuntimePerf_Begin();
     int result=original_receiver(victim,runtime);
+    RuntimePerf_End(PERF_NATIVE_HIT,native_perf);
     /* 原回调可能死亡/换图；不能把旧场景的命中奖励加给新角色。 */
     if (scope==ReadPtr((void *)g_profile->world_global,0)) {
         Guard_RecoverHit(victim,attacker,health_before,was_enemy);
@@ -138,6 +142,7 @@ static int __attribute__((fastcall)) receiver_hook(void *victim,void *unused,voi
                 (int)Read32(runtime,0x2C),(int)Read32(runtime,0x30),(int)Read32(victim,0x2C),(int)Read32(victim,0x30));
         }
     }
+    RuntimePerf_End(PERF_HIT,wrapper_perf);
     return result;
 }
 
@@ -324,16 +329,24 @@ void Guard_Update(void *role)
     }
 }
 
+void Guard_ApplySettings(void)
+{
+    charge_guard_on_hit=RuntimeConfig_GetInt(CONFIG_CHARGE_GUARD)!=0;
+    omnidirectional_guard=RuntimeConfig_GetInt(CONFIG_OMNI_GUARD)!=0;
+    free_run=RuntimeConfig_GetInt(CONFIG_FREE_RUN)!=0;
+    guard_hit_cost=RuntimeConfig_GetInt(CONFIG_GUARD_MODE) ? RuntimeConfig_GetInt(CONFIG_GUARD_PERCENT):-1;
+    attack_hit_recovery=RuntimeConfig_GetInt(CONFIG_RECOVERY_MODE) ? RuntimeConfig_GetInt(CONFIG_RECOVERY_PERCENT):-1;
+    /* 位移参数只能在当前闪避结束后更新，避免半程改变运动协议。 */
+    if (!dash.active) {
+        modern_dodge=RuntimeConfig_GetInt(CONFIG_DIRECTIONAL_DODGE)!=0;
+        dodge_distance=RuntimeConfig_GetInt(CONFIG_DODGE_DISTANCE);
+    }
+}
+
 bool Guard_Initialize(void)
 {
     if (installed) return true;
-    charge_guard_on_hit=Config_Number(L"Combat",L"ChargeGuardOnHit",1,0,1)!=0;
-    omnidirectional_guard=Config_Number(L"Combat",L"OmnidirectionalGuard",1,0,1)!=0;
-    modern_dodge=Config_Number(L"Combat",L"DirectionalDodge",1,0,1)!=0;
-    dodge_distance=Config_Number(L"Combat",L"DodgeDistance",128,16,512);
-    free_run=Config_Number(L"Combat",L"FreeRun",1,0,1)!=0;
-    guard_hit_cost=Config_Percent(L"Combat",L"GuardHitCost",-1);
-    attack_hit_recovery=Config_Percent(L"Combat",L"AttackHitRecovery",-1);
+    Guard_ApplySettings();
     Log_Write("[战斗配置] 防御受击扣费=%u；0 时恢复原版周期空耗。",charge_guard_on_hit ? 1u:0u);
     Log_Write("[战斗配置] 奔跑免扣费=%u；不再按战斗状态区分。",free_run ? 1u:0u);
     Log_Write("[战斗配置] 全方位格挡=%u；只放宽已有防御角度，原5点体力门和特殊穿防保留。",omnidirectional_guard ? 1u:0u);

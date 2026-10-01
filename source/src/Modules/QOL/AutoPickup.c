@@ -1,4 +1,5 @@
 #include "AutoPickup.h"
+#include "../../Runtime/Perf.h"
 #include "GroundItems.h"
 #include "ItemClassifier.h"
 #include "../../Runtime/Win32Bridge.h"
@@ -254,7 +255,9 @@ void AutoPickup_AfterInputFrame(void)
     }
 
     g_last_scan_ms = now;
+    int64_t perf=RuntimePerf_Begin();
     run_native_pickup_scan();
+    RuntimePerf_End(PERF_PICKUP,perf);
 }
 
 void AutoPickup_Disable(void)
@@ -290,4 +293,12 @@ int AutoPickup_AllowPickupCandidate(unsigned long ground_item)
     }
 
     return policy_accepts(item_class);
+}
+
+/* 切换模式只更新过滤策略；周期变化或由关闭启用时重新开始计时，不重装入口。 */
+void AutoPickup_ApplySettings(AutoPickupPolicy policy,unsigned long interval_ms)
+{
+    if (g_interval_ms!=interval_ms || (g_policy==AUTO_PICKUP_POLICY_OFF && policy!=AUTO_PICKUP_POLICY_OFF))
+        g_timer_started=0;
+    g_policy=policy;g_interval_ms=interval_ms;
 }

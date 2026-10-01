@@ -7,22 +7,11 @@
 const Profile *g_profile;
 static unsigned selected;
 
-bool Profile_Pe(void)
+bool Profile_Attach(GameId game)
 {
-    /* Loader 锁内只做内存识别。完整磁盘散列稍后在游戏输入线程执行。 */
-    BYTE *base = (BYTE *)GetModuleHandleW(NULL);
-    if ((uintptr_t)base != 0x400000u || !Memory_Readable(base, 0x1000)) return false;
-    IMAGE_DOS_HEADER *dos = (IMAGE_DOS_HEADER *)base;
-    if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew < 0x40 || dos->e_lfanew > 0x800) return false;
-    IMAGE_NT_HEADERS32 *pe = (IMAGE_NT_HEADERS32 *)(base + dos->e_lfanew);
-    if (pe->Signature != IMAGE_NT_SIGNATURE || pe->FileHeader.Machine != IMAGE_FILE_MACHINE_I386 ||
-        pe->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC) return false;
-    for (unsigned i=0; i<sizeof profiles/sizeof profiles[0]; ++i) {
-        if (pe->OptionalHeader.AddressOfEntryPoint == profiles[i].entry && pe->OptionalHeader.SizeOfImage == profiles[i].size) {
-            selected=i; g_profile=&profiles[i]; return true;
-        }
-    }
-    return false;
+    /* 身份来自统一Runtime，不再重复识别本体／外传。局部签名和磁盘SHA仍独立验证。 */
+    if (game!=GAME_ID_DAOJIAN && game!=GAME_ID_WAIZHUAN) return false;
+    selected=game==GAME_ID_DAOJIAN ? 0u:1u;g_profile=&profiles[selected];return true;
 }
 
 bool Profile_Select(void)
@@ -52,11 +41,9 @@ bool Profile_Select(void)
     char hex[65];
     for (unsigned i = 0; i < 32; ++i) snprintf(hex + i*2, 3, "%02x", digest[i]);
     Log_Write("[基线] 当前 EXE SHA-256=%s", hex);
-    for (unsigned i = 0; i < sizeof profiles / sizeof profiles[0]; ++i) {
-        if (!strcmp(hex, profiles[i].sha256)) {
-            selected = i; g_profile = &profiles[i]; ok = true; break;
-        }
-    }
+    /* 只验证Runtime选定的档案，散列匹配不能改选另一游戏身份。 */
+    ok=g_profile && !strcmp(hex,g_profile->sha256);
+
 done:
     if (hash) CryptDestroyHash(hash);
     if (provider) CryptReleaseContext(provider, 0);

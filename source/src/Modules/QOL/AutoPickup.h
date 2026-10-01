@@ -16,6 +16,7 @@ int AutoPickup_Initialize(const RuntimeContext* runtime,
                           unsigned long interval_ms);
 
 /* 游戏原输入刷新完成后调用，用于在主线程按设定周期触发一次原生拾取动作。 */
+void AutoPickup_ApplySettings(AutoPickupPolicy policy,unsigned long interval_ms);
 void AutoPickup_AfterInputFrame(void);
 
 /* 安装失败回滚时先停自动扫描；即使输入 Hook 未能撤销也只执行原版输入。 */

@@ -1,3 +1,5 @@
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 #include "GameProfile.h"
 
 #define GAME_IMAGE_BASE 0x00400000ul
@@ -80,7 +82,9 @@ const GameProfile* GameProfile_Detect(void)
      * 两款游戏的 PE ImageBase 都固定为 0x00400000，并且当前支持样本没有 ASLR。
      * 因为这个函数运行在游戏已经正常启动、ASI 已经被 LoadLibrary 之后，所以这里可以直接读取主 EXE 映像。
      */
-    const unsigned char* image = (const unsigned char*)GAME_IMAGE_BASE;
+    const unsigned char* image = (const unsigned char*)GetModuleHandleW(NULL);
+    /* 未知宿主可能启用ASLR，先检查真实基址，不能直接读取未映射的0x400000。 */
+    if ((unsigned long)image!=GAME_IMAGE_BASE) return (const GameProfile*)0;
     unsigned long pe_offset;
     const unsigned char* pe;
     const unsigned char* file_header;

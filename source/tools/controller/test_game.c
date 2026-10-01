@@ -1,8 +1,10 @@
+#include "../../src/Runtime/Perf.h"
 #include "Plugin.h"
 #include "Combat.h"
 #include "Guard.h"
 #include "Feedback.h"
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
@@ -16,6 +18,9 @@ WCHAR g_directory[MAX_PATH];
 HWND g_window;
 static BYTE world_data[0x100], manager_data[0x300], mouse_data[0x100], ui_data[0x100];
 static BYTE hud_data[0xD00], scene_data[0x100], table_data[6*16];
+static BYTE class_data[0x300];static void *class_ptr=class_data;
+static int custom_binding,custom_right;
+static bool last_right_style;
 static BYTE roles[3][0x500], record_data[0x40], binding_data[0x20], page_data[0xC0];
 static void *world_ptr=world_data,*mouse_ptr=mouse_data,*scene_ptr=scene_data,*table_ptr=table_data,*hud_ptr=hud_data;
 static int last_opcode, arg1, arg2, arg3, releases, last_policy, selected, quick_slot;
@@ -39,27 +44,38 @@ static WorldPoint last_aim;
 static BYTE runtime_data[0x100];
 #define CHECK(e) do { ++checks; if (!(e)) { fprintf(stderr,"适配检查失败，行 %d：%s\n",__LINE__,#e); exit(1); } } while(0)
 
-void Log_Write(const char *format, ...) { (void)format; }
-bool Input_PhysicalDown(int key) { return key==VK_LBUTTON && physical_mouse; }
-int Config_Number(const WCHAR *section,const WCHAR *key,int fallback,int minimum,int maximum)
+void Log_Write(const char *format, ...)
 {
-    (void)section;(void)minimum;(void)maximum;
-    if(!wcscmp(key,L"OmnidirectionalGuard"))return test_omni_setting;
-    if(!wcscmp(key,L"DodgeDistance"))return test_dodge_distance;
-    if(!wcscmp(key,L"DirectionalDodge"))return test_dodge_setting;
-    if(!wcscmp(key,L"ChargeGuardOnHit"))return test_guard_setting;
-    if(!wcscmp(key,L"FreeRun"))return test_run_setting;
-    if(!wcscmp(key,L"GuardHitCost"))return test_cost;
-    if(!wcscmp(key,L"AttackHitRecovery"))return test_recovery;
-    return fallback;
+    if (!strncmp(format,"[战斗提交]",strlen("[战斗提交]"))) {
+        va_list args;va_start(args,format);const char *style=va_arg(args,const char *);
+        last_right_style=!strcmp(style,"右手");va_end(args);
+    }
 }
-/* 配置读取替身直接返回百分比的百分之一单位，和实际解析器保持一致。 */
-int Config_Percent(const WCHAR *section,const WCHAR *key,int fallback)
+bool Input_PhysicalDown(int key) { return key==VK_LBUTTON && physical_mouse; }
+int RuntimeConfig_GetInt(ConfigId id)
 {
-    (void)section;
-    if(!wcscmp(key,L"GuardHitCost"))return test_cost;
-    if(!wcscmp(key,L"AttackHitRecovery"))return test_recovery;
-    return fallback;
+    switch (id) {
+    case CONFIG_OMNI_GUARD:return test_omni_setting;
+    case CONFIG_DODGE_DISTANCE:return test_dodge_distance;
+    case CONFIG_DIRECTIONAL_DODGE:return test_dodge_setting;
+    case CONFIG_CHARGE_GUARD:return test_guard_setting;
+    case CONFIG_FREE_RUN:return test_run_setting;
+    case CONFIG_GUARD_MODE:return test_cost>=0;
+    case CONFIG_GUARD_PERCENT:return test_cost>=0 ? test_cost:0;
+    case CONFIG_RECOVERY_MODE:return test_recovery>=0;
+    case CONFIG_RECOVERY_PERCENT:return test_recovery>=0 ? test_recovery:0;
+    case CONFIG_MOVE_LEAD:return 12;
+    default:return 0;
+    }
+}
+static GameProfile runtime_profile={.game_id=GAME_ID_DAOJIAN};
+static const RuntimeContext runtime_context={.profile=&runtime_profile};
+const RuntimeContext *Runtime_GetContext(void) {return &runtime_context;}
+ConfigBinding RuntimeConfig_GetBinding(unsigned game,unsigned role,unsigned slot)
+{
+    CHECK(game==runtime_profile.game_id);
+    CHECK(role==4 || role==30);
+    ConfigBinding binding={custom_binding && slot==1 && role==4,111,custom_right};return binding;
 }
 bool Memory_Readable(const void *p,size_t bytes)
 {
@@ -192,6 +208,8 @@ static void configure(Profile *profile, bool expansion)
 {
     Feedback_End();Combat_Reset();animation_pointer=animation_data;animation_done=false;test_throwing=false;test_guard_setting=test_run_setting=1;test_cost=test_recovery=-1;
     memset(profile,0,sizeof *profile);
+    custom_binding=custom_right=0;runtime_profile.game_id=expansion ? GAME_ID_WAIZHUAN:GAME_ID_DAOJIAN;
+    profile->player_class_global=(uintptr_t)&class_ptr;Write32(class_data,0x2E0,1);
     profile->world_global=(uintptr_t)&world_ptr;profile->mouse_global=(uintptr_t)&mouse_ptr;
     profile->entities_global=(uintptr_t)&scene_ptr;profile->handles_global=(uintptr_t)&table_ptr;
     profile->skill_global=(uintptr_t)&hud_ptr;profile->ui=(uintptr_t)ui_data;
@@ -217,6 +235,8 @@ static void configure(Profile *profile, bool expansion)
     profile->pending_offset=expansion?0x456:0x446;
     g_profile=profile;
     memset(roles,0,sizeof roles);memset(table_data,0,sizeof table_data);
+    /* 原始PlayerInit两版都写+0x348，4是已确认selector，不能用对象类型替代。 */
+    Write32(roles[0],0x348,4);
     memset(ui_data,0,sizeof ui_data);memset(mouse_data,0,sizeof mouse_data);
     ptr(world_data,0x30,manager_data);Write32(world_data,0x58,1);
     Write32(manager_data,0x0C,1);
@@ -839,6 +859,22 @@ static void feedback_regression(bool expansion)
     printf("%s图标包装、结束恢复、来源切换及必杀准备/换选/过期/确认回归通过\n",expansion?"外传":"本体");
 }
 
+static void configured_binding_regression(bool expansion)
+{
+    Profile profile;configure(&profile,expansion);record_actions=true;custom_binding=1;
+    g_intent.layer=LAYER_SKILL;g_intent.held=g_intent.pressed=KEY(PAD_A);
+    Game_Update();
+    CHECK(releases==1 && arg1==1001 && !last_right_style);
+    ptr(roles[0],profile.active_offset,NULL);engine_tick+=2;Combat_End();
+    Combat_Reset();
+    ptr(hud_data,0xC18,binding_data);Write32(binding_data,0x14,222);Write32(binding_data,0x18,'Q');
+    Write32(roles[0],0x348,30);g_intent.pressed=KEY(PAD_A);Game_Update();
+    CHECK(releases==2 && arg1==1002); /* 另一个角色走自己的原版绑定，而不是串用自定义111。 */
+    ptr(roles[0],profile.active_offset,NULL);engine_tick+=2;Combat_End();Combat_Reset();
+    Write32(roles[0],0x348,4);custom_right=1;g_intent.pressed=KEY(PAD_A);Game_Update();
+    CHECK(releases==3 && last_right_style);
+    Combat_Reset();Game_Release();custom_binding=0;
+}
 int main(void)
 {
     exercise(false);exercise(true);
@@ -848,6 +884,13 @@ int main(void)
     guard_regression(false);guard_regression(true);
     quick_cast_regression(false);quick_cast_regression(true);
     feedback_regression(false);feedback_regression(true);
+    configured_binding_regression(false);configured_binding_regression(true);
     printf("原生路由、双版本偏移与调用约定检查通过：%u 项\n",checks);
     return 0;
 }
+
+// 性能替身不改变生产业务或原有测试顺序。
+void RuntimePerf_Initialize(void) {}
+int64_t RuntimePerf_Begin(void) {return 0;}
+void RuntimePerf_End(RuntimePerfId id,int64_t begin) {(void)id;(void)begin;}
+void RuntimePerf_FrameEnd(void) {}

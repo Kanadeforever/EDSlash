@@ -1,4 +1,8 @@
 #include "Plugin.h"
+#include "ControllerModule.h"
+#include "../../Runtime/Log.h"
+#include "../../Runtime/Perf.h"
+#include "../../Runtime/Win32Bridge.h"
 #include "Combat.h"
 #include "Guard.h"
 #include "Feedback.h"
@@ -11,7 +15,6 @@ HWND g_window;
 PadInput g_input;
 Intent g_intent;
 static ControlState control;
-static FILE *log_file;
 static LONG initialized;
 static BOOL (WINAPI *original_keyboard)(PBYTE);
 static SHORT (WINAPI *original_async)(int);
@@ -75,13 +78,8 @@ static LRESULT CALLBACK window_hook(HWND window, UINT message, WPARAM wp, LPARAM
 
 void Log_Write(const char *format, ...)
 {
-    if (!log_file) return;
-    va_list args;
-    va_start(args, format);
-    vfprintf(log_file, format, args);
-    va_end(args);
-    fputs("\n", log_file);
-    fflush(log_file);
+    va_list args;va_start(args,format);
+    RuntimeLog_VWrite(format,args);va_end(args);
 }
 
 bool Memory_Readable(const void *pointer, size_t bytes)
@@ -110,12 +108,9 @@ void Write32(void *p, unsigned offset, uint32_t value)
 
 static bool patch(void *where, const void *data, size_t count)
 {
-    DWORD old, ignored;
-    if (!VirtualProtect(where, count, PAGE_EXECUTE_READWRITE, &old)) return false;
-    memcpy(where, data, count);
-    FlushInstructionCache(GetCurrentProcess(), where, count);
-    VirtualProtect(where, count, old, &ignored);
-    return true;
+    int result=RuntimeWin32_WriteCode((unsigned long)(uintptr_t)where,data,(unsigned long)count);
+    if (result==2) Log_Write("[补丁][警告] 字节已写入，但缓存／保护处理失败，保留相关资源。");
+    return result!=0;
 }
 
 bool Memory_Patch(void *where,const void *data,size_t count)
@@ -149,6 +144,18 @@ static BOOL WINAPI keyboard_hook(PBYTE keys)
     }
     g_input.menu = Game_Menu();
     g_input.connected = Input_Poll(&g_input);
+    /* 没有待应用设置时不多解析一遍玩家／句柄，保持旧输入链的正常帧开销。 */
+    if (RuntimeConfig_HasPending()) {
+        void *current_player=Game_Player();
+        int idle=!g_input.buttons && !g_input.lt && !g_input.rt &&
+            (!current_player || !ReadPtr(current_player,g_profile->active_offset));
+        (void)RuntimeConfig_ApplyFrame(idle);
+    }
+    /* 外层公共帧可能已经提交普通设置，因此按代数同步Guard，而不是只看本次Apply的返回值。 */
+    static unsigned guard_generation;
+    unsigned generation=RuntimeConfig_Current()->generation;
+    if (generation!=guard_generation) {Guard_ApplySettings();guard_generation=generation;}
+    Runtime_EmitEvent(RUNTIME_EVENT_INPUT_SAMPLED,keys,g_input.now,0);
     /* 鼠标事件可能尚未派发到窗口，补查真实按键的新边沿；稳定按住不反复争抢。 */
     unsigned mouse_buttons=(Input_PhysicalDown(VK_LBUTTON) ? 1u:0u) |
         (Input_PhysicalDown(VK_RBUTTON) ? 2u:0u) | (Input_PhysicalDown(VK_MBUTTON) ? 4u:0u);
@@ -196,7 +203,10 @@ static void __attribute__((fastcall)) resolver_hook(void *mouse, void *unused)
     (void)unused;
     /* 先让原版解析新一帧场景和玩家，再提交控制器动作，避免拿上一张地图的 Role。 */
     ((This0)g_profile->resolver)(mouse);
+    Runtime_EmitEvent(RUNTIME_EVENT_INPUT_RESOLVED,mouse,0,0);
+    int64_t perf=RuntimePerf_Begin();
     Game_Update();
+    RuntimePerf_End(PERF_GAME,perf);
 }
 
 static void __attribute__((fastcall)) history_hook(void *original,void *unused,int selector,int direction,int extra)
@@ -238,21 +248,11 @@ static void initialize_runtime(void)
     /* 此时已经离开 DllMain 的 Loader 锁，允许文件散列、配置与 SDL 动态加载。
        先置失败状态；只有所有验证和安装成功才改成可运行，递归也不会重复初始化。 */
     runtime_state = -1;
-    DWORD length = GetModuleFileNameW(self_module, g_directory, MAX_PATH);
-    if (!length || length >= MAX_PATH) return;
-    WCHAR *slash = wcsrchr(g_directory, L'\\');
-    if (!slash) return;
-    slash[1] = 0;
-    WCHAR path[MAX_PATH];
-    if (wcslen(g_directory) + 24 >= MAX_PATH) return;
-    swprintf(path, MAX_PATH, L"%lsEDSlashController.log", g_directory);
-    /* 每次启动覆盖旧日志，符合实机比较需要；不把历史记录追加成一大份混合日志。 */
-    log_file = _wfopen(path, L"w");
-    Log_Write("EDSlashController v0.1-dev9：完整图标、全方位格挡与防御诊断版");
-    const Profile *candidate = g_profile;
-    if (!Profile_Select() || candidate != g_profile || !Profile_Verify()) {
-        Log_Write("[停止] 基线或机器码检查失败，撤回采样入口，未启用游戏动作。");
-        patch((void *)candidate->keyboard_iat, &original_keyboard, 4);
+    Log_Write("[Controller] 统一模块启动，保留dev9动作协议。");
+    if (!Profile_Select() || !Profile_Verify()) {
+        Log_Write("[停止] Controller基线或机器码不匹配，撤回采样入口，其他模块继续。");
+        if (*(void **)g_profile->keyboard_iat==(void *)keyboard_hook)
+            patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
         return;
     }
     original_async = *(void **)g_profile->async_iat;
@@ -315,23 +315,34 @@ static void initialize_runtime(void)
     Log_Write("[启动] %s；输入采样和原版目标解析后阶段已安装。SDL 将在游戏输入线程初始化。", g_profile->name);
 }
 
-__declspec(dllexport) void InitializeASI(void)
+int ControllerModule_Initialize(const RuntimeContext *runtime)
 {
-    /* 常见 ASI Loader 会在 DllMain 之后再调本入口，一次性标记保证不重复安装。 */
+    if (!runtime || !runtime->profile || !RuntimeConfig_GetInt(CONFIG_CONTROLLER_ENABLED)) return 0;
+    if (GetModuleHandleW(L"EDSlashController.asi")) {
+        Log_Write("[Controller][停止] 检测到旧独立ASI，请停用它后使用统一插件。");return 0;
+    }
+    if (InterlockedCompareExchange(&initialized,1,0)) return installed;
+    self_module=(HINSTANCE)runtime->self_module;
+    DWORD length=GetModuleFileNameW(self_module,g_directory,MAX_PATH);
+    WCHAR *slash=length && length<MAX_PATH ? wcsrchr(g_directory,L'\\'):NULL;
+    if (!slash || !Profile_Attach(runtime->profile->game_id) || !Profile_Verify()) return 0;
+    slash[1]=0;
+    if (!HookManager_Claim(SHARED_HOOK_CONTROLLER_KEYBOARD,RUNTIME_MODULE_CONTROLLER) ||
+        !HookManager_Claim(SHARED_HOOK_CONTROLLER_ASYNC,RUNTIME_MODULE_CONTROLLER) ||
+        !HookManager_Claim(SHARED_HOOK_CONTROLLER_RESOLVER,RUNTIME_MODULE_CONTROLLER)) {
+        HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);return 0;
+    }
+    original_keyboard=*(void **)g_profile->keyboard_iat;
+    void *hook=keyboard_hook;
+    if (!patch((void *)g_profile->keyboard_iat,&hook,4)) {
+        HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);return 0;
+    }
+    Log_Write("[Controller] 采样桥已安装，完整初始化延后到游戏输入线程。");return 1;
 }
-BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID reserved)
+void ControllerModule_Shutdown(void)
 {
-    if (reason == DLL_PROCESS_ATTACH) {
-        DisableThreadLibraryCalls(module);
-        self_module = module;
-        /* 启动时只桥接一处键盘 IAT；不创建线程、不初始化 SDL、不加载加密提供者。
-           首次游戏输入帧再完成初始化。两个非 Steam Profile 均走同一条路径。 */
-        if (!InterlockedCompareExchange(&initialized, 1, 0) && Profile_Pe() && Profile_Verify()) {
-            original_keyboard = *(void **)g_profile->keyboard_iat;
-            void *hook = keyboard_hook;
-            patch((void *)g_profile->keyboard_iat, &hook, 4);
-        }
-    } else if (reason == DLL_PROCESS_DETACH && !reserved && g_profile && original_keyboard) {
+    /* 仅在显式卸载时撤回仍归本模块的入口；进程终止不在Loader锁内关闭SDL线程。 */
+    if (!g_profile || !original_keyboard) return;
         Feedback_Shutdown();Guard_Shutdown();
         if (hooked_window && (WNDPROC)GetWindowLongPtrW(hooked_window,GWLP_WNDPROC)==window_hook)
             SetWindowLongPtrW(hooked_window,GWLP_WNDPROC,(LONG_PTR)previous_window_proc);
@@ -354,6 +365,5 @@ BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID reserved)
             if ((uintptr_t)(g_profile->end_call+5+displacement)==(uintptr_t)end_hook)
                 patch((void *)g_profile->end_call,saved_end_call,5);
         }
-    }
-    return TRUE;
+    Input_Shutdown();
 }

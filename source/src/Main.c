@@ -1,7 +1,7 @@
 #include "Runtime/Runtime.h"
 
 /*
- * Main.c 是整个 BladeSwordQOL.asi 唯一允许拥有 Windows/ASI 入口的源码文件。
+ * Main.c 是整个 EDSlash.asi 唯一允许拥有 Windows/ASI 入口的源码文件。
  * 本体和外传后端都只是普通模块，不能再定义自己的 DllMain / InitializeASI。
  */
 

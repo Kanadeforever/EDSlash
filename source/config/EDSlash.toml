@@ -1,0 +1,81 @@
+# EDSlash统一配置；UTF-8无BOM，CRLF。
+# 本版本只读取此TOML，不读取旧INI。
+[meta]
+schema = 1
+
+[display]
+# 动态宽屏：保持原显示修复范围；修改后重启。
+enabled = true
+# 逻辑高度：默认480；更高数值扩大视野并增加游戏负担。
+base_height = 480
+# 画面比例：auto自动，或正整数宽:高；最终宽度仍按8像素对齐。
+aspect_ratio = "auto"
+
+[font]
+# 字体DPI修复：修改后重启。
+fix_dpi = true
+
+[gui]
+# HUD居中：只影响显示布局，修改后重启。
+center_hud = true
+# 辅助界面层级：保持已验收的绘制和点击优先级。
+auxiliary_above_hud = true
+
+[qol.ground_items]
+# 物品名称常显：关闭后恢复原版显示条件。
+always_show_names = true
+
+[qol.auto_pickup]
+# 自动拾取范围：0关闭、1钱、2钱及回复、3再加宝石护身石、4全部。
+mode = 2
+# 拾取扫描间隔：毫秒；0为每输入帧扫描，默认100。
+interval_ms = 100
+# 掉落等待：毫秒；仍需完成原版落地动画。
+drop_delay_ms = 1000
+
+[controller]
+# 手柄功能：关闭仍可用键鼠；启动安装选择修改后重启。
+enabled = true
+
+[controller.input]
+# 摇杆死区：圆形左摇杆死区；连接时先松开全部输入。
+deadzone = 8000
+
+[controller.movement]
+# 移动前探：地图格数；走跑共用。
+lead_tiles = 12
+
+[controller.mouse]
+# 鼠标模式速度：每秒桌面像素，右摇杆为三分之一。
+speed = 900
+
+[controller.feedback]
+# 手柄震动：保持已有模式切换震动。
+rumble = true
+
+[gameplay.combat]
+# 受击才扣防御体力：关闭恢复原版周期消耗。
+charge_guard_on_hit = true
+# 跑步不扣体力：不按是否战斗区分。
+free_run = true
+# 全方位格挡：保留原5点体力门和特殊穿防。
+omnidirectional_guard = true
+# 方向闪避：当前闪避结束后应用；关闭恢复原版目标闪避。
+directional_dodge = true
+# 闪避距离：世界单位；64为1格，原碰撞限制保留。
+dodge_distance = 128
+
+[gameplay.stamina]
+# 防御消耗模式：original原角色值，percent自定百分比。
+guard_mode = "original"
+# 防御扣费百分比：按最大体力百分比计算，0表示没有单次变化，最多两位小数。
+guard_percent = 0.00
+# 攻击恢复模式：guard跟随防御消耗，percent自定百分比。
+recovery_mode = "guard"
+# 实伤恢复百分比：按最大体力百分比计算，0表示没有单次变化，最多两位小数。
+recovery_percent = 0.00
+
+[controller.bindings]
+# game跟随原游戏当前角色快捷绑定；自定义技能按游戏、角色、槽位分别保存。
+default = "game"
+# character_编号来自Player+0x348的创建角色selector；技能选择码须来自该角色实际技能。

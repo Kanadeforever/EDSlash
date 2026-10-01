@@ -12,7 +12,11 @@ typedef enum RuntimeEventId {
     RUNTIME_EVENT_GAMEPLAY_EXIT = 1,
     RUNTIME_EVENT_UI_DRAW_BEGIN = 2,
     RUNTIME_EVENT_UI_DRAW_END = 3,
-    RUNTIME_EVENT_COUNT = 4
+    RUNTIME_EVENT_INPUT_FRAME_BEGIN = 4,
+    RUNTIME_EVENT_INPUT_SAMPLED = 5,
+    RUNTIME_EVENT_INPUT_RESOLVED = 6,
+    RUNTIME_EVENT_INPUT_FRAME_END = 7,
+    RUNTIME_EVENT_COUNT = 8
 } RuntimeEventId;
 
 typedef void (*RuntimeEventCallback)(RuntimeEventId event_id,

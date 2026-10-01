@@ -1,5 +1,4 @@
 {
-  "sdl_sha256": "5bc0b512d62a191d059167bb6ba1bffc2f2ade68fe4999c134218b14d1580906",
   "profiles": [
     {
       "tag": "DaoJian",
@@ -88,7 +87,9 @@
         "role_effect": 4330256,
         "animation_get": 4370928,
         "animation_finished": 5197360,
-        "guard_angle_gate": 4300852
+        "guard_angle_gate": 4300852,
+        "player_class_global": 5616740,
+        "player_class_probe": 4712748
       },
       "offsets": {
         "invalid_offset": 1082,
@@ -156,7 +157,8 @@
         "role_effect": "64a1000000006aff68981b52",
         "animation_get": "e8abffffff8bc88b41108b51",
         "animation_finished": "568bf18b46048b4e1c3bc17c",
-        "guard_angle_gate": "0f8efa0000008b138b430489"
+        "guard_angle_gate": "0f8efa0000008b138b430489",
+        "player_class_probe": "a164b45500c780e002000001"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -252,7 +254,9 @@
         "role_effect": 4364544,
         "animation_get": 4408000,
         "animation_finished": 5291280,
-        "guard_angle_gate": 4334915
+        "guard_angle_gate": 4334915,
+        "player_class_global": 5818676,
+        "player_class_probe": 4773580
       },
       "offsets": {
         "invalid_offset": 1094,
@@ -320,7 +324,8 @@
         "role_effect": "64a1000000006aff68389054",
         "animation_get": "e8bbffffff8bc88b41108b51",
         "animation_finished": "568bf18b46048b4e1c3bc17c",
-        "guard_angle_gate": "0f8efa0000008b138b430489"
+        "guard_angle_gate": "0f8efa0000008b138b430489",
+        "player_class_probe": "a134c95800c780e002000001"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",

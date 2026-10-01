@@ -1,6 +1,7 @@
 #include "ModuleRegistry.h"
 #include "../Modules/DisplayFix/DisplayFixModule.h"
 #include "../Modules/QOL/QOLModule.h"
+#include "../Modules/Controller/ControllerModule.h"
 
 /*
  * 模块表是“一个 ASI、内部多模块”的统一入口。
@@ -9,7 +10,8 @@
  */
 static const ModuleDescriptor MODULES[] = {
     { RUNTIME_MODULE_DISPLAY_FIX, "DisplayFix", DisplayFixModule_Initialize },
-    { RUNTIME_MODULE_QOL, "QOL", QOLModule_Initialize }
+    { RUNTIME_MODULE_QOL, "QOL", QOLModule_Initialize },
+    { RUNTIME_MODULE_CONTROLLER, "Controller", ControllerModule_Initialize }
 };
 
 /*

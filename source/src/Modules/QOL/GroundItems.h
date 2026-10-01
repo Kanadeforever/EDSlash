@@ -12,6 +12,7 @@ int GroundItems_Initialize(const RuntimeContext* runtime,
                            int always_show_names,
                            unsigned long drop_delay_ms);
 
+void GroundItems_ApplySettings(int always_show_names,unsigned long drop_delay_ms);
 void GroundItems_AfterUpdate(void* object);
 
 /* 符合“已落地 + 等待时间已到”时返回 1。 */

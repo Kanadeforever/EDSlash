@@ -166,6 +166,8 @@
  */
 
 #include "../../Runtime/Runtime.h"
+#include "../../Runtime/Config.h"
+#include "../../Runtime/Log.h"
 
 
 /* ============================================================================================== */
@@ -285,15 +287,10 @@ typedef BOOL    (__stdcall *FnGetCursorPos)(POINT* point);
  */
 typedef BOOL  (__stdcall *FnVirtualProtect)(LPVOID address, DWORD size, DWORD new_protect, LPDWORD old_protect);
 typedef BOOL  (__stdcall *FnFlushInstructionCache)(HANDLE process, LPCVOID address, DWORD size);
-typedef UINT  (__stdcall *FnGetPrivateProfileIntA)(LPCSTR section, LPCSTR key, int default_value, LPCSTR file_name);
-typedef DWORD (__stdcall *FnGetPrivateProfileStringA)(LPCSTR section, LPCSTR key, LPCSTR default_value,
-                                                       LPSTR output, DWORD output_size, LPCSTR file_name);
 
 /* 这些函数指针在初始化时取得，之后所有补丁代码都通过它们调用系统 API。 */
 static FnVirtualProtect            g_VirtualProtect = (FnVirtualProtect)0;
 static FnFlushInstructionCache     g_FlushInstructionCache = (FnFlushInstructionCache)0;
-static FnGetPrivateProfileIntA     g_GetPrivateProfileIntA = (FnGetPrivateProfileIntA)0;
-static FnGetPrivateProfileStringA  g_GetPrivateProfileStringA = (FnGetPrivateProfileStringA)0;
 
 /*
  * Auto 宽高比最好直接调用 USER32 真正导出的 GetSystemMetrics，而不是继续走游戏 IAT。
@@ -310,7 +307,7 @@ static FnGetSystemMetrics          g_GetSystemMetrics = (FnGetSystemMetrics)0;
 /* DllMain 和某些 ASI Loader 都可能尝试调用 InitializeASI；这个标志保证真正初始化只做一次。 */
 static volatile LONG g_initialized = 0;
 
-/* 保存当前 BladeSwordQOL.asi 自己的模块句柄，用来找到同目录的 BladeSwordQOL.ini。 */
+/* 保存当前 BladeSwordQOL.asi 自己的模块句柄，用来找到同目录的 EDSlash.toml。 */
 static HINSTANCE g_self_module = (HINSTANCE)0;
 
 /* 路径最大给 1024 字节，远大于这类老游戏常见安装路径。 */
@@ -564,27 +561,8 @@ static void log_text(const char* label, const char* text)
 /* 把内存里的日志一次写到 DisplayFix.log。 */
 static void flush_log_file(void)
 {
-    HANDLE file;
-    DWORD written = 0;
-    DWORD length = str_len(g_log_buffer);
-
-    /* CREATE_ALWAYS 表示每次启动都重建日志，避免旧测试内容和新测试内容混在一起。 */
-    file = GAME_CreateFileA(g_log_path,
-                            GENERIC_WRITE,
-                            FILE_SHARE_READ,
-                            (LPVOID)0,
-                            CREATE_ALWAYS,
-                            FILE_ATTRIBUTE_NORMAL,
-                            (HANDLE)0);
-
-    if (file != INVALID_HANDLE_VALUE) {
-        if (length != 0) {
-            GAME_WriteFile(file, g_log_buffer, length, &written, (LPVOID)0);
-        }
-        GAME_CloseHandle(file);
-    }
-
-    /* 同时发到调试输出；如果以后用 DebugView，可以直接看到。 */
+    /* 统一Runtime已建立日志；这里追加初始化块，不能再截断其它模块记录。 */
+    RuntimeLog_Text(g_log_buffer);
     GAME_OutputDebugStringA(g_log_buffer);
 }
 
@@ -601,34 +579,8 @@ static void flush_log_file(void)
  */
 static void append_runtime_line(const char* text)
 {
-    HANDLE file;
-    DWORD written = 0;
-    DWORD length;
-    static const char CRLF[] = "\r\n";
-
-    if (!text || text[0] == '\0') {
-        return;
-    }
-
-    file = GAME_CreateFileA(g_log_path,
-                            FILE_APPEND_DATA,
-                            FILE_SHARE_READ,
-                            (LPVOID)0,
-                            OPEN_ALWAYS,
-                            FILE_ATTRIBUTE_NORMAL,
-                            (HANDLE)0);
-
-    if (file == INVALID_HANDLE_VALUE) {
-        return;
-    }
-
-    length = str_len(text);
-    GAME_WriteFile(file, text, length, &written, (LPVOID)0);
-    GAME_WriteFile(file, CRLF, 2u, &written, (LPVOID)0);
-    GAME_CloseHandle(file);
-
-    GAME_OutputDebugStringA(text);
-    GAME_OutputDebugStringA(CRLF);
+    /* 同一路径以宽字符打开，中文安装目录也不会丢失日志。 */
+    RuntimeLog_Line(text);
 }
 
 /* ============================================================================================== */
@@ -5934,21 +5886,12 @@ static void load_config(DisplayFixConfig* config)
     config->aspect_width = 0u;
     config->aspect_height = 0u;
 
-    if (!g_GetPrivateProfileIntA || !g_GetPrivateProfileStringA) {
-        /* 理论上现代 Windows 都能解析到这两个 API；失败时仍使用默认值。 */
-        screen_width = get_screen_metric(SM_CXSCREEN);
-        screen_height = get_screen_metric(SM_CYSCREEN);
-        config->aspect_width = (screen_width > 0) ? (DWORD)screen_width : 4u;
-        config->aspect_height = (screen_height > 0) ? (DWORD)screen_height : 3u;
-        return;
-    }
-
-    config->enable = g_GetPrivateProfileIntA("Display", "Enable", 1, g_ini_path) ? TRUE : FALSE;
-    config->fix_font_dpi = g_GetPrivateProfileIntA("Font", "FixDPI", 1, g_ini_path) ? TRUE : FALSE;
-    config->center_main_hud = g_GetPrivateProfileIntA("GUI", "CenterMainHUD", 1, g_ini_path) ? TRUE : FALSE;
-    config->auxiliary_ui_above_hud = g_GetPrivateProfileIntA("GUI", "AuxiliaryUIAboveHUD", 1, g_ini_path) ? TRUE : FALSE;
+    config->enable = RuntimeConfig_GetInt(CONFIG_DISPLAY_ENABLED) ? TRUE : FALSE;
+    config->fix_font_dpi = RuntimeConfig_GetInt(CONFIG_FONT_DPI) ? TRUE : FALSE;
+    config->center_main_hud = RuntimeConfig_GetInt(CONFIG_CENTER_HUD) ? TRUE : FALSE;
+    config->auxiliary_ui_above_hud = RuntimeConfig_GetInt(CONFIG_AUXILIARY_UI) ? TRUE : FALSE;
     {
-        int configured_height = g_GetPrivateProfileIntA("Display", "BaseHeight", 480, g_ini_path);
+        int configured_height = RuntimeConfig_GetInt(CONFIG_BASE_HEIGHT);
 
         /*
          * v0.3-test1 起取消 480/600 白名单，也不再设置人为最大值。
@@ -5959,7 +5902,7 @@ static void load_config(DisplayFixConfig* config)
     }
 
     ratio[0] = '\0';
-    g_GetPrivateProfileStringA("Display", "AspectRatio", "Auto", ratio, (DWORD)sizeof(ratio), g_ini_path);
+    str_copy(ratio, (DWORD)sizeof(ratio), RuntimeConfig_Current()->aspect_ratio);
 
     if (str_equal_icase(ratio, "Auto")) {
         /* Auto：读取当前系统/兼容层向游戏报告的屏幕宽高。 */
@@ -6003,8 +5946,6 @@ static BOOL resolve_required_apis(void)
 
     g_VirtualProtect = (FnVirtualProtect)GAME_GetProcAddress(kernel32, "VirtualProtect");
     g_FlushInstructionCache = (FnFlushInstructionCache)GAME_GetProcAddress(kernel32, "FlushInstructionCache");
-    g_GetPrivateProfileIntA = (FnGetPrivateProfileIntA)GAME_GetProcAddress(kernel32, "GetPrivateProfileIntA");
-    g_GetPrivateProfileStringA = (FnGetPrivateProfileStringA)GAME_GetProcAddress(kernel32, "GetPrivateProfileStringA");
 
     /*
      * user32.dll 同样已经被游戏加载。
@@ -6024,6 +5965,11 @@ static BOOL resolve_required_apis(void)
 /* 12. 插件总初始化                                                                                     */
 /* ============================================================================================== */
 
+/* GCC16.1在这个很大的启动安装函数上触发cfgcleanup内部错误。
+ * 只降低一次性初始化的优化，帧循环、绘制和输入函数继续保持O2，避免影响游戏性能。 */
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ == 16
+__attribute__((optimize("O1")))
+#endif
 static void initialize_display_fix(void)
 {
     char module_path[1024];
@@ -6052,10 +5998,10 @@ static void initialize_display_fix(void)
 
     /* 先算出 INI 和日志路径。即使后面初始化失败，也尽量留下诊断日志。 */
     GAME_GetModuleFileNameA((HMODULE)g_self_module, module_path, (DWORD)sizeof(module_path));
-    make_sibling_path(module_path, "BladeSwordQOL.ini", g_ini_path, (DWORD)sizeof(g_ini_path));
-    make_sibling_path(module_path, "BladeSwordQOL.log", g_log_path, (DWORD)sizeof(g_log_path));
+    make_sibling_path(module_path, "EDSlash.toml", g_ini_path, (DWORD)sizeof(g_ini_path));
+    make_sibling_path(module_path, "EDSlash.log", g_log_path, (DWORD)sizeof(g_log_path));
 
-    log_line("BladeSwordQOL");
+    log_line("[DisplayFix] EDSlash统一显示后端");
     log_line("[Runtime] 游戏Profile=刀剑封魔录 / DisplayFix后端已加载");
     log_line("架构：Win32/x86 ASI，基于内容签名的运行时补丁");
 
@@ -6345,7 +6291,7 @@ static void initialize_display_fix(void)
  * 也会让两个后端都尝试初始化。真正的唯一入口在 src/Main.c，Runtime 先识别游戏 Profile，
  * 然后只调用与当前游戏匹配的这个函数。
  *
- * module 是 BladeSwordQOL.asi 自己的模块句柄。后端继续用它寻找同目录 BladeSwordQOL.ini / .log，
+ * module 是 BladeSwordQOL.asi 自己的模块句柄。后端继续用它寻找同目录 EDSlash.toml / .log，
  * 因此把入口合并以后不会改变配置文件相对路径语义。
  */
 int DisplayFixDaoJian_Initialize(void* module)

@@ -25,12 +25,6 @@ int RuntimeWin32_IsReady(void);
 /* 返回毫秒计时。GetTickCount 的 32 位回绕由调用者使用无符号减法处理。 */
 unsigned long RuntimeWin32_TickCount(void);
 
-/* 读取同目录 INI 的整数配置。 */
-int RuntimeWin32_GetPrivateProfileInt(const char* section,
-                                      const char* key,
-                                      int fallback,
-                                      const char* file_name);
-
 /* 取得指定模块的完整路径。 */
 unsigned long RuntimeWin32_GetModuleFileName(void* module, char* buffer, unsigned long capacity);
 
@@ -60,7 +54,7 @@ void RuntimeWin32_FreeExecutable(void* memory);
  * 返回 2 时必须保留相关 Hook 资源，不能误当成“目标完全没有修改”。 */
 int RuntimeWin32_WriteCode(unsigned long address, const void* bytes, unsigned long size);
 
-/* 与显示后端共用插件旁的 BladeSwordQOL.log，逐行追加，不截断已有诊断。 */
+/* 与显示后端共用插件旁的 EDSlash.log，逐行追加，不截断已有诊断。 */
 void RuntimeWin32_Log(void* module, const char* text);
 /* 不依赖 CRT 格式化，用十进制记录配置与计数。 */
 void RuntimeWin32_LogNumber(void* module, const char* label, unsigned long value);

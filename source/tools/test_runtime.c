@@ -8,9 +8,9 @@
 static unsigned char target[16];
 static unsigned char gateway_memory[32];
 static int protect_calls, fail_protect_call, flush_ok = 1, frees, checks;
-static char log_output[512],log_path[260];
-static unsigned long log_size,log_access,log_creation;
-static int log_closes;
+static char log_output[512];
+static unsigned long log_size;
+
 #define CHECK(test) do { ++checks; if (!(test)) { \
     printf("运行时回归失败：第 %d 行\n", __LINE__); return 1; } } while (0)
 
@@ -57,29 +57,14 @@ static void reset_case(X86Detour* detour)
     protect_calls = fail_protect_call = frees = 0;
     flush_ok = 1;
 }
-/* 检查真实日志桥是否追加到同一文件；替身不碰磁盘。 */
-static unsigned long __stdcall name_stub(unsigned long module,char *buffer,unsigned long capacity)
+/* 模拟公共日志出口，桥只负责转发；实际宽字符文件写入另由配置／日志测试验证。 */
+void RuntimeLog_Line(const char *text)
 {
-    const char *name="C:\\test\\BladeSwordQOL.asi";
-    (void)module;
-    if(strlen(name)+1>capacity)return 0;
-    strcpy(buffer,name);return (unsigned long)strlen(name);
+    size_t size=strlen(text);
+    if (log_size+size+3>=sizeof log_output) return;
+    memcpy(log_output+log_size,text,size);log_size+=(unsigned long)size;
+    memcpy(log_output+log_size,"\r\n",3);log_size+=2;
 }
-static unsigned long __stdcall create_stub(const char *path,unsigned long access,unsigned long share,
-                                           void *security,unsigned long creation,unsigned long flags,unsigned long template_file)
-{
-    (void)share;(void)security;(void)flags;(void)template_file;
-    strcpy(log_path,path);log_access=access;log_creation=creation;return 7ul;
-}
-static int __stdcall write_stub(unsigned long file,const void *text,unsigned long size,
-                               unsigned long *written,void *overlapped)
-{
-    (void)file;(void)overlapped;
-    if(log_size+size>=sizeof log_output)return 0;
-    memcpy(log_output+log_size,text,size);log_size+=size;log_output[log_size]=0;*written=size;return 1;
-}
-static int __stdcall close_stub(unsigned long file)
-{ (void)file;++log_closes;return 1; }
 int main(void)
 {
     X86Detour detour;
@@ -142,13 +127,10 @@ int main(void)
     CHECK(X86Detour_Remove(&detour));
     CHECK(!detour.installed && frees == 1);
     strcpy(log_output,"[DisplayFix] 已加载\r\n");log_size=(unsigned long)strlen(log_output);
-    g_get_module_file_name_a=name_stub;g_create_file=create_stub;g_write_file=write_stub;g_close_handle=close_stub;
     RuntimeWin32_Log((void*)1,"[QoL] 初始化成功");
-    CHECK(!strcmp(log_path,"C:\\test\\BladeSwordQOL.log"));
-    CHECK(log_access==4ul && log_creation==4ul && log_closes==1);
     CHECK(strstr(log_output,"[DisplayFix] 已加载\r\n[QoL] 初始化成功\r\n")!=NULL);
     RuntimeWin32_LogNumber((void*)1,"[QoL] 数值=",4294967295ul);
-    CHECK(strstr(log_output,"[QoL] 数值=4294967295\r\n")!=NULL && log_closes==2);
+    CHECK(strstr(log_output,"[QoL] 数值=4294967295\r\n")!=NULL);
     RuntimeWin32_LogNumber((void*)1,"[QoL] 关闭=",0ul);
     CHECK(strstr(log_output,"[QoL] 关闭=0\r\n")!=NULL);
     printf("运行时写入失败、Hook 回滚与共用日志追加检查通过：%d 项\n", checks);
