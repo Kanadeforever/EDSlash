@@ -139,7 +139,7 @@ static void draw_notices(RuntimeEventId event,void *subject,unsigned long contex
     if (!hud || !RuntimeWin32_IsReadable(hud,0x64ul)) return;
     /* 复用Runtime绘制结束事件和原版字体；不抢DisplayFix的物理Draw入口。 */
     for (unsigned long i=0ul;i<notice_count;++i)
-        native_text(g_profile->text_draw)((void *)hud,(void *)0,context,notices[i].text,16,64+(int)i*22,0);
+        native_text(g_profile->text_draw)((void *)hud,(void *)0,context,notices[i].text,16,192+(int)i*22,0);
 }
 int PickupNotice_Initialize(const RuntimeContext *runtime)
 {

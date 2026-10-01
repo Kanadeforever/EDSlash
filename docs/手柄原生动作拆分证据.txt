@@ -5,6 +5,37 @@
 ## 本体非 Steam 1.05
 SHA-256：c8d1aa33272a2c28e94f0d18eda2d6a8fcb14796644d8f8bed467b744ddc94b5
 
+### 动作当前动画读取：0x0042B1F0
+
+0042B1F0  e8 ab ff ff ff                  call 0x42b1a0
+0042B1F5  8b c8                           mov ecx, eax
+0042B1F7  8b 41 10                        mov eax, dword ptr [ecx + 0x10]
+0042B1FA  8b 51 18                        mov edx, dword ptr [ecx + 0x18]
+0042B1FD  c1 e0 05                        shl eax, 5
+0042B200  03 c2                           add eax, edx
+0042B202  c3                              ret
+
+### 动画末帧及帧时长完成判定：0x004F4E30
+
+004F4E30  56                              push esi
+004F4E31  8b f1                           mov esi, ecx
+004F4E33  8b 46 04                        mov eax, dword ptr [esi + 4]
+004F4E36  8b 4e 1c                        mov ecx, dword ptr [esi + 0x1c]
+004F4E39  3b c1                           cmp eax, ecx
+004F4E3B  7c 16                           jl 0x4f4e53
+004F4E3D  8b ce                           mov ecx, esi
+004F4E3F  e8 8c fe ff ff                  call 0x4f4cd0
+004F4E44  8b 4e 10                        mov ecx, dword ptr [esi + 0x10]
+004F4E47  48                              dec eax
+004F4E48  3b c8                           cmp ecx, eax
+004F4E4A  75 07                           jne 0x4f4e53
+004F4E4C  b8 01 00 00 00                  mov eax, 1
+004F4E51  5e                              pop esi
+004F4E52  c3                              ret
+004F4E53  33 c0                           xor eax, eax
+004F4E55  5e                              pop esi
+004F4E56  c3                              ret
+
 ### 必杀准备及原图标接口：0x004C41B0
 
 004C41B0  56                              push esi
@@ -2763,6 +2794,67 @@ SHA-256：c8d1aa33272a2c28e94f0d18eda2d6a8fcb14796644d8f8bed467b744ddc94b5
 0046978D  8b 0d 1c 7d 55 00               mov ecx, dword ptr [0x557d1c]
 00469793  e8 d8 b8 00 00                  call 0x475070
 
+### 防御方向门：0x00419FC1
+
+00419FC1  6a 6a                           push 0x6a
+00419FC3  8b ce                           mov ecx, esi
+00419FC5  e8 46 13 01 00                  call 0x42b310
+00419FCA  85 c0                           test eax, eax
+00419FCC  0f 84 62 01 00 00               je 0x41a134
+00419FD2  8b 06                           mov eax, dword ptr [esi]
+00419FD4  6a 01                           push 1
+00419FD6  8b ce                           mov ecx, esi
+00419FD8  ff 90 a4 00 00 00               call dword ptr [eax + 0xa4]
+00419FDE  e8 bd 46 0f 00                  call 0x50e6a0
+00419FE3  50                              push eax
+00419FE4  8b ce                           mov ecx, esi
+00419FE6  e8 d5 ae 00 00                  call 0x424ec0
+00419FEB  8d 47 2c                        lea eax, [edi + 0x2c]
+00419FEE  8d 5e 2c                        lea ebx, [esi + 0x2c]
+00419FF1  50                              push eax
+00419FF2  53                              push ebx
+00419FF3  e8 f8 73 0b 00                  call 0x4d13f0
+00419FF8  8b 17                           mov edx, dword ptr [edi]
+00419FFA  83 c4 08                        add esp, 8
+00419FFD  8b cf                           mov ecx, edi
+00419FFF  8b e8                           mov ebp, eax
+0041A001  ff 52 38                        call dword ptr [edx + 0x38]
+0041A004  85 c0                           test eax, eax
+0041A006  74 09                           je 0x41a011
+0041A008  8b cf                           mov ecx, edi
+0041A00A  e8 f1 5b 04 00                  call 0x45fc00
+0041A00F  8b e8                           mov ebp, eax
+0041A011  8b ce                           mov ecx, esi
+0041A013  e8 e8 f4 00 00                  call 0x429500
+0041A018  8b c8                           mov ecx, eax
+0041A01A  8b c5                           mov eax, ebp
+0041A01C  2b c1                           sub eax, ecx
+0041A01E  99                              cdq
+0041A01F  33 c2                           xor eax, edx
+0041A021  2b c2                           sub eax, edx
+0041A023  83 f8 04                        cmp eax, 4
+0041A026  7e 09                           jle 0x41a031
+0041A028  b9 08 00 00 00                  mov ecx, 8
+0041A02D  2b c8                           sub ecx, eax
+0041A02F  8b c1                           mov eax, ecx
+0041A031  83 f8 02                        cmp eax, 2
+0041A034  0f 8e fa 00 00 00               jle 0x41a134
+
+### 防御特殊受击反应三：0x0041A107
+
+0041A107  80 78 60 02                     cmp byte ptr [eax + 0x60], 2
+0041A10B  75 15                           jne 0x41a122
+0041A10D  8b 54 24 28                     mov edx, dword ptr [esp + 0x28]
+0041A111  8b 8a 4d 03 00 00               mov ecx, dword ptr [edx + 0x34d]
+0041A117  85 c9                           test ecx, ecx
+0041A119  74 8a                           je 0x41a0a5
+0041A11B  8b 01                           mov eax, dword ptr [ecx]
+0041A11D  ff 50 20                        call dword ptr [eax + 0x20]
+0041A120  eb 83                           jmp 0x41a0a5
+0041A122  80 78 60 03                     cmp byte ptr [eax + 0x60], 3
+0041A126  0f 85 79 ff ff ff               jne 0x41a0a5
+0041A12C  c7 44 24 20 ff ff ff ff         mov dword ptr [esp + 0x20], 0xffffffff
+
 ### 必杀准备原版过期窗口：0x004C2F4A
 
 004C2F4A  83 bf f4 0b 00 00 ff            cmp dword ptr [edi + 0xbf4], -1
@@ -2910,6 +3002,37 @@ SHA-256：c8d1aa33272a2c28e94f0d18eda2d6a8fcb14796644d8f8bed467b744ddc94b5
 
 ## 外传非 Steam 2.01
 SHA-256：04e34dd68b373b9b2ddf300ca4bfcabb6e6b89ceb9d437af67cbad5e7286fbe4
+
+### 动作当前动画读取：0x004342C0
+
+004342C0  e8 bb ff ff ff                  call 0x434280
+004342C5  8b c8                           mov ecx, eax
+004342C7  8b 41 10                        mov eax, dword ptr [ecx + 0x10]
+004342CA  8b 51 18                        mov edx, dword ptr [ecx + 0x18]
+004342CD  c1 e0 05                        shl eax, 5
+004342D0  03 c2                           add eax, edx
+004342D2  c3                              ret
+
+### 动画末帧及帧时长完成判定：0x0050BD10
+
+0050BD10  56                              push esi
+0050BD11  8b f1                           mov esi, ecx
+0050BD13  8b 46 04                        mov eax, dword ptr [esi + 4]
+0050BD16  8b 4e 1c                        mov ecx, dword ptr [esi + 0x1c]
+0050BD19  3b c1                           cmp eax, ecx
+0050BD1B  7c 16                           jl 0x50bd33
+0050BD1D  8b ce                           mov ecx, esi
+0050BD1F  e8 8c fe ff ff                  call 0x50bbb0
+0050BD24  8b 4e 10                        mov ecx, dword ptr [esi + 0x10]
+0050BD27  48                              dec eax
+0050BD28  3b c8                           cmp ecx, eax
+0050BD2A  75 07                           jne 0x50bd33
+0050BD2C  b8 01 00 00 00                  mov eax, 1
+0050BD31  5e                              pop esi
+0050BD32  c3                              ret
+0050BD33  33 c0                           xor eax, eax
+0050BD35  5e                              pop esi
+0050BD36  c3                              ret
 
 ### 必杀准备及原图标接口：0x004D8790
 
@@ -5730,6 +5853,67 @@ SHA-256：04e34dd68b373b9b2ddf300ca4bfcabb6e6b89ceb9d437af67cbad5e7286fbe4
 004773EC  51                              push ecx
 004773ED  8b 0d a8 8b 58 00               mov ecx, dword ptr [0x588ba8]
 004773F3  e8 f8 c4 00 00                  call 0x4838f0
+
+### 防御方向门：0x004224D0
+
+004224D0  6a 6a                           push 0x6a
+004224D2  8b ce                           mov ecx, esi
+004224D4  e8 07 1f 01 00                  call 0x4343e0
+004224D9  85 c0                           test eax, eax
+004224DB  0f 84 62 01 00 00               je 0x422643
+004224E1  8b 06                           mov eax, dword ptr [esi]
+004224E3  6a 01                           push 1
+004224E5  8b ce                           mov ecx, esi
+004224E7  ff 90 a4 00 00 00               call dword ptr [eax + 0xa4]
+004224ED  e8 3a 4f 10 00                  call 0x52742c
+004224F2  50                              push eax
+004224F3  8b ce                           mov ecx, esi
+004224F5  e8 76 b6 00 00                  call 0x42db70
+004224FA  8d 47 2c                        lea eax, [edi + 0x2c]
+004224FD  8d 5e 2c                        lea ebx, [esi + 0x2c]
+00422500  50                              push eax
+00422501  53                              push ebx
+00422502  e8 89 3d 0c 00                  call 0x4e6290
+00422507  8b 17                           mov edx, dword ptr [edi]
+00422509  83 c4 08                        add esp, 8
+0042250C  8b cf                           mov ecx, edi
+0042250E  8b e8                           mov ebp, eax
+00422510  ff 52 38                        call dword ptr [edx + 0x38]
+00422513  85 c0                           test eax, eax
+00422515  74 09                           je 0x422520
+00422517  8b cf                           mov ecx, edi
+00422519  e8 e2 a8 04 00                  call 0x46ce00
+0042251E  8b e8                           mov ebp, eax
+00422520  8b ce                           mov ecx, esi
+00422522  e8 d9 ff 00 00                  call 0x432500
+00422527  8b c8                           mov ecx, eax
+00422529  8b c5                           mov eax, ebp
+0042252B  2b c1                           sub eax, ecx
+0042252D  99                              cdq
+0042252E  33 c2                           xor eax, edx
+00422530  2b c2                           sub eax, edx
+00422532  83 f8 04                        cmp eax, 4
+00422535  7e 09                           jle 0x422540
+00422537  b9 08 00 00 00                  mov ecx, 8
+0042253C  2b c8                           sub ecx, eax
+0042253E  8b c1                           mov eax, ecx
+00422540  83 f8 02                        cmp eax, 2
+00422543  0f 8e fa 00 00 00               jle 0x422643
+
+### 防御特殊受击反应三：0x00422616
+
+00422616  80 78 60 02                     cmp byte ptr [eax + 0x60], 2
+0042261A  75 15                           jne 0x422631
+0042261C  8b 54 24 30                     mov edx, dword ptr [esp + 0x30]
+00422620  8b 8a 59 03 00 00               mov ecx, dword ptr [edx + 0x359]
+00422626  85 c9                           test ecx, ecx
+00422628  74 8a                           je 0x4225b4
+0042262A  8b 01                           mov eax, dword ptr [ecx]
+0042262C  ff 50 20                        call dword ptr [eax + 0x20]
+0042262F  eb 83                           jmp 0x4225b4
+00422631  80 78 60 03                     cmp byte ptr [eax + 0x60], 3
+00422635  0f 85 79 ff ff ff               jne 0x4225b4
+0042263B  c7 44 24 28 ff ff ff ff         mov dword ptr [esp + 0x28], 0xffffffff
 
 ### 必杀准备原版过期窗口：0x004D750A
 

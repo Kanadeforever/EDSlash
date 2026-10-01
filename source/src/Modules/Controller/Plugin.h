@@ -31,6 +31,7 @@ typedef struct {
     uintptr_t prepared_set,icon_resolve,right_icon_call,icon_draw,throw_group;
     uintptr_t dodge_init_call,dodge_init,dodge_motion_call,dodge_motion;
     uintptr_t map_bounds,cell_passable,grid_commit,role_effect;
+    uintptr_t animation_get,animation_finished,guard_angle_gate;
     unsigned dodge_counter_offset;
     unsigned stamina_offset;
     unsigned health_offset;

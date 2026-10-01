@@ -6,6 +6,8 @@ bool Feedback_Initialize(void);
 void Feedback_Shutdown(void);
 void Feedback_Start(int selection,ActionSource source);
 void Feedback_End(void);
+/* 原Runtime结束只是进入动画收尾，不能立即撤掉整次动作图标。 */
+void Feedback_RuntimeEnded(void);
 bool Feedback_Selection(int *selection,int *icon);
 void Feedback_Ultimate(unsigned slot);
 #endif

@@ -144,7 +144,7 @@ def ensure_config(path):
     lines=[line.replace('体力点数','最大体力百分比（最多两位小数）') if line in old_percentage_notes else line for line in lines]
     lines=['; 1=跑步不扣体力；0=沿用原版奔跑扣费。' if line in old_notes else line for line in lines]
     start=next((i for i,line in enumerate(lines) if line.strip().lower()=='[combat]'),None)
-    defaults={'ChargeGuardOnHit':'1','FreeRun':'1','GuardHitCost':'-1','AttackHitRecovery':'-1','DirectionalDodge':'1','DodgeDistance':'128'}
+    defaults={'ChargeGuardOnHit':'1','FreeRun':'1','GuardHitCost':'-1','AttackHitRecovery':'-1','DirectionalDodge':'1','DodgeDistance':'128','OmnidirectionalGuard':'1'}
     if start is None:
         lines+=['','[Combat]',
                 '; 1=防御受击才扣费；0=原版周期扣费。', 'ChargeGuardOnHit=1',
@@ -166,6 +166,8 @@ def ensure_config(path):
         existing={line.split('=',1)[0].strip().lower() for line in lines[start+1:end]
                   if '=' in line and not line.lstrip().startswith((';','#'))}
         notes={
+            'OmnidirectionalGuard':['; 1=已有防御姿态时全方位格挡；0=原版方向格挡。',
+                                    '; 不取消特殊穿防，保留原版最低5点体力门；修改后重启。'],
             'DirectionalDodge':['; 1=LT+左摇杆直线方向闪避；0=完全使用原版闪避启动/目标/位移机制。'],
             'DodgeDistance':['; 直线闪避距离，世界坐标单位；64单位=1地图格，默认128=2格，范围16到512。',
                              '; 仅DirectionalDodge=1生效；沿途遇障碍提前停止，8个逻辑更新周期完成，改后重启。'],
@@ -203,7 +205,9 @@ def main():
     units=['Main.c','Control.c','Profile.c','Input.c','Game.c','Combat.c','SkillResolver.c','Guard.c','Feedback.c']
     subprocess.run([cc,*flags,'-shared',*[str(MODULE/name) for name in units],'-luser32','-ladvapi32','-lm','-o',str(output)],check=True,env=env)
     imports=verify_asi(output)
-    archive=SOURCE/'vendor/SDL3/SDL3-3.4.14-win32-x86.zip'
+    archive=ROOT/'参考资料/SDL3-3.4.14-win32-x86.zip'
+    if not archive.is_file():
+        raise SystemExit('缺少SDL3依赖：请自行将官方SDL3-3.4.14-win32-x86.zip放入项目根的参考资料目录。依赖不随Git上传。')
     assert hashlib.sha256(archive.read_bytes()).hexdigest()==metadata['sdl_sha256']
     # 先验证依赖和完整产物，再更新 release；绝不递归清空多模块共享的 release。
     with ZipFile(archive) as z:
@@ -217,11 +221,11 @@ def main():
     config=RELEASE/'EDSlashController.ini'
     ensure_config(config)
     # 许可证放中文名文档中，发布包必须连同 docs 一起携带。
-    report={'版本':'v0.1-dev8','双样本静态复核':samples_verified,'实机验收':{'本体':'待测试','外传':'待测试'},
+    report={'版本':'v0.1-dev9','双样本静态复核':samples_verified,'实机验收':{'本体':'待测试','外传':'待测试'},
             'ASI_SHA256':hashlib.sha256(output.read_bytes()).hexdigest(),'导入库':imports,
             'SDL_SHA256':hashlib.sha256(dll).hexdigest()}
     (RELEASE/'手柄构建验证.json').write_bytes((json.dumps(report,ensure_ascii=False,indent=2)+'\n').replace('\n','\r\n').encode('utf-8'))
-    print('独立手柄 v0.1-dev8 构建完成；两作百分比、方向闪避、图标反馈与必杀技均待实机。')
+    print('独立手柄 v0.1-dev9 构建完成；图标收尾修复与拾取下移待实机，新增可配置全方位格挡，保留原5点体力门和特殊穿防。')
 
 
 if __name__=='__main__':

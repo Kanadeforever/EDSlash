@@ -5,7 +5,8 @@
 typedef int (__attribute__((thiscall)) *NativeIconDraw)(void *,int,int,int,int,int,int,int,int,int);
 static BYTE saved_icon_call[5];
 static bool installed,show_action;
-static void *action_world,*action_runtime;
+static void *action_world,*action_animation;
+static bool runtime_ended;
 static uint32_t action_actor,action_tick;
 static int action_selection;
 
@@ -26,10 +27,22 @@ void Feedback_Start(int selection,ActionSource source)
     }
     action_selection=selection;action_actor=Read32(role,0x14);
     action_world=ReadPtr((void *)g_profile->world_global,0);
-    action_runtime=NULL;action_tick=Read32((void *)g_profile->game_tick,0);show_action=true;
+    action_animation=NULL;runtime_ended=false;action_tick=Read32((void *)g_profile->game_tick,0);show_action=true;
     /* 必杀技真正建立动作后清掉原版准备态，结束后自然恢复此前右键选择。 */
     if (source==ACTION_ULTIMATE && (int)Read32(hud(),0xBF4)==selection)
         ((This1)g_profile->prepared_set)(hud(),-1);
+}
+
+void Feedback_RuntimeEnded(void)
+{
+    if (!show_action) return;
+    void *role=Game_Player();
+    if (!role || action_actor!=Read32(role,0x14) || action_world!=ReadPtr((void *)g_profile->world_global,0)) {
+        Feedback_End();return;
+    }
+    /* 结束通知发生在活动指针清零之后、原姿态切换之前，可以捕获尚在收尾的动画。 */
+    action_animation=(void *)(uintptr_t)((This0)g_profile->animation_get)(role);
+    runtime_ended=true;
 }
 
 bool Feedback_Selection(int *selection,int *icon)
@@ -45,13 +58,18 @@ bool Feedback_Selection(int *selection,int *icon)
     if (action_actor!=Read32(role,0x14) || action_world!=ReadPtr((void *)g_profile->world_global,0)) {
         Feedback_End();return false;
     }
-    /* 成功通知发生时Runtime指针可能尚未写入；只允许建立当帧暂为空，后续空值即结束。 */
-    if (!ReadPtr(role,g_profile->active_offset) && Read32((void *)g_profile->game_tick,0)!=action_tick) {
-        Feedback_End();return false;
-    }
     void *runtime=ReadPtr(role,g_profile->active_offset);
-    if (action_runtime && runtime!=action_runtime) {Feedback_End();return false;}
-    if (runtime) action_runtime=runtime;
+    void *animation=(void *)(uintptr_t)((This0)g_profile->animation_get)(role);
+    if (runtime) {
+        /* 同一技能的续段/派生Runtime可能换地址，继续沿用整次快捷动作图标。 */
+        action_animation=animation;runtime_ended=false;
+    } else {
+        /* 活动Runtime已结束也可能还在播放收尾；用原版动画的末帧/时长判定，不加固定秒数。 */
+        bool tail=runtime_ended && animation && animation==action_animation &&
+            Memory_Readable(animation,0x20) && !((This0)g_profile->animation_finished)(animation);
+        bool creating=Read32((void *)g_profile->game_tick,0)==action_tick;
+        if (!tail && !creating) {Feedback_End();return false;}
+    }
     *selection=action_selection;*icon=((This1)g_profile->icon_resolve)(ui,action_selection);return true;
 }
 

@@ -279,7 +279,7 @@ int QOLModule_Initialize(const RuntimeContext* runtime)
     if (!RuntimeWin32_IsReady()) {
         return 0;
     }
-    RuntimeWin32_Log(runtime->self_module, "[QoL] v0.1-dev8：初始化地面名称、自动拾取与成功提示。");
+    RuntimeWin32_Log(runtime->self_module, "[QoL] v0.1-dev9：初始化地面名称、自动拾取与成功提示。");
     if (!verify_qol_entries(runtime->profile)) {
         RuntimeWin32_Log(runtime->self_module, "[QoL][停止] 原生入口签名不匹配，未安装模块。");
         return 0;

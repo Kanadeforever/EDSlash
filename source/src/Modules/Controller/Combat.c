@@ -27,7 +27,7 @@ static void *manager(void) { return ReadPtr(world(),0x30); }
 static uint32_t tick(void) { return Read32((void *)g_profile->game_tick,0); }
 static void submit(int opcode,int a,int b,int c) { ((This4)g_profile->submit)(manager(),opcode,a,b,c); }
 
-void Combat_Reset(void) { Feedback_End();memset(&combat,0,sizeof combat);combat.combo_cursor=-1; }
+void Combat_Reset(void) { memset(&combat,0,sizeof combat);combat.combo_cursor=-1; }
 void Combat_Suspend(void) { combat.pending=false;combat.request_fresh=false; }
 uint32_t Combat_Target(void) { return combat.target; }
 void Combat_Request(int selection,ActionSource source,bool left_style)
@@ -114,7 +114,7 @@ void Combat_Record(int selector,int direction)
 
 void Combat_End(void)
 {
-    Feedback_End();
+    Feedback_RuntimeEnded();
     if (!Combat_OwnsHistory() || !combat.history.count) return;
     /* 原生结束回调可能和下一段创建发生在同一更新周期，不能只靠下一帧看空指针判断结束。 */
     combat.history.ended=true;combat.history.end_tick=tick();

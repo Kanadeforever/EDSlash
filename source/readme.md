@@ -16,7 +16,7 @@
 
 需要 Python 3 和 **32 位 MinGW GCC**。构建器优先读取 `CONTROLLER_CC`，然后检查 PATH 的 `i686-w64-mingw32-gcc`、`gcc`，最后探测 MSYS2 的 mingw32 默认位置。也可通过 `MSYS2_ROOT` 指定 MSYS2 安装根。必须由 `-dumpmachine` 确认目标为 i686/i386；不能使用 mingw64 GCC。
 
-不读取个人的编译器地址记录，不下载依赖。SDL3 3.4.14 的官方 x86 包已随源码保存在 `vendor/SDL3/`，构建器先检查包的 SHA-256，再提取运行库。许可证见 `../docs/SDL第三方许可.txt`。
+不读取个人的编译器地址记录，不下载依赖。SDL3 3.4.14 的官方 x86 包须由本地构建者自行放入项目根的 `参考资料/SDL3-3.4.14-win32-x86.zip`。依赖不随Git上传；缺包时构建器明确停止，先检查包的 SHA-256，再提取运行库。许可证见 `../docs/SDL第三方许可.txt`。
 
 构建过程依次执行：
 
@@ -60,3 +60,6 @@ dev6 阶段独立手柄为 v0.1-dev6，新增物理鼠标/手柄交接、原生�
 
 
 当前发布已更新Controller v0.1-dev8与QOL成功拾取提示。百分比为最大体力比例（100.00=全部最大值），新增DirectionalDodge/DodgeDistance，动作图标和LT四键必杀准备/确认已实现；旧dev7说明是历史快照。完整配置、两个ASI散列及实机清单见../docs/手柄第八版与拾取提示验收说明.md。QOL新增工具运行 python tools/qol/run_notice_checks.py，只生成自有测试宿主并只读核对两作签名；不向游戏进程安装Hook。两作新功能均待实机，LB暂假定通过，LT原生菜单后置。
+
+
+当前发布Controller v0.1-dev9：新增OmnidirectionalGuard全方位格挡开关、动画收尾图标保持和防御诊断；QOL拾取文字下移128像素。新实现和本轮实机反馈见../docs/手柄第九版全方位格挡与显示修复说明.md。source/vendor已移除，SDK压缩包只在忽略的参考资料目录本地保留；旧Git历史含早期压缩包，不作未经授权的历史重写。

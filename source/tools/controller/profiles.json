@@ -85,7 +85,10 @@
         "map_bounds": 4250480,
         "cell_passable": 4374832,
         "grid_commit": 4369712,
-        "role_effect": 4330256
+        "role_effect": 4330256,
+        "animation_get": 4370928,
+        "animation_finished": 5197360,
+        "guard_angle_gate": 4300852
       },
       "offsets": {
         "invalid_offset": 1082,
@@ -150,7 +153,10 @@
         "map_bounds": "8b018b5424043bd07c2b568b",
         "cell_passable": "8a4424043c01750f8a410484",
         "grid_commit": "64a1000000006aff68002152",
-        "role_effect": "64a1000000006aff68981b52"
+        "role_effect": "64a1000000006aff68981b52",
+        "animation_get": "e8abffffff8bc88b41108b51",
+        "animation_finished": "568bf18b46048b4e1c3bc17c",
+        "guard_angle_gate": "0f8efa0000008b138b430489"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -243,7 +249,10 @@
         "map_bounds": 4281424,
         "cell_passable": 4412224,
         "grid_commit": 4406768,
-        "role_effect": 4364544
+        "role_effect": 4364544,
+        "animation_get": 4408000,
+        "animation_finished": 5291280,
+        "guard_angle_gate": 4334915
       },
       "offsets": {
         "invalid_offset": 1094,
@@ -308,7 +317,10 @@
         "map_bounds": "8b018b5424043bd07c2b568b",
         "cell_passable": "8a4424043c01750f8a410484",
         "grid_commit": "64a1000000006aff68a09554",
-        "role_effect": "64a1000000006aff68389054"
+        "role_effect": "64a1000000006aff68389054",
+        "animation_get": "e8bbffffff8bc88b41108b51",
+        "animation_finished": "568bf18b46048b4e1c3bc17c",
+        "guard_angle_gate": "0f8efa0000008b138b430489"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",

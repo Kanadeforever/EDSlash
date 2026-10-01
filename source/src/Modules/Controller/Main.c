@@ -205,7 +205,11 @@ static void __attribute__((fastcall)) history_hook(void *original,void *unused,i
     /* 调用点位于原生 Runtime 建立成功之后，已经保留自动续段历史门及受控角色检查。
        普通手柄只写自己的历史；鼠标来源继续走原记录函数，不伪造鼠标左右键标志。 */
     if (Combat_OwnsHistory()) Combat_RecordExtra(selector,direction,extra);
-    else ((This3)g_profile->history_record)(original,selector,direction,(void *)(intptr_t)extra);
+    else {
+        /* 原生实际建立的新动作接管显示；单纯移动鼠标不撤掉尚在执行的手柄图标。 */
+        Feedback_End();
+        ((This3)g_profile->history_record)(original,selector,direction,(void *)(intptr_t)extra);
+    }
 }
 
 static int __attribute__((fastcall)) retry_hook(void *original,void *unused,int selector,int policy,void *target)
@@ -223,7 +227,10 @@ static void __attribute__((fastcall)) end_hook(void *original,void *unused)
     /* 此调用位于原生当前玩家 Runtime 结束链，角色活动指针已经清空。
        只更新时间标记，不取消动作、不补发按键，保留自动续段的原生顺序。 */
     if (Combat_OwnsHistory()) Combat_End();
-    else ((This0)g_profile->end_record)(original);
+    else {
+        Feedback_RuntimeEnded();
+        ((This0)g_profile->end_record)(original);
+    }
 }
 
 static void initialize_runtime(void)
@@ -241,7 +248,7 @@ static void initialize_runtime(void)
     swprintf(path, MAX_PATH, L"%lsEDSlashController.log", g_directory);
     /* 每次启动覆盖旧日志，符合实机比较需要；不把历史记录追加成一大份混合日志。 */
     log_file = _wfopen(path, L"w");
-    Log_Write("EDSlashController v0.1-dev8：最大体力百分比、方向闪避、动作图标与必杀技测试版");
+    Log_Write("EDSlashController v0.1-dev9：完整图标、全方位格挡与防御诊断版");
     const Profile *candidate = g_profile;
     if (!Profile_Select() || candidate != g_profile || !Profile_Verify()) {
         Log_Write("[停止] 基线或机器码检查失败，撤回采样入口，未启用游戏动作。");

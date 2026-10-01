@@ -36,7 +36,7 @@ static int __fastcall get_name(void *record,void *unused,int column)
 { CHECK(record==definition_data && column==0);(void)unused;return (int)item_name; }
 static int __fastcall draw_text(void *hud,void *unused,unsigned long context,const char *text,int x,int y,int mode)
 {
-    CHECK(hud==hud_data && context==123 && x==16 && y>=64 && y<=174 && mode==0);(void)unused;
+    CHECK(hud==hud_data && context==123 && x==16 && y>=192 && y<=302 && mode==0);(void)unused;
     CHECK((unsigned char)text[0]==0xCA && strlen(text)<176);++draws;return 1;
 }
 static void emit_draw(void){draw_callback(RUNTIME_EVENT_UI_DRAW_END,NULL,123,0,NULL);}
