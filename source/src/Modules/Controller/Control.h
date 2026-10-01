@@ -8,7 +8,8 @@ enum { PAD_A, PAD_B, PAD_X, PAD_Y, PAD_BACK, PAD_GUIDE, PAD_START,
        PAD_L3, PAD_R3, PAD_LB, PAD_RB, PAD_UP, PAD_DOWN, PAD_LEFT, PAD_RIGHT };
 #define KEY(b) (1u << (b))
 typedef enum { LAYER_NONE, LAYER_GAME, LAYER_MENU, LAYER_MOUSE,
-               LAYER_SKILL, LAYER_MEDICINE, LAYER_ITEM, LAYER_GUARD } Layer;
+               LAYER_SKILL, LAYER_MEDICINE, LAYER_ITEM, LAYER_GUARD,
+               LAYER_NATIVE } Layer;
 typedef struct {
     uint32_t buttons;
     float lx, ly, rx, ry;
@@ -34,4 +35,6 @@ float Control_Axis(int value, int deadzone);
 void Control_Stick(int raw_x, int raw_y, int deadzone, float *x, float *y);
 void Control_WorldDirection(float screen_x, float screen_y, float *world_x, float *world_y);
 void Control_MoveGoal(int world_x, int world_y, float sx, float sy, int lead_tiles, int *map_x, int *map_y);
+/* 检查新的手柄操作，而不是持续按住的旧操作；避免两套输入互相夺回控制。 */
+bool Control_FreshInput(const PadInput *current, const PadInput *previous);
 #endif

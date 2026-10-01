@@ -1,5 +1,6 @@
 #include "Plugin.h"
 #include "Combat.h"
+#include "Guard.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -19,6 +20,7 @@ static void *world_ptr=world_data,*mouse_ptr=mouse_data,*scene_ptr=scene_data,*t
 static int last_opcode, arg1, arg2, arg3, releases, last_policy, selected, quick_slot;
 static void *last_target;
 static bool page_visible, physical_mouse, busy_gate;
+static int test_guard_setting=1,test_run_setting=1,test_cost=-1,test_recovery=-1;
 static unsigned checks;
 static unsigned move_requests;
 static bool reject_move;
@@ -26,6 +28,7 @@ static BYTE choices_data[32],groups_data[2][0x30],methods_data[3][0x90];
 static uint32_t group_members[2][2],engine_tick,history_timeout;
 static int group_table,method_table;
 static bool unavailable_skill,record_actions;
+static BYTE throw_items[6][0x24];static bool test_throwing;
 static bool reject_busy;
 static bool emulate_combo;
 static bool reject_qualification;
@@ -36,7 +39,14 @@ static BYTE runtime_data[0x100];
 void Log_Write(const char *format, ...) { (void)format; }
 bool Input_PhysicalDown(int key) { return key==VK_LBUTTON && physical_mouse; }
 int Config_Number(const WCHAR *section,const WCHAR *key,int fallback,int minimum,int maximum)
-{ (void)section;(void)key;(void)minimum;(void)maximum;return fallback; }
+{
+    (void)section;(void)minimum;(void)maximum;
+    if(!wcscmp(key,L"ChargeGuardOnHit"))return test_guard_setting;
+    if(!wcscmp(key,L"FreeRun"))return test_run_setting;
+    if(!wcscmp(key,L"GuardHitCost"))return test_cost;
+    if(!wcscmp(key,L"AttackHitRecovery"))return test_recovery;
+    return fallback;
+}
 bool Memory_Readable(const void *p,size_t bytes)
 {
     MEMORY_BASIC_INFORMATION info;
@@ -47,6 +57,8 @@ uint32_t Read32(const void *p,unsigned offset)
 { uint32_t v=0;if(p && Memory_Readable((BYTE *)p+offset,4))memcpy(&v,(BYTE *)p+offset,4);return v; }
 void *ReadPtr(const void *p,unsigned offset) { return (void *)(uintptr_t)Read32(p,offset); }
 void Write32(void *p,unsigned offset,uint32_t value) { memcpy((BYTE *)p+offset,&value,4); }
+bool Memory_Patch(void *p,const void *bytes,size_t count)
+{ CHECK(Memory_Readable(p,count));memcpy(p,bytes,count);return true; }
 static void ptr(void *base,unsigned offset,void *value) { Write32(base,offset,(uint32_t)(uintptr_t)value); }
 
 static int __attribute__((thiscall)) native_submit(void *self,int opcode,int a,int b,int c)
@@ -55,18 +67,23 @@ static int __attribute__((thiscall)) native_submit(void *self,int opcode,int a,i
     last_opcode=opcode; arg1=a;arg2=b;arg3=c;
     if (opcode==18) Write32(roles[0],0x143,(uint32_t)a);
     if (opcode==9 || opcode==10 || opcode==11) {
-        CHECK(a==1001 || a==1002 || a==1003);
+        CHECK(a==1001 || a==1002 || a==1003 || (test_throwing && a>=10042 && a<10048));
         if (reject_busy && ReadPtr(roles[0],g_profile->active_offset)) return 0;
         if (opcode==11 && !record_actions) {
             unsigned offset=g_profile->pending_offset;
             Write32(roles[0],offset,(uint32_t)opcode);Write32(roles[0],offset+4,(uint32_t)a);
             Write32(roles[0],offset+8,(uint32_t)b);Write32(roles[0],offset+12,(uint32_t)c);
         }
+        if(test_throwing && a>=10042) {
+            unsigned index=(unsigned)(a-10042);unsigned quantity=Read32(throw_items[index],0x1C);
+            if(!quantity)return 0;
+            Write32(throw_items[index],0x1C,quantity-1);
+        }
         ++releases;last_policy=opcode==11 ? 0:1;
         last_target=opcode==10 ? NULL:Game_Resolve((uint32_t)b);
         if (opcode==10) {last_aim.x=b;last_aim.y=c;}
         if (record_actions) {
-            Combat_Record((int)(Read32(methods_data[a-1001],0x27)&0xFFFF),0);
+            Combat_Record(a>=10000 ? 222:(int)(Read32(methods_data[a-1001],0x27)&0xFFFF),0);
             ptr(roles[0],g_profile->active_offset,runtime_data);
         }
     }
@@ -131,9 +148,22 @@ static int __cdecl native_dir8(const WorldPoint *point,const WorldPoint *origin)
 static int __attribute__((thiscall)) native_facing(void *self,int point,int origin)
 { CHECK(self==roles[0]);return native_dir8((WorldPoint *)(uintptr_t)point,(WorldPoint *)(uintptr_t)origin); }
 
+static BYTE preset_heads[4][16],preset_nodes[4][3][12];
+static int __attribute__((thiscall)) native_combo(void *self,int index)
+{
+    CHECK(self==hud_data && index>=0 && index<4);
+    unsigned count=emulate_combo ? 3:1;
+    Write32(preset_heads[index],0,count);ptr(preset_heads[index],4,preset_nodes[index][0]);
+    for(unsigned i=0;i<count;++i) {
+        ptr(preset_nodes[index][i],0,i+1<count ? preset_nodes[index][i+1]:NULL);
+        Write32(preset_nodes[index][i],8,emulate_combo && i!=1 ? 111:222);
+    }
+    return (int)(uintptr_t)preset_heads[index];
+}
+
 static void configure(Profile *profile, bool expansion)
 {
-    Combat_Reset();
+    Combat_Reset();test_throwing=false;test_guard_setting=test_run_setting=1;test_cost=test_recovery=-1;
     memset(profile,0,sizeof *profile);
     profile->world_global=(uintptr_t)&world_ptr;profile->mouse_global=(uintptr_t)&mouse_ptr;
     profile->entities_global=(uintptr_t)&scene_ptr;profile->handles_global=(uintptr_t)&table_ptr;
@@ -145,7 +175,7 @@ static void configure(Profile *profile, bool expansion)
     profile->hover_set=(uintptr_t)native_hover;
     profile->relation=(uintptr_t)native_relation;profile->template_value=(uintptr_t)native_template;
     profile->get_jm=(uintptr_t)native_jm;
-    profile->ui_property=(uintptr_t)native_property;
+    profile->ui_property=(uintptr_t)native_property;profile->combo_get=(uintptr_t)native_combo;
     profile->skill_groups=(uintptr_t)&group_table;profile->methods=(uintptr_t)&method_table;
     profile->game_tick=(uintptr_t)&engine_tick;profile->combo_timeout=(uintptr_t)&history_timeout;
     profile->lookup=(uintptr_t)native_lookup;profile->skill_eligibility=(uintptr_t)native_eligibility;
@@ -232,12 +262,12 @@ static void exercise(bool expansion)
     g_intent.lx=0;Game_Update();reject_move=false;
     g_intent.layer=LAYER_MEDICINE;g_intent.pressed=KEY(PAD_X);g_intent.held=KEY(PAD_X);Game_Update();
     CHECK(quick_slot==2 && releases==2);
-    g_intent.layer=LAYER_ITEM;Game_Update();CHECK(quick_slot==8 && releases==2);
-    g_intent.layer=LAYER_SKILL;g_intent.pressed=0;g_intent.rx=1;Game_Update();CHECK(selected==-2);
-    ptr(hud_data,0xC18,binding_data);Write32(binding_data,0x14,456);Write32(binding_data,0x18,'Q');
-    g_intent.rx=0;g_intent.pressed=KEY(PAD_A);Game_Update();CHECK(selected==456 && releases==2);
+    g_intent.layer=LAYER_ITEM;g_intent.pressed=0;Game_Update();CHECK(quick_slot==2 && releases==2);
+    int before_selected=selected;g_intent.layer=LAYER_SKILL;g_intent.pressed=0;g_intent.rx=1;Game_Update();CHECK(selected==before_selected);
+    ptr(hud_data,0xC18,binding_data);Write32(binding_data,0x14,111);Write32(binding_data,0x18,'Q');
+    g_intent.rx=0;g_intent.pressed=KEY(PAD_A);Game_Update();CHECK(selected==before_selected && releases==3);
     g_intent.layer=LAYER_GUARD;g_intent.pressed=0;Game_Update();
-    CHECK(Game_Async(VK_MENU,0)&0x8000);CHECK(!Game_Async(VK_SHIFT,0));
+    CHECK(Game_Async(VK_MENU,0)==0);CHECK(!Game_Async(VK_SHIFT,0));
     g_input.focused=false;CHECK(!Game_Async(VK_MENU,0));Game_Update();
     CHECK(last_opcode==16 && arg1==0);
     Game_Release();
@@ -322,10 +352,10 @@ static void combat_regression(bool expansion)
 
     configure(&profile,expansion);Write32(hud_data,0x12C,(uint32_t)-1);Write32(hud_data,0x120,0);
     record_actions=true;g_intent.held=KEY(PAD_Y);g_intent.pressed=KEY(PAD_Y);Game_Update();
-    CHECK(Read32(hud_data,0x120)==1);
-    Combat_Reset();Combat_Record(222,0);CHECK(Read32(hud_data,0x120)==1);
+    CHECK(Read32(hud_data,0x120)==0);
+    Combat_Reset();Combat_Record(222,0);CHECK(Read32(hud_data,0x120)==0);
     ptr(roles[0],profile.active_offset,NULL);g_intent.held=KEY(PAD_X);g_intent.pressed=KEY(PAD_X);
-    g_input.now+=200;Game_Update();CHECK(Read32(hud_data,0x120)==1);
+    g_input.now+=200;Game_Update();CHECK(Read32(hud_data,0x120)==0);
     Combat_Reset();record_actions=false;Game_Release();
     printf("%s鼠标无关性、重试、序列条件与动作历史回归通过\n",expansion?"外传":"本体");
 }
@@ -391,11 +421,241 @@ static void chain_regression(bool expansion)
     printf("%s交替按键、混合预设、结束窗口和来源隔离回归通过\n",expansion?"外传":"本体");
 }
 
+
+/* 用原版容器同样的节点布局回放交接，刻意模拟右键造成游标推进，检验交接不重复推进。 */
+static BYTE transfer_nodes[64][12];
+static int __attribute__((thiscall)) native_clear_history(void *self)
+{
+    CHECK(self==mouse_data);
+    memset(transfer_nodes,0,sizeof transfer_nodes);
+    Write32(self,0x48,0xFFFFFFFFu);Write32(self,0x4C,0xFFFFFFFFu);Write32(self,0x50,0xFFFFFFFFu);
+    Write32(self,0x5C,0);Write32(self,0x60,0);Write32(self,0x64,0);return 0;
+}
+static int __attribute__((thiscall)) native_append_history(void *self,int selector,int direction,void *extra)
+{
+    CHECK(self==mouse_data);
+    unsigned count=Read32(self,0x5C);CHECK(count<64);
+    BYTE *node=transfer_nodes[count];void *tail=ReadPtr(self,0x64);
+    ptr(node,0,NULL);ptr(node,4,tail);Write32(node,8,(uint32_t)selector);
+    if(tail)ptr(tail,0,node);else ptr(self,0x60,node);
+    ptr(self,0x64,node);Write32(self,0x5C,count+1);
+    Write32(self,0x48,(uint32_t)selector);Write32(self,0x4C,engine_tick);
+    Write32(self,0x50,0xFFFFFFFFu);Write32(self,0x54,(uint32_t)direction);
+    Write32(self,0x58,(uint32_t)(uintptr_t)extra);
+    Write32(hud_data,0x120,Read32(hud_data,0x120)+1);return 0;
+}
+static int __attribute__((thiscall)) native_inventory(void *self)
+{ (void)self;return (int)(uintptr_t)throw_items; }
+static int __attribute__((thiscall)) native_item_at(void *self,int slot)
+{ CHECK(self==throw_items);return slot>=56 && slot<62 ? (int)(uintptr_t)throw_items[slot-56]:0; }
+
+static void transfer_regression(bool expansion)
+{
+    Profile profile;configure(&profile,expansion);
+    profile.history_clear=(uintptr_t)native_clear_history;profile.history_record=(uintptr_t)native_append_history;
+    record_actions=true;g_intent.held=g_intent.pressed=KEY(PAD_Y);Game_Update();
+    CHECK(releases==1);Write32(hud_data,0x120,7);Write32(mouse_data,0x74,5);
+    Combat_RecordExtra(999,4,9);
+    engine_tick=1234;Combat_ExportHistory();
+    CHECK(Read32(mouse_data,0x5C)==1 && Read32(transfer_nodes[0],8)==222);
+    CHECK(Read32(mouse_data,0x4C)==1000 && Read32(mouse_data,0x50)==0xFFFFFFFFu);
+    CHECK(Read32(hud_data,0x120)==7 && Read32(mouse_data,0x74)==0);
+    CHECK(Read32(mouse_data,0x58)==0);
+    g_intent.layer=LAYER_NATIVE;CHECK(!Combat_OwnsHistory() && Combat_AllowsMouseRetry());
+    CHECK(Game_Async(VK_RBUTTON,(SHORT)0x8000)==(SHORT)0x8000);
+    /* 真实鼠标继续完成下一动作，再接回手柄必须含两次成功历史。 */
+    native_append_history(mouse_data,111,3,(void*)2);Write32(mouse_data,0x50,1240);
+    Write32(hud_data,0x120,8);Combat_ImportHistory();
+    g_intent.layer=LAYER_GAME;CHECK(Combat_OwnsHistory() && !Combat_AllowsMouseRetry());
+    Combat_ExportHistory();
+    CHECK(Read32(mouse_data,0x5C)==2 && Read32(transfer_nodes[1],8)==111);
+    CHECK(Read32(mouse_data,0x4C)==1234 && Read32(mouse_data,0x50)==1240);
+    CHECK(Read32(mouse_data,0x54)==3 && Read32(mouse_data,0x58)==2 && Read32(hud_data,0x120)==8);
+    /* 切图不能把上一角色的历史交给新世界。 */
+    void *saved_world=world_ptr;BYTE another_world[0x100]={0};world_ptr=another_world;
+    Combat_ExportHistory();CHECK(Read32(mouse_data,0x5C)==2);world_ptr=saved_world;
+    ptr(mouse_data,0x38,roles[1]);Combat_ImportHistory();CHECK(!Combat_OwnsHistory());
+    ptr(mouse_data,0x38,roles[0]);Combat_ImportHistory();CHECK(Combat_OwnsHistory());
+    Combat_Reset();printf("%s物理鼠标和手柄双向历史交接回归通过\n",expansion?"外传":"本体");
+}
+
+static float guard_threshold=1.0f;
+static uintptr_t guard_vtable[48];
+static unsigned dodge_installs;
+static float read_float(void *role,unsigned offset)
+{ uint32_t bits=Read32(role,offset);float value;memcpy(&value,&bits,4);return value; }
+static void write_float(void *role,unsigned offset,float value)
+{ uint32_t bits;memcpy(&bits,&value,4);Write32(role,offset,bits); }
+static void __attribute__((thiscall)) native_stamina(void *role,float amount)
+{
+    float value=read_float(role,g_profile->stamina_offset)+amount;
+    if(value<0)value=0;
+    if(value>100)value=100;
+    write_float(role,g_profile->stamina_offset,value);
+}
+static int __attribute__((thiscall)) native_guard_state(void *role,int index)
+{ CHECK(index==0x6A);return *((BYTE*)role+0x219); }
+static int __attribute__((thiscall)) native_guard_unit(void *role)
+{ CHECK(role==roles[0]);return 3; }
+static int __attribute__((thiscall)) native_guard_off(void *role,int opcode,int a,int b,int c,int d,int e)
+{
+    CHECK(role==roles[0] && opcode==16 && !a && !b && !c && !d && !e);
+    *((BYTE*)role+0x219)=0;return 1;
+}
+static int __attribute__((thiscall)) native_guard_eligible(void *role)
+{ CHECK(role==roles[0]);return 1; }
+static int __attribute__((thiscall)) native_dodge_install(void *role,int state,int x,int y,int direction)
+{
+    CHECK(role==roles[0] && state==0x17 && direction>=0 && direction<8);
+    CHECK(x!=6400 || y!=6400);Write32(role,0x73,0x17);++dodge_installs;return 1;
+}
+static void make_call(BYTE *where,uintptr_t callee)
+{ int32_t displacement=(int32_t)(callee-(uintptr_t)where-5);where[0]=0xE8;memcpy(where+1,&displacement,4); }
+static float damage_to_apply;static bool damage_from_npc;
+static int __attribute__((thiscall)) native_damage_owner(void *runtime)
+{ CHECK(runtime==runtime_data);return (int)(uintptr_t)(damage_from_npc ? roles[1]:roles[0]); }
+static int __attribute__((thiscall)) native_damage_receiver(void *victim,void *runtime)
+{
+    CHECK(runtime==runtime_data);
+    float health=read_float(victim,g_profile->health_offset);
+    write_float(victim,g_profile->health_offset,health-damage_to_apply);return 1;
+}
+
+static void guard_regression(bool expansion)
+{
+    Profile profile;configure(&profile,expansion);
+    profile.stamina_offset=expansion?0x3B6:0x3AA;
+    profile.health_offset=expansion?0x3AE:0x3A2;
+    profile.guard_threshold=(uintptr_t)&guard_threshold;profile.guard_get=(uintptr_t)native_guard_state;
+    profile.stamina_adjust=(uintptr_t)native_stamina;profile.guard_check=(uintptr_t)native_guard_eligible;
+    memset(guard_vtable,0,sizeof guard_vtable);guard_vtable[0xA0/4]=(uintptr_t)native_guard_unit;
+    guard_vtable[0x5C/4]=(uintptr_t)native_guard_off;ptr(roles[0],0,guard_vtable);
+    *((BYTE*)roles[0]+0x219)=1;write_float(roles[0],profile.stamina_offset,50);
+    Guard_Periodic(roles[0],-6.0f);CHECK(read_float(roles[0],profile.stamina_offset)==50.0f);
+    CHECK(Guard_Hit(roles[0],0x6A)==1 && read_float(roles[0],profile.stamina_offset)==44.0f);
+    CHECK(Guard_Hit(roles[0],0x6A)==1 && read_float(roles[0],profile.stamina_offset)==38.0f);
+    write_float(roles[0],profile.stamina_offset,5);
+    CHECK(Guard_Hit(roles[0],0x6A)==0 && read_float(roles[0],profile.stamina_offset)==0.0f);
+    Guard_Periodic(roles[0],10.0f);CHECK(read_float(roles[0],profile.stamina_offset)==10.0f);
+    *((BYTE*)roles[1]+0x219)=1;write_float(roles[1],profile.stamina_offset,50);
+    Guard_Periodic(roles[1],-6.0f);CHECK(read_float(roles[1],profile.stamina_offset)==44.0f);
+    CHECK(Guard_Hit(roles[1],0x6A)==1 && read_float(roles[1],profile.stamina_offset)==44.0f);
+
+    /* 在自有进程执行真实裸钩子，检查寄存器/压栈/返回；不注入游戏。
+       小程序只复现入口前已保存 ESI/EDI 和目标门的栈形状，原版冷却资格另由双样本字节核对。 */
+    BYTE *code=VirtualAlloc(NULL,128,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);CHECK(code!=NULL);
+    memset(code,0x90,128);
+    memcpy(code,"\x56\x57\x89\xCE\xBF\x01\x00\x00\x00\x85\xFF\x74\x6A\x57\x56",15);
+    memcpy(code+15,"\x83\xC4\x08\x5F\x5E\x31\xC0\xC3",8);
+    memcpy(code+32,"\x5B\x5F\x5E\xB8\x01\x00\x00\x00\xC3",9);
+    memcpy(code+119,"\x5F\x5E\x31\xC0\xC3",5);
+    make_call(code+64,(uintptr_t)native_stamina);make_call(code+72,(uintptr_t)native_guard_state);
+    make_call(code+80,(uintptr_t)native_guard_state);make_call(code+88,(uintptr_t)native_stamina);
+    profile.guard_periodic_call=(uintptr_t)(code+64);profile.guard_hit_call=(uintptr_t)(code+72);
+    profile.guard_input_release_call=(uintptr_t)(code+80);profile.guard_run_call=(uintptr_t)(code+88);
+    profile.dodge_start=(uintptr_t)code;
+    profile.dodge_gate=(uintptr_t)(code+9);profile.dodge_legacy=(uintptr_t)(code+15);
+    profile.dodge_resume=(uintptr_t)(code+32);profile.dodge_failure=(uintptr_t)(code+119);
+    profile.install_state=(uintptr_t)native_dodge_install;
+    memcpy(code+96,"\x64\xA1\x00\x00\x00\x00",6);
+    code[102]=0xE9;int32_t hit_jump=(int32_t)((uintptr_t)native_damage_receiver-(uintptr_t)code-107);
+    memcpy(code+103,&hit_jump,4);profile.hit_receiver=(uintptr_t)(code+96);
+    profile.runtime_owner=(uintptr_t)native_damage_owner;
+    CHECK(Guard_Initialize());
+    /* 真实攻击入口返回“处理过”但没扣生命时不回；实际扣生命才恢复。 */
+    ptr(runtime_data,0x8F,methods_data[0]);write_float(roles[1],profile.health_offset,100);
+    write_float(roles[0],profile.stamina_offset,40);damage_to_apply=0;
+    CHECK(((This1)profile.hit_receiver)(roles[1],(int)(uintptr_t)runtime_data)==1);
+    CHECK(read_float(roles[0],profile.stamina_offset)==40);
+    damage_to_apply=5;CHECK(((This1)profile.hit_receiver)(roles[1],(int)(uintptr_t)runtime_data)==1);
+    CHECK(read_float(roles[0],profile.stamina_offset)==46);
+    damage_to_apply=-5;((This1)profile.hit_receiver)(roles[1],(int)(uintptr_t)runtime_data);
+    CHECK(read_float(roles[0],profile.stamina_offset)==46);
+    damage_to_apply=5;damage_from_npc=true;((This1)profile.hit_receiver)(roles[1],(int)(uintptr_t)runtime_data);
+    CHECK(read_float(roles[0],profile.stamina_offset)==46);damage_from_npc=false;
+    write_float(roles[0],profile.stamina_offset,98);((This1)profile.hit_receiver)(roles[1],(int)(uintptr_t)runtime_data);
+    CHECK(read_float(roles[0],profile.stamina_offset)==100);
+    /* 免费奔跑不再依赖敌人的追击目标，战斗和非战斗都免支出。 */
+    write_float(roles[0],profile.stamina_offset,50);Guard_RunCost(roles[0],-3);CHECK(read_float(roles[0],profile.stamina_offset)==50);
+    Write32(roles[1],0x143,1);Guard_RunCost(roles[0],-3);CHECK(read_float(roles[0],profile.stamina_offset)==50);
+    /* 验证真实入口包装不会把原版 Alt 松开当成手柄防御松开。 */
+    int32_t input_relative;memcpy(&input_relative,code+81,4);
+    This1 input_hook=(This1)(uintptr_t)((uintptr_t)code+85+input_relative);
+    *((BYTE*)roles[0]+0x219)=1;g_intent.layer=LAYER_GUARD;CHECK(input_hook(roles[0],0x6A)==0);
+    g_intent.layer=LAYER_NATIVE;CHECK(input_hook(roles[0],0x6A)==1);
+    *((BYTE*)roles[0]+0x219)=1;g_intent.layer=LAYER_GUARD;g_intent.lx=1;g_intent.ly=0;
+    dodge_installs=0;Guard_Update(roles[0]);CHECK(dodge_installs==1);
+    Guard_Update(roles[0]);CHECK(dodge_installs==1);
+    g_intent.lx=0;Guard_Update(roles[0]);g_intent.lx=-1;Guard_Update(roles[0]);CHECK(dodge_installs==2);
+    CHECK(((This0)profile.dodge_start)(roles[1])==0);CHECK(dodge_installs==2);
+    Guard_Shutdown();CHECK(!memcmp(code+9,"\x85\xFF\x74\x6A\x57\x56",6));
+    /* 两个开关分别恢复原版扣费，不关闭原生防御/闪避接口。 */
+    test_guard_setting=test_run_setting=0;CHECK(Guard_Initialize());
+    *((BYTE*)roles[0]+0x219)=1;write_float(roles[0],profile.stamina_offset,50);
+    Guard_Periodic(roles[0],-6);CHECK(read_float(roles[0],profile.stamina_offset)==44);
+    CHECK(Guard_Hit(roles[0],0x6A)==1 && read_float(roles[0],profile.stamina_offset)==44);
+    Guard_RunCost(roles[0],-3);CHECK(read_float(roles[0],profile.stamina_offset)==41);
+    Guard_Shutdown();test_guard_setting=0;test_run_setting=1;CHECK(Guard_Initialize());
+    write_float(roles[0],profile.stamina_offset,50);Guard_Periodic(roles[0],-6);Guard_RunCost(roles[0],-3);
+    CHECK(read_float(roles[0],profile.stamina_offset)==44);
+    Guard_Shutdown();test_guard_setting=1;test_run_setting=0;CHECK(Guard_Initialize());
+    write_float(roles[0],profile.stamina_offset,50);Guard_Periodic(roles[0],-6);Guard_RunCost(roles[0],-3);
+    CHECK(read_float(roles[0],profile.stamina_offset)==47);
+    Guard_Shutdown();test_guard_setting=test_run_setting=1;CHECK(Guard_Initialize());Guard_Shutdown();
+    test_cost=10;test_recovery=5;CHECK(Guard_Initialize());
+    *((BYTE*)roles[0]+0x219)=1;write_float(roles[0],profile.stamina_offset,50);
+    Guard_Hit(roles[0],0x6A);CHECK(read_float(roles[0],profile.stamina_offset)==40);
+    damage_to_apply=5;((This1)profile.hit_receiver)(roles[1],(int)(uintptr_t)runtime_data);
+    CHECK(read_float(roles[0],profile.stamina_offset)==45);
+    Guard_Shutdown();test_cost=0;test_recovery=0;CHECK(Guard_Initialize());
+    Guard_Hit(roles[0],0x6A);((This1)profile.hit_receiver)(roles[1],(int)(uintptr_t)runtime_data);
+    CHECK(read_float(roles[0],profile.stamina_offset)==45);
+    Guard_Shutdown();test_cost=test_recovery=-1;CHECK(Guard_Initialize());Guard_Shutdown();
+    CHECK(VirtualFree(code,0,MEM_RELEASE));Game_Release();
+    printf("%s防御扣费、耗尽、非玩家隔离和闪避裸钩子栈回归通过\n",expansion?"外传":"本体");
+}
+
+static void quick_cast_regression(bool expansion)
+{
+    Profile profile;configure(&profile,expansion);record_actions=true;emulate_combo=true;
+    Write32(hud_data,0x12C,(uint32_t)-1);Write32(hud_data,0x120,(uint32_t)-1);
+    ptr(hud_data,0xC18,binding_data);Write32(binding_data,0x14,222);Write32(binding_data,0x18,'Q');
+    g_intent.held=g_intent.pressed=KEY(PAD_Y);Game_Update();CHECK(releases==1 && arg1==1001);
+    ptr(roles[0],profile.active_offset,NULL);engine_tick+=2;Combat_End();
+    /* RT+A 发技能，不装备、不按 Y；不会推进当前套组步骤。 */
+    g_intent.layer=LAYER_SKILL;g_intent.held=g_intent.pressed=KEY(PAD_A);Game_Update();
+    if(releases==1){g_intent.pressed=0;Game_Update();}
+    CHECK(releases==2 && arg1==1002 && (int)Read32(hud_data,0x120)==0);
+    ptr(roles[0],profile.active_offset,NULL);engine_tick+=2;Combat_End();
+    /* 插入快捷技能后 Y 仍是套组第二项，而不是绑定到快捷技能。 */
+    g_intent.layer=LAYER_GAME;g_intent.held=g_intent.pressed=KEY(PAD_Y);Game_Update();
+    if(releases==2){g_intent.pressed=0;Game_Update();}
+    CHECK(releases==3 && arg1==1002 && (int)Read32(hud_data,0x120)==1);
+    profile.inventory_root=(uintptr_t)throw_items;profile.inventory_get=(uintptr_t)native_inventory;
+    profile.item_at=(uintptr_t)native_item_at;test_throwing=true;
+    for(unsigned i=0;i<6;++i){Write32(hud_data,0x208+(i+6)*0xE4,56+i);Write32(throw_items[i],0x1C,2);Write32(throw_items[i],0x20,42+i);}
+    for(int n=0;n<2;++n){
+        ptr(roles[0],profile.active_offset,NULL);engine_tick+=2;Combat_End();
+        g_intent.layer=LAYER_ITEM;g_intent.held=g_intent.pressed=KEY(PAD_A);Game_Update();
+        CHECK(releases==4+n && arg1==10042 && (int)Read32(hud_data,0x120)==1);
+    }
+    CHECK(Read32(throw_items[0],0x1C)==0);
+    g_intent.pressed=KEY(PAD_A);Game_Update();CHECK(releases==5);
+    CHECK((int)Read32(hud_data,0x12C)==-1);
+    /* LT+方向切套组，技能层右摇杆不再改变套组。 */
+    g_intent.layer=LAYER_GUARD;g_intent.pressed=KEY(PAD_RIGHT);Game_Update();CHECK(selected==-2);
+    printf("%s快捷技能直发、同槽连续投掷、空槽与独立套组回归通过\n",expansion?"外传":"本体");
+    Combat_Reset();Game_Release();
+}
+
 int main(void)
 {
     exercise(false);exercise(true);
     combat_regression(false);combat_regression(true);
     chain_regression(false);chain_regression(true);
+    transfer_regression(false);transfer_regression(true);
+    guard_regression(false);guard_regression(true);
+    quick_cast_regression(false);quick_cast_regression(true);
     printf("原生路由、双版本偏移与调用约定检查通过：%u 项\n",checks);
     return 0;
 }

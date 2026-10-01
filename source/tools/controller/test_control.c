@@ -98,6 +98,17 @@ int main(void)
     CHECK(Control_Axis(8000,8000)==0);
     CHECK(Control_Axis(32767,8000)==1);
     CHECK(Control_Axis(-32768,8000)==-1);
+    /* 输入来源交接只看新操作：稳定按住不会把刚接管的物理鼠标夺回去。 */
+    PadInput old={0},current={0};current.connected=current.focused=true;
+    current.buttons=KEY(PAD_Y);CHECK(Control_FreshInput(&current,&old));
+    old=current;CHECK(!Control_FreshInput(&current,&old));
+    current.buttons=0;CHECK(!Control_FreshInput(&current,&old));
+    old=current;current.lx=0.10f;CHECK(!Control_FreshInput(&current,&old));
+    current.lx=0.80f;CHECK(Control_FreshInput(&current,&old));
+    old.lx=0.14f;current.lx=0.16f;CHECK(Control_FreshInput(&current,&old));
+    old=current;current.rt=true;CHECK(Control_FreshInput(&current,&old));
+    old=current;CHECK(!Control_FreshInput(&current,&old));
+    current.focused=false;CHECK(!Control_FreshInput(&current,&old));
     printf("输入时间线与八方向检查通过：%u 项\n",checks);
     return 0;
 }

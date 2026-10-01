@@ -125,6 +125,45 @@ def verify_asi(path):
     return imports
 
 
+def ensure_config(path):
+    """首次复制模板；旧 INI 只补缺少的新开关，保留玩家已有值、注释和其它配置。"""
+    if not path.exists():
+        shutil.copyfile(SOURCE/'config/EDSlashController.ini',path)
+        return
+    original=path.read_text(encoding='utf-8-sig')
+    lines=original.splitlines()
+    old_notes={'; 1=无存活敌人追击玩家时奔跑免费；0=原版奔跑扣费。',
+               '; 1=非战斗奔跑不消耗体力，战斗时沿用原版；0=始终沿用原版奔跑扣费。'}
+    note_updated=any(line in old_notes for line in lines)
+    lines=['; 1=跑步不扣体力；0=沿用原版奔跑扣费。' if line in old_notes else line for line in lines]
+    start=next((i for i,line in enumerate(lines) if line.strip().lower()=='[combat]'),None)
+    defaults={'ChargeGuardOnHit':'1','FreeRun':'1','GuardHitCost':'-1','AttackHitRecovery':'-1'}
+    if start is None:
+        lines+=['','[Combat]',
+                '; 1=防御受击才扣费；0=原版周期扣费。', 'ChargeGuardOnHit=1',
+                '; 1=跑步不扣体力；0=原版奔跑扣费。','FreeRun=1',
+                '; -1=使用原周期；0=不扣；正数=体力点数。','GuardHitCost=-1',
+                '; -1=跟随扣费幅度；0=不回；正数=命中恢复点数。','AttackHitRecovery=-1']
+    else:
+        # 只检查当前节，避免同名配置出现在别的节时误以为已经存在。
+        end=next((i for i in range(start+1,len(lines)) if lines[i].strip().startswith('[')),len(lines))
+        legacy=next((i for i in range(start+1,end) if lines[i].split('=',1)[0].strip().lower()=='freerunoutsidecombat'),None)
+        new_run=any(line.split('=',1)[0].strip().lower()=='freerun' for line in lines[start+1:end])
+        migrated=False
+        if legacy is not None:
+            if new_run:
+                del lines[legacy];end-=1
+            else:
+                lines[legacy]='FreeRun='+lines[legacy].split('=',1)[1]
+            migrated=True
+        existing={line.split('=',1)[0].strip().lower() for line in lines[start+1:end]
+                  if '=' in line and not line.lstrip().startswith((';','#'))}
+        additions=[f'{key}={value}' for key,value in defaults.items() if key.lower() not in existing]
+        if not additions and not migrated and not note_updated:return
+        lines[end:end]=additions
+    path.write_bytes(('\r\n'.join(lines)+'\r\n').encode('utf-8'))
+
+
 def main():
     sys.stdout.reconfigure(encoding='utf-8')
     metadata=json.loads(Path(__file__).with_name('profiles.json').read_text(encoding='utf-8'))
@@ -140,10 +179,10 @@ def main():
     subprocess.run([cc,*flags,'-I'+str(MODULE),str(MODULE/'Control.c'),str(Path(__file__).with_name('test_motion.c')),'-lm','-o',str(motion_test)],check=True,env=env)
     subprocess.run([str(motion_test)],check=True,env=env)
     game_test=BUILD/'test_game.exe'
-    subprocess.run([cc,*flags,'-I'+str(MODULE),*[str(MODULE/name) for name in ['Control.c','Game.c','Combat.c','SkillResolver.c']],str(Path(__file__).with_name('test_game.c')),'-luser32','-lm','-o',str(game_test)],check=True,env=env)
+    subprocess.run([cc,*flags,'-I'+str(MODULE),*[str(MODULE/name) for name in ['Control.c','Game.c','Combat.c','SkillResolver.c','Guard.c']],str(Path(__file__).with_name('test_game.c')),'-luser32','-lm','-o',str(game_test)],check=True,env=env)
     subprocess.run([str(game_test)],check=True,env=env)
     output=BUILD/'EDSlashController.asi'
-    units=['Main.c','Control.c','Profile.c','Input.c','Game.c','Combat.c','SkillResolver.c']
+    units=['Main.c','Control.c','Profile.c','Input.c','Game.c','Combat.c','SkillResolver.c','Guard.c']
     subprocess.run([cc,*flags,'-shared',*[str(MODULE/name) for name in units],'-luser32','-ladvapi32','-lm','-o',str(output)],check=True,env=env)
     imports=verify_asi(output)
     archive=SOURCE/'vendor/SDL3/SDL3-3.4.14-win32-x86.zip'
@@ -158,13 +197,13 @@ def main():
     subprocess.run([str(load_test),str(output),str(sdl)],check=True,env=env)
     for src,dest in [(output,RELEASE/output.name),(sdl,RELEASE/sdl.name)]: shutil.copyfile(src,dest)
     config=RELEASE/'EDSlashController.ini'
-    if not config.exists(): shutil.copyfile(SOURCE/'config/EDSlashController.ini',config)
+    ensure_config(config)
     # 许可证放中文名文档中，发布包必须连同 docs 一起携带。
-    report={'版本':'v0.1-dev5','双样本静态复核':samples_verified,'实机验收':{'本体':'待测试','外传':'待测试'},
+    report={'版本':'v0.1-dev7','双样本静态复核':samples_verified,'实机验收':{'本体':'待测试','外传':'待测试'},
             'ASI_SHA256':hashlib.sha256(output.read_bytes()).hexdigest(),'导入库':imports,
             'SDL_SHA256':hashlib.sha256(dll).hexdigest()}
     (RELEASE/'手柄构建验证.json').write_bytes((json.dumps(report,ensure_ascii=False,indent=2)+'\n').replace('\n','\r\n').encode('utf-8'))
-    print('独立手柄 v0.1-dev5 构建完成；两作交替攻击与连招衔接仍待实机确认。')
+    print('独立手柄 v0.1-dev7 构建完成；两作快捷直接施放、投掷和命中恢复待实机；闪避保持 dev6 并待调查。')
 
 
 if __name__=='__main__':

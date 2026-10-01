@@ -1,0 +1,55 @@
+BladeSwordQOL
+[Runtime] 游戏Profile=刀剑封魔录 / DisplayFix后端已加载
+架构：Win32/x86 ASI，基于内容签名的运行时补丁
+[信息] 配置文件路径=F:\GameLibrary\Games\The Legend Of Enveloped Demons\scripts\BladeSwordQOL.ini
+[成功] 字体 DPI 路径已修正为 96 DPI
+[信息] 基础高度(BaseHeight)=480
+[信息] 比例宽度(AspectWidth)=3840
+[信息] 比例高度(AspectHeight)=2160
+[信息] 目标宽度(TargetWidth)=856
+[信息] AspectRatio目标宽度8像素对齐余数=0
+[信息] 目标高度(TargetHeight)=480
+[信息] 原生基准宽度(NativeBaseWidth)=640
+[信息] 主HUD水平居中偏移(MainHUDCenterDelta)=108
+[成功] 动态分辨率代码点已解析；启动/前端代码保持原样
+[信息] 主菜单与固定分辨率动画继续使用游戏原生 4:3 显示生命周期
+[信息] 游戏内 TargetWidth/TargetHeight 仅由 Strategy 状态切换激活
+[信息] 不需要1024x768菜单选项；游戏菜单最高只提供800x600
+[成功] 前端/动画分辨率配置已就绪：保留原版显示/JMM规则
+[信息] Strategy 状态 3 开始时，游戏内配置会把 TargetWidth 映射到 JMMDL.txt
+[成功] Strategy状态生命周期Hook已安装：进入状态3=GAMEPLAY（强制重应用），退出状态3=FRONTEND（强制模式4）
+[信息] 进入时：原版0x407000会被临时强制一次；退出时：Strategy清理后强制应用原版显示模式4
+[信息] 已检测到非Steam环境；Steam延迟UI同步保持休眠
+[成功] 底部主HUD视觉居中Hook已安装
+[成功] 主HUD Hook已安装：FRONTEND保持原布局；仅通过Strategy GAMEPLAY门控后在+0x58执行居中/同步
+[成功] 已解析主HUD +0x24结构并确认顶部按钮ID 0x0B/0x0E；+0x24本身不做Hook
+[信息] 边缘锚定的顶层UI按设计保持不变
+[成功] HUD/UI共享输入与绘制基础Hook已安装；0x0B/0x0E按压动画使用原版root路径恢复
+[成功] 辅助GUI绘制与输入优先级Hook已安装
+[信息] 辅助GUI不改顶层链和对象前后链，只调整当前绘制与输入root选择
+[信息] 输入只在原版picker已经选中主HUD、且鼠标命中已延后绘制的活动菜单root时覆盖这一次返回值；manager+0x40仍由原版0x4B44D0更新
+[信息] 当前菜单体系里与HUD相交的独立顶层辅助面板会动态安装Draw wrapper，并按原Draw链顺序在HUD后绘制
+[信息] 独立辅助面板一旦在合法菜单上下文中确认，会做短生命周期跟踪；主窗口先关闭时，只要面板自身仍active且仍与HUD相交，就继续保持HUD上方
+[信息] UI manager 的原版HUD特殊绘制pass保持原样，只执行一次；不Hook、不重放该pass
+[信息] 辅助GUI不改X/Y、child、active、GetCursorPos、self+0xA8、键盘快捷键或按钮业务
+[成功] 世界鼠标按下保护已安装，仅用于防止0x0B/0x0E点击穿透
+[信息] 原版0x4B44F0 UI按下分发保持完全不变
+[成功] 全局鼠标释放保护已安装，在HUD路由前处理顶部按钮0x0B/0x0E
+[信息] 鼠标释放：始终先执行原版UI分发；只有目标激活状态未变化时才执行兜底切换
+[运行] FRONTEND HUD自动布局：保持原版4:3布局；不执行居中/JMM同步
+[运行] FRONTEND HUD自动布局：保持原版4:3布局；不执行居中/JMM同步
+[运行] Strategy进入 状态=3 GAMEPLAY配置=就绪
+[运行] Strategy进入 原版应用完成 实际=856x480 目标=856x480 强制=1
+[运行] 辅助GUI原始Draw链 ID=0x0000000B 菜单索引=10 主HUD索引=13 关系=菜单在HUD之前；会在HUD之后延迟绘制该菜单
+[运行] 辅助GUI原始Draw链 ID=0x0000000D 菜单索引=11 主HUD索引=13 关系=菜单在HUD之前；会在HUD之后延迟绘制该菜单
+[运行] 辅助GUI原始Draw链 ID=0x0000000E 菜单索引=9 主HUD索引=13 关系=菜单在HUD之前；会在HUD之后延迟绘制该菜单
+[运行] HUD候选 指针=0x1318BDD0 ID=0x00000009 激活=1 矩形=724,420,742,438
+[运行] HUD候选 指针=0x1318B740 ID=0x0000000A 激活=1 矩形=660,420,678,438
+[运行] HUD候选 指针=0x1319FAD0 ID=0x0000000B 激活=1 矩形=680,393,698,411
+[运行] HUD候选 指针=0x1319F480 ID=0x0000000C 激活=1 矩形=727,456,745,474
+[运行] HUD候选 指针=0x1319F1D0 ID=0x0000000D 激活=1 矩形=661,454,679,472
+[运行] HUD候选 指针=0x1319E710 ID=0x0000000E 激活=1 矩形=708,394,726,412
+[运行] HUD候选 指针=0x1319DEB0 ID=0x0000000F 激活=1 矩形=231,432,273,478
+[运行] HUD候选 指针=0x1319DDD0 ID=0x00000010 激活=1 矩形=602,432,644,478
+[运行] HUD布局 对象=0x127D5C40 根坐标=108,369 偏移=108
+[运行] HUD布局 对象=0x127D5C40 根坐标=108,369 偏移=108

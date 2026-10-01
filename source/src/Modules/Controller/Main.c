@@ -1,5 +1,6 @@
 #include "Plugin.h"
 #include "Combat.h"
+#include "Guard.h"
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -24,9 +25,35 @@ static int runtime_state;
 static void initialize_runtime(void);
 static WNDPROC previous_window_proc;
 static HWND hooked_window;
+static bool native_control;
+static PadInput previous_pad;
+static PadInput native_pad_anchor;
+static unsigned previous_mouse_buttons;
+static LPARAM previous_mouse_position;
+static bool mouse_position_known;
+
+static void use_physical_mouse(void)
+{
+    if (runtime_state!=1 || control.mouse || native_control) return;
+    Combat_ExportHistory();
+    native_pad_anchor=previous_pad;
+    Game_Release();Combat_Suspend();
+    native_control=true;
+    memset(&g_intent,0,sizeof g_intent);g_intent.layer=LAYER_NATIVE;
+    Log_Write("[输入来源] 物理鼠标接管；恢复原版鼠标解析、重试和动作历史。");
+}
 
 static LRESULT CALLBACK window_hook(HWND window, UINT message, WPARAM wp, LPARAM lp)
 {
+    /* 用户的实际鼠标操作可接管，不要求进入手柄虚拟鼠标救援模式。
+     * 救援模式中 SetCursorPos/SendInput 属于插件自身，绝不能反向认成物理来源。 */
+    if (message==WM_MOUSEMOVE) {
+        if (mouse_position_known && lp!=previous_mouse_position) use_physical_mouse();
+        previous_mouse_position=lp;mouse_position_known=true;
+    } else if (message==WM_LBUTTONDOWN || message==WM_RBUTTONDOWN ||
+               message==WM_MBUTTONDOWN || message==WM_MOUSEWHEEL ||
+               ((message==WM_KEYDOWN || message==WM_SYSKEYDOWN) &&
+                (wp==VK_MENU || wp==VK_SPACE))) use_physical_mouse();
     if ((message == WM_ACTIVATEAPP && !wp) || message == WM_KILLFOCUS) {
         /* 游戏失焦后可能不再轮询键盘，不能等下一帧才松开插件按下的鼠标按钮。 */
         g_input.focused = false;
@@ -40,6 +67,7 @@ static LRESULT CALLBACK window_hook(HWND window, UINT message, WPARAM wp, LPARAM
     if (message == WM_NCDESTROY) {
         /* 返回标题或切换窗口模式若重建 HWND，下一帧允许为新主窗口重新安装。 */
         hooked_window = NULL; previous_window_proc = NULL;
+        mouse_position_known=false;
     }
     return result;
 }
@@ -89,6 +117,11 @@ static bool patch(void *where, const void *data, size_t count)
     return true;
 }
 
+bool Memory_Patch(void *where,const void *data,size_t count)
+{
+    return patch(where,data,count);
+}
+
 static BOOL WINAPI keyboard_hook(PBYTE keys)
 {
     BOOL result = original_keyboard(keys);
@@ -115,7 +148,29 @@ static BOOL WINAPI keyboard_hook(PBYTE keys)
     }
     g_input.menu = Game_Menu();
     g_input.connected = Input_Poll(&g_input);
+    /* 鼠标事件可能尚未派发到窗口，补查真实按键的新边沿；稳定按住不反复争抢。 */
+    unsigned mouse_buttons=(Input_PhysicalDown(VK_LBUTTON) ? 1u:0u) |
+        (Input_PhysicalDown(VK_RBUTTON) ? 2u:0u) | (Input_PhysicalDown(VK_MBUTTON) ? 4u:0u);
+    if (mouse_buttons & ~previous_mouse_buttons) use_physical_mouse();
+    previous_mouse_buttons=mouse_buttons;
+    bool fresh_pad=Control_FreshInput(&g_input,&previous_pad);
+    /* 物理鼠标接管时冻结摇杆基准，缓慢改变已按住摇杆的方向也能重新接回手柄。
+     * 新按键边沿仍用相邻帧判断，不能因基准中曾按住同键而漏掉重新按下。 */
+    if (native_control && Control_FreshInput(&g_input,&native_pad_anchor)) fresh_pad=true;
+    previous_pad=g_input;
     g_intent = Control_Step(&control, &g_input);
+    if (native_control && fresh_pad && !control.mouse) {
+        Combat_ImportHistory();native_control=false;
+        Log_Write("[输入来源] 新的手柄操作接管；恢复独立手柄动作解析。");
+    }
+    if (native_control && !control.mouse && !g_intent.mode_changed) {
+        memset(&g_intent,0,sizeof g_intent);g_intent.layer=LAYER_NATIVE;
+    }
+    if (g_intent.mode_changed) {
+        native_control=false;
+        /* 救援模式最后一条程序生成的鼠标移动可能还在消息队列中，重建位置基准。 */
+        mouse_position_known=false;
+    }
     Game_Diagnose();
     if (g_intent.reset) { Game_Release(); Input_ReleaseMouse(); }
     if (g_intent.mode_changed || !g_input.connected || !g_input.focused) Combat_Reset();
@@ -148,7 +203,7 @@ static void __attribute__((fastcall)) history_hook(void *original,void *unused,i
     (void)unused;
     /* 调用点位于原生 Runtime 建立成功之后，已经保留自动续段历史门及受控角色检查。
        普通手柄只写自己的历史；鼠标来源继续走原记录函数，不伪造鼠标左右键标志。 */
-    if (Combat_OwnsHistory()) Combat_Record(selector,direction);
+    if (Combat_OwnsHistory()) Combat_RecordExtra(selector,direction,extra);
     else ((This3)g_profile->history_record)(original,selector,direction,(void *)(intptr_t)extra);
 }
 
@@ -185,7 +240,7 @@ static void initialize_runtime(void)
     swprintf(path, MAX_PATH, L"%lsEDSlashController.log", g_directory);
     /* 每次启动覆盖旧日志，符合实机比较需要；不把历史记录追加成一大份混合日志。 */
     log_file = _wfopen(path, L"w");
-    Log_Write("EDSlashController v0.1-dev5：战斗输入衔接修正版");
+    Log_Write("EDSlashController v0.1-dev7：快捷直接施放与命中恢复测试版");
     const Profile *candidate = g_profile;
     if (!Profile_Select() || candidate != g_profile || !Profile_Verify()) {
         Log_Write("[停止] 基线或机器码检查失败，撤回采样入口，未启用游戏动作。");
@@ -237,6 +292,15 @@ static void initialize_runtime(void)
         patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
         patch((void *)g_profile->resolver_call,saved_call,5);return;
     }
+    if (!Guard_Initialize()) {
+        patch((void *)g_profile->end_call,saved_end_call,5);
+        patch((void *)g_profile->retry_call,saved_retry_call,5);
+        patch((void *)g_profile->history_call,saved_history_call,5);
+        patch((void *)g_profile->async_iat,&original_async,4);
+        patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
+        patch((void *)g_profile->resolver_call,saved_call,5);
+        Log_Write("[停止] 防御/闪避入口未通过安装，已撤回手柄动作阶段。");return;
+    }
     installed = true;
     runtime_state = 1;
     Log_Write("[启动] %s；输入采样和原版目标解析后阶段已安装。SDL 将在游戏输入线程初始化。", g_profile->name);
@@ -259,6 +323,7 @@ BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID reserved)
             patch((void *)g_profile->keyboard_iat, &hook, 4);
         }
     } else if (reason == DLL_PROCESS_DETACH && !reserved && g_profile && original_keyboard) {
+        Guard_Shutdown();
         if (hooked_window && (WNDPROC)GetWindowLongPtrW(hooked_window,GWLP_WNDPROC)==window_hook)
             SetWindowLongPtrW(hooked_window,GWLP_WNDPROC,(LONG_PTR)previous_window_proc);
         /* 不支持运行中反复热装卸；正常显式卸载时只撤销仍归本插件拥有的补丁。 */

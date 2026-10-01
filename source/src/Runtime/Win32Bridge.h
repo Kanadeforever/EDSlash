@@ -60,4 +60,9 @@ void RuntimeWin32_FreeExecutable(void* memory);
  * 返回 2 时必须保留相关 Hook 资源，不能误当成“目标完全没有修改”。 */
 int RuntimeWin32_WriteCode(unsigned long address, const void* bytes, unsigned long size);
 
+/* 与显示后端共用插件旁的 BladeSwordQOL.log，逐行追加，不截断已有诊断。 */
+void RuntimeWin32_Log(void* module, const char* text);
+/* 不依赖 CRT 格式化，用十进制记录配置与计数。 */
+void RuntimeWin32_LogNumber(void* module, const char* label, unsigned long value);
+
 #endif

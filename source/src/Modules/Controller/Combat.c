@@ -10,10 +10,15 @@ static struct {
     float direction_x,direction_y;
     int selection;
     unsigned retries;
+    ActionSource source,issued_source;
+    bool request_fresh,combo_ready;
+    unsigned combo_slot,combo_epoch,issued_epoch,issued_slot;
+    int combo_cursor,request_index,issued_index;
     /* 输入请求和已经提交给原版的动作分开保存：新按 Y 不能把尚未执行的旧 X 标成右手。 */
     bool issued,issued_right;
     int issued_selector,issued_combo;
     uint32_t execution_serial;
+    int history_extra;
 } combat;
 
 static void *world(void) { return ReadPtr((void *)g_profile->world_global,0); }
@@ -21,17 +26,58 @@ static void *manager(void) { return ReadPtr(world(),0x30); }
 static uint32_t tick(void) { return Read32((void *)g_profile->game_tick,0); }
 static void submit(int opcode,int a,int b,int c) { ((This4)g_profile->submit)(manager(),opcode,a,b,c); }
 
-void Combat_Reset(void) { memset(&combat,0,sizeof combat); }
-void Combat_Suspend(void) { combat.pending=false; }
+void Combat_Reset(void) { memset(&combat,0,sizeof combat);combat.combo_cursor=-1; }
+void Combat_Suspend(void) { combat.pending=false;combat.request_fresh=false; }
 uint32_t Combat_Target(void) { return combat.target; }
-bool Combat_AllowsMouseRetry(void) { return !g_input.connected || g_intent.layer==LAYER_MOUSE; }
+void Combat_Request(int selection,ActionSource source,bool left_style)
+{
+    if (selection<0) return;
+    void *role=Game_Player();
+    if (!role) return;
+    if (combat.actor!=Read32(role,0x14) || combat.world!=world()) {
+        Combat_Reset();combat.actor=Read32(role,0x14);combat.world=world();combat.target=Read32(role,0x143);
+    }
+    combat.selection=selection;combat.source=source;combat.right=!left_style;
+    combat.pending=true;combat.request_fresh=true;combat.retries=5;
+}
+
+void Combat_SelectCombo(unsigned index)
+{
+    if (index>=4) return;
+    combat.combo_slot=index;combat.combo_cursor=-1;combat.combo_ready=true;++combat.combo_epoch;
+    if (combat.pending && combat.source==ACTION_COMBO) combat.pending=false;
+    void *hud=ReadPtr((void *)g_profile->skill_global,0);
+    if (Memory_Readable(hud,0x130)) ((This1)g_profile->right_set)(hud,-1-(int)index);
+    Log_Write("[连招] 切换独立套组=%u，下一次 Y 从首项开始。",index+1);
+}
+
+static int combo_selection(void *hud)
+{
+    if (!combat.combo_ready) {
+        int selected=(int)Read32(hud,0x12C);
+        combat.combo_slot=selected<=-1 && selected>=-4 ? (unsigned)(-1-selected):0;
+        combat.combo_cursor=selected<=-1 && selected>=-4 ? (int)Read32(hud,0x120):-1;
+        combat.combo_ready=true;
+    }
+    if (!g_profile->combo_get) return -1;
+    void *list=(void *)(uintptr_t)((This1)g_profile->combo_get)(hud,(int)combat.combo_slot);
+    unsigned count=Read32(list,0);
+    if (!Memory_Readable(list,12) || !count || count>64) return -1;
+    unsigned index=combat.combo_cursor<0 ? 0:((unsigned)combat.combo_cursor+1)%count;
+    void *node=ReadPtr(list,4);
+    for (unsigned i=0;i<index && Memory_Readable(node,12);++i) node=ReadPtr(node,0);
+    if (!Memory_Readable(node,12)) return -1;
+    combat.request_index=(int)index;
+    return (int)Read32(node,8);
+}
+bool Combat_AllowsMouseRetry(void) { return !g_input.connected || g_intent.layer==LAYER_MOUSE || g_intent.layer==LAYER_NATIVE; }
 
 bool Combat_OwnsHistory(void)
 {
     /* 原版调用点已经限定当前受控玩家。此处再验证来源和场景，鼠标模式仍执行旧业务。 */
     return g_profile && combat.owned && combat.actor && combat.world==world() &&
         combat.actor==Read32(manager(),0x0C) && g_input.connected && g_input.focused &&
-        g_intent.layer!=LAYER_MOUSE && g_intent.layer!=LAYER_NONE;
+        g_intent.layer!=LAYER_MOUSE && g_intent.layer!=LAYER_NATIVE && g_intent.layer!=LAYER_NONE;
 }
 
 void Combat_Record(int selector,int direction)
@@ -51,9 +97,14 @@ void Combat_Record(int selector,int direction)
     combat.history.start_tick=tick();combat.history.ended=false;combat.history.direction=direction;
     void *hud=ReadPtr((void *)g_profile->skill_global,0);
     int selected=(int)Read32(hud,0x12C);
-    if (combat.issued_right && selected==combat.issued_combo && selected>=-4 && selected<=-1 && Memory_Readable(hud,0xC20)) {
+    if (combat.issued_source==ACTION_COMBO && combat.issued_slot==combat.combo_slot &&
+        combat.issued_epoch==combat.combo_epoch) {
+        combat.combo_cursor=combat.issued_index;
+    }
+    if (combat.issued_source==ACTION_COMBO && combat.issued_epoch==combat.combo_epoch &&
+        selected==-1-(int)combat.issued_slot && Memory_Readable(hud,0xC20)) {
         /* 以保存的左右手来源推进原生自定义连招游标，不读取任何鼠标按钮全局标志。 */
-        Write32(hud,0x120,Read32(hud,0x120)+1);
+        Write32(hud,0x120,(uint32_t)combat.issued_index);
     }
     Log_Write("[战斗执行] 原生动作已建立，组=%d 方向=%d 来源=%s 历史=%u。",
         selector,direction,combat.issued_right ? "右手":"左手",combat.history.count);
@@ -64,6 +115,63 @@ void Combat_End(void)
     if (!Combat_OwnsHistory() || !combat.history.count) return;
     /* 原生结束回调可能和下一段创建发生在同一更新周期，不能只靠下一帧看空指针判断结束。 */
     combat.history.ended=true;combat.history.end_tick=tick();
+}
+
+void Combat_RecordExtra(int selector,int direction,int extra)
+{
+    uint32_t before=combat.execution_serial;
+    Combat_Record(selector,direction);
+    /* 不匹配通知不能偷偷改掉最后成功动作的附加语义，交接时同样要保持来源隔离。 */
+    if (combat.execution_serial!=before) combat.history_extra=extra;
+}
+
+void Combat_ExportHistory(void)
+{
+    void *role=Game_Player(), *mouse=ReadPtr((void *)g_profile->mouse_global,0);
+    if (!role || combat.actor!=Read32(role,0x14) || combat.world!=world() ||
+        !Memory_Readable(mouse,0x68) || !g_profile->history_clear) return;
+    /* 只交接成功动作历史，不伪造按钮、鼠标坐标或目标。使用原生容器的释放/追加接口，
+     * 不能把插件数组地址塞进原版链表，更不能用两者不同的内存布局互相冒充。 */
+    void *hud=ReadPtr((void *)g_profile->skill_global,0);
+    uint32_t cursor=Read32(hud,0x120);
+    ((This0)g_profile->history_clear)(mouse);
+    for (unsigned i=0;i<combat.history.count;++i)
+        ((This3)g_profile->history_record)(mouse,combat.history.selectors[i],combat.history.direction,
+                                          (void *)(intptr_t)combat.history_extra);
+    if (combat.history.count) {
+        Write32(mouse,0x4C,combat.history.start_tick);
+        Write32(mouse,0x50,combat.history.ended ? combat.history.end_tick:0xFFFFFFFFu);
+    }
+    /* 原记录函数可能看到真实右键并推进共享套组游标，交接不是新动作，恢复原值。 */
+    if (Memory_Readable(hud,0x124)) Write32(hud,0x120,cursor);
+    /* 旧鼠标阶段尚未完成的重试不能在交接后重新冒出来；成功历史与重试请求分开处理。 */
+    if (Memory_Readable(mouse,0x78)) Write32(mouse,0x74,0);
+    combat.pending=false;combat.owned=false;
+    Log_Write("[输入交接] 手柄到物理鼠标，成功历史=%u；保留套组进度。",combat.history.count);
+}
+
+void Combat_ImportHistory(void)
+{
+    void *role=Game_Player(), *mouse=ReadPtr((void *)g_profile->mouse_global,0);
+    Combat_Reset();
+    /* 键盘采样在原鼠标解析之前，切图首帧可能还是旧玩家缓存，不能导入旧角色历史。 */
+    if (!role || !Memory_Readable(mouse,0x68) || ReadPtr(mouse,0x38)!=role) return;
+    combat.actor=Read32(role,0x14);combat.world=world();combat.target=Read32(role,0x143);
+    uint32_t count=Read32(mouse,0x5C);
+    void *node=ReadPtr(mouse,0x60);
+    /* 原链表节点保存 next/previous/selector；限制数量并逐节点检查，拒绝损坏或循环链。 */
+    if (count>64) {Log_Write("[输入交接] 鼠标历史超出上限，按新序列接管。");return;}
+    for (unsigned i=0;i<count;++i) {
+        if (!Memory_Readable(node,12)) {memset(&combat.history,0,sizeof combat.history);return;}
+        combat.history.selectors[combat.history.count++]=(int)Read32(node,8);
+        node=ReadPtr(node,0);
+    }
+    if (node) {memset(&combat.history,0,sizeof combat.history);return;}
+    combat.history.start_tick=Read32(mouse,0x4C);combat.history.end_tick=Read32(mouse,0x50);
+    combat.history.ended=combat.history.end_tick!=0xFFFFFFFFu;
+    combat.history.direction=(int)Read32(mouse,0x54);combat.history_extra=(int)Read32(mouse,0x58);
+    combat.owned=true;
+    Log_Write("[输入交接] 物理鼠标到手柄，成功历史=%u；保留当前目标。",combat.history.count);
 }
 
 static WorldPoint aim_point(void *role)
@@ -125,19 +233,22 @@ void Combat_Update(void *role,uint32_t candidate)
         submit(18,(int)target,0,0);
     }
 
-    /* 快捷层本身不发攻击，也不把短暂切层当成清除目标；尚未提交的请求可取消。 */
-    if (g_intent.layer!=LAYER_GAME) { combat.pending=false;return; }
-    bool edge=(g_intent.pressed&(KEY(PAD_X)|KEY(PAD_Y)))!=0;
-    bool fresh=false;
+    /* RT/RB 的请求已经携带明确选择，可直接发动并有限重试；菜单/防御层不能泄漏攻击。 */
+    if (g_intent.layer!=LAYER_GAME && g_intent.layer!=LAYER_SKILL && g_intent.layer!=LAYER_ITEM) {
+        combat.pending=false;combat.request_fresh=false;return;
+    }
+    bool edge=g_intent.layer==LAYER_GAME && (g_intent.pressed&(KEY(PAD_X)|KEY(PAD_Y)))!=0;
+    bool fresh=combat.request_fresh;combat.request_fresh=false;
     bool both=(g_intent.held&(KEY(PAD_X)|KEY(PAD_Y)))==(KEY(PAD_X)|KEY(PAD_Y));
     bool right=(g_intent.pressed&KEY(PAD_Y)) ? true:
         (g_intent.pressed&KEY(PAD_X)) ? false:both ? combat.preferred_right:(g_intent.held&KEY(PAD_Y))!=0;
     /* 两键仍都按着时延续最后一次明确边沿的来源，不在下一帧又固定跳回 Y。 */
     if (held) combat.preferred_right=right;
-    if (edge || (held && !combat.pending && !active)) {
+    if (edge || (held && !combat.pending && !active && !fresh)) {
         void *hud=ReadPtr((void *)g_profile->skill_global,0);
         if (!Memory_Readable(hud,0xC20)) return;
-        combat.selection=((This0)(right ? g_profile->right_get:g_profile->left_get))(hud);
+        combat.selection=right ? combo_selection(hud):((This0)g_profile->left_get)(hud);
+        combat.source=right ? ACTION_COMBO:ACTION_LEFT;
         combat.right=right;combat.pending=combat.selection>=0;combat.retries=5;fresh=true;
         if (edge) Log_Write("[战斗输入] 来源=%s 选择=%d 新按=1 忙碌=%d 历史=%u 已结束=%d。",
             right ? "右手":"左手",combat.selection,active,combat.history.count,combat.history.ended);
@@ -155,7 +266,13 @@ void Combat_Update(void *role,uint32_t candidate)
     }
     WorldPoint point=aim_point(role);
     ResolvedSkill resolved;
-    if (!Skill_Resolve(role,combat.selection,&point,&combat.history,&resolved)) {
+    bool parsed=Skill_Resolve(role,combat.selection,&point,&combat.history,&resolved);
+    if (!parsed && (combat.source==ACTION_SKILL || combat.source==ACTION_THROW)) {
+        /* 换快捷技能不要求先凑齐旧套组的序列前缀；尝试它自己的起手招。
+         * 只换解析上下文，后面的原生硬直/消耗/执行资格依然完整检查。 */
+        ActionHistory first={0};parsed=Skill_Resolve(role,combat.selection,&point,&first,&resolved);
+    }
+    if (!parsed) {
         if (combat.history.count && combat.history.ended) {
             /* 原版 SkillRelease 失败且历史已有结束标记时会清历史，再让缓冲下一次按首招解析。
                dev4 漏掉了这条分支，导致跨招式一直失败直到整段历史超时。 */
@@ -182,9 +299,14 @@ void Combat_Update(void *role,uint32_t candidate)
     combat.owned=true;
     bool saved_issued=combat.issued,saved_right=combat.issued_right;
     int saved_selector=combat.issued_selector,saved_combo=combat.issued_combo;
+    ActionSource saved_source=combat.issued_source;
+    unsigned saved_slot=combat.issued_slot,saved_epoch=combat.issued_epoch;
+    int saved_index=combat.issued_index;
     uint32_t before_serial=combat.execution_serial;
     combat.issued=true;combat.issued_right=combat.right;combat.issued_selector=resolved.selector;
     combat.issued_combo=(int)Read32(ReadPtr((void *)g_profile->skill_global,0),0x12C);
+    combat.issued_source=combat.source;combat.issued_slot=combat.combo_slot;
+    combat.issued_epoch=combat.combo_epoch;combat.issued_index=combat.request_index;
     void *target_role=Game_Resolve(combat.target);
     int opcode,a2,a3;
     if (Game_Enemy(role,target_role)) {
@@ -207,6 +329,8 @@ void Combat_Update(void *role,uint32_t candidate)
     if (active && combat.execution_serial==before_serial && !accepted_pending) {
         combat.issued=saved_issued;combat.issued_right=saved_right;
         combat.issued_selector=saved_selector;combat.issued_combo=saved_combo;
+        combat.issued_source=saved_source;combat.issued_slot=saved_slot;
+        combat.issued_epoch=saved_epoch;combat.issued_index=saved_index;
         combat.pending=combat.retries!=0;
     }
 }

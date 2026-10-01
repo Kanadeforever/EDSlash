@@ -21,6 +21,15 @@ typedef struct {
     uintptr_t facing_point, facing_direction, direction8, history_call, history_record;
     uintptr_t retry_call;
     uintptr_t end_call,end_record;
+    uintptr_t history_clear;
+    uintptr_t guard_get,stamina_adjust,dodge_start,guard_check;
+    uintptr_t hit_receiver,runtime_owner;
+    uintptr_t combo_get,inventory_root,inventory_get,item_at;
+    uintptr_t guard_periodic_call,guard_hit_call,guard_input_release_call;
+    uintptr_t guard_run_call;
+    uintptr_t dodge_gate,dodge_legacy,dodge_resume,dodge_failure,guard_threshold;
+    unsigned stamina_offset;
+    unsigned health_offset;
     unsigned pending_offset;
     unsigned invalid_offset, interact_offset, active_offset;
 } Profile;
@@ -36,6 +45,7 @@ bool Memory_Readable(const void *pointer, size_t bytes);
 uint32_t Read32(const void *base, unsigned offset);
 void *ReadPtr(const void *base, unsigned offset);
 void Write32(void *base, unsigned offset, uint32_t value);
+bool Memory_Patch(void *address,const void *bytes,size_t count);
 bool Profile_Select(void);
 bool Profile_Pe(void);
 bool Profile_Verify(void);
@@ -53,6 +63,8 @@ SHORT Game_Async(int key, SHORT native);
 void Game_Diagnose(void);
 void *Game_Resolve(uint32_t handle);
 bool Game_Enemy(void *role, void *candidate);
+/* 以世界控制句柄解析当前玩家，供输入来源交接及防御业务使用。 */
+void *Game_Player(void);
 
 /* GCC 的 thiscall 会把首参数放 ECX，其余压栈，并由游戏函数清栈。
    这些类型依据两份 EXE 的 ret 4/ret 0x10 等真实指令核对，不使用逻辑伪原型。 */

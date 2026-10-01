@@ -274,17 +274,25 @@ int QOLModule_Initialize(const RuntimeContext* runtime)
     if (!RuntimeWin32_IsReady()) {
         return 0;
     }
+    RuntimeWin32_Log(runtime->self_module, "[QoL] 开始初始化地面名称与自动拾取模块。");
     if (!verify_qol_entries(runtime->profile)) {
+        RuntimeWin32_Log(runtime->self_module, "[QoL][停止] 原生入口签名不匹配，未安装模块。");
         return 0;
     }
     if (!load_settings(runtime->self_module, &settings)) {
+        RuntimeWin32_Log(runtime->self_module, "[QoL][停止] 无法定位同目录配置文件。");
         return 0;
     }
 
     need_auto_pickup = settings.pickup_policy != AUTO_PICKUP_POLICY_OFF;
+    RuntimeWin32_LogNumber(runtime->self_module, "[QoL] 地面名称常显=", (unsigned long)settings.show_ground_names);
+    RuntimeWin32_LogNumber(runtime->self_module, "[QoL] 自动拾取模式=", (unsigned long)settings.pickup_policy);
+    RuntimeWin32_LogNumber(runtime->self_module, "[QoL] 扫描间隔毫秒=", settings.scan_interval_ms);
+    RuntimeWin32_LogNumber(runtime->self_module, "[QoL] 掉落等待毫秒=", settings.drop_delay_ms);
     need_ground_hook = settings.show_ground_names || need_auto_pickup;
 
     if (!need_ground_hook && !need_auto_pickup) {
+        RuntimeWin32_Log(runtime->self_module, "[QoL] 全部关闭，保留原版行为。");
         return 1;
     }
 
@@ -303,14 +311,17 @@ int QOLModule_Initialize(const RuntimeContext* runtime)
     }
 
     if (need_ground_hook && !install_ground_hook(runtime->profile)) {
+        RuntimeWin32_Log(runtime->self_module, "[QoL][停止] 地面物品入口安装失败，开始回滚。");
         rollback_hooks();
         return 0;
     }
 
     if (need_auto_pickup && !install_auto_pickup_hooks(runtime->profile)) {
+        RuntimeWin32_Log(runtime->self_module, "[QoL][停止] 自动拾取入口安装失败，开始回滚。");
         rollback_hooks();
         return 0;
     }
 
+    RuntimeWin32_Log(runtime->self_module, "[QoL][成功] 地面名称与自动拾取入口已就绪；实际运行仍需场景验证。");
     return 1;
 }

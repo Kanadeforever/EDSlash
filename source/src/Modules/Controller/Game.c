@@ -1,12 +1,13 @@
 #include "Plugin.h"
 #include "Combat.h"
+#include "Guard.h"
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 static uint32_t movement_owner;
 static void *owned_world;
 static bool guard_owned;
-static int previous_combo = -1;
 static float facing_x, facing_y = 1.0f;
 static unsigned context_reason, context_id;
 static uintptr_t context_object;
@@ -46,6 +47,12 @@ static bool role_valid(void *role)
     return Memory_Readable(role, g_profile->invalid_offset + 4) &&
         type >= 0x1E && type <= 0x64 && resolve(Read32(role, 0x14)) == role &&
         Read32(role, g_profile->invalid_offset) == 0;
+}
+
+void *Game_Player(void)
+{
+    void *role = player();
+    return role_valid(role) ? role : NULL;
 }
 
 static void submit(int opcode, int a, int b, int c)
@@ -110,6 +117,7 @@ void Game_Diagnose(void)
 
 void Game_Release(void)
 {
+    Guard_Reset();
     if (!g_profile) return;
     /* 只终止本插件启动的移动，而且必须仍是同一世界、同一句柄的移动状态。
        技能追敌、其它地图复用的内存、鼠标自己发起的移动都不能被盲目停掉。 */
@@ -123,7 +131,7 @@ void Game_Release(void)
         submit(16, 0, 0, 0);
     movement_owner = 0;
     move_goal_valid=false;
-    owned_world = NULL; guard_owned = false; previous_combo = -1;
+    owned_world = NULL; guard_owned = false;
 }
 
 static bool enemy(void *me, void *candidate)
@@ -204,43 +212,53 @@ static void shortcuts(void)
     void *hud = global(g_profile->skill_global);
     if (!Memory_Readable(hud,0xC20)) return;
     static const int six[] = {PAD_A,PAD_B,PAD_X,PAD_Y,PAD_LEFT,PAD_RIGHT};
-    if (g_intent.layer == LAYER_MEDICINE || g_intent.layer == LAYER_ITEM) {
+    if (g_intent.layer == LAYER_MEDICINE) {
         for (int i=0;i<6;++i) if (g_intent.pressed & KEY(six[i])) {
-            ((This1)g_profile->quick_use)(hud,i+(g_intent.layer==LAYER_ITEM ? 6 : 0));
-            Log_Write("[快捷栏] 原版槽位 %d。",i+(g_intent.layer==LAYER_ITEM ? 6 : 0));
+            ((This1)g_profile->quick_use)(hud,i);
+            Log_Write("[药品快捷] 原版槽位 %d。",i+1);
         }
+    } else if (g_intent.layer == LAYER_ITEM) {
+        for (int i=0;i<6;++i) if (g_intent.pressed & KEY(six[i])) {
+            int slot=(int)Read32(hud,0x208+(unsigned)(i+6)*0xE4);
+            if (slot<0 || slot>135) {Log_Write("[投掷快捷] 槽 %d 没有有效物品。",i+1);continue;}
+            void *inventory=(void *)(uintptr_t)((This0)g_profile->inventory_get)((void *)g_profile->inventory_root);
+            void *item=inventory ? (void *)(uintptr_t)((This1)g_profile->item_at)(inventory,slot):NULL;
+            if (!Memory_Readable(item,0x24) || (int)Read32(item,0x1C)<=0) {
+                Log_Write("[投掷快捷] 槽 %d 已空或物品用尽。",i+1);continue;
+            }
+            /* 按原版右手 getter 生成同一个具体物品选择码，但不切换右手、不调用 Y。
+               扣数量、弹道和动作资格由原版执行器决定，不能自己提前删掉物品。 */
+            int selection=(int)Read32(item,0x20)+10000;
+            Combat_Request(selection,ACTION_THROW,false);
+            Log_Write("[投掷快捷] 槽 %d 直接请求选择=%d。",i+1,selection);
+        }
+    } else if (g_intent.layer==LAYER_GUARD) {
+        static const int directions[]={PAD_UP,PAD_RIGHT,PAD_DOWN,PAD_LEFT};
+        for (unsigned i=0;i<4;++i) if (g_intent.pressed&KEY(directions[i])) Combat_SelectCombo(i);
     }
-    if (g_intent.layer != LAYER_SKILL) { previous_combo=-1; return; }
+    if (g_intent.layer != LAYER_SKILL) return;
     static const int buttons[] = {PAD_A,PAD_B,PAD_X,PAD_Y,PAD_UP,PAD_DOWN,PAD_LEFT,PAD_RIGHT,PAD_LB,PAD_RB,PAD_BACK,PAD_START,PAD_L3,PAD_R3};
     static const int defaults[] = {'Q','W','E','R','T','Y','U','I','O','A','S','D',0,0};
     for (int i=0;i<14;++i) if (g_intent.pressed & KEY(buttons[i])) {
         WCHAR key[16]; swprintf(key,16,L"Slot%d",i+1);
         int vk=Config_Number(L"SkillKeys",key,defaults[i],0,255);
         if (!vk) { Log_Write("[技能] 槽 %d 尚未配置原版热键。",i+1); continue; }
-        /* 找原版按键绑定记录，只切换它指定的手与动作，不绕过角色自己的可用技能。
+        /* 找原版按键绑定记录，直接请求它绑定的动作，不绕过角色自己的可用技能。
            没有绑定时明确留空；不能把 18 个键盘字母误当成固定技能 ID。 */
         void *record=ReadPtr(hud,0xC18);
         bool found=false;
         for (unsigned n=0;record && n<128;++n) {
             if (!Memory_Readable(record,0x20)) break;
             if ((int)Read32(record,0x18)==vk) {
-                uintptr_t setter=Read32(record,0x1C) ? g_profile->left_set : g_profile->right_set;
-                ((This1)setter)(hud,(int)Read32(record,0x14)); found=true; break;
+                Combat_Request((int)Read32(record,0x14),ACTION_SKILL,Read32(record,0x1C)!=0);
+                found=true;break;
             }
             record=ReadPtr(record,8);
         }
-        Log_Write("[技能] 槽 %d，原版热键 %d，%s。",i+1,vk,found ? "已选择" : "角色尚无该绑定");
+        Log_Write("[技能] 槽 %d，原版热键 %d，%s。",i+1,vk,found ? "已请求施放" : "角色尚无该绑定");
     }
-    int combo=-1;
-    if (fabsf(g_intent.rx)>0.6f || fabsf(g_intent.ry)>0.6f) {
-        if (fabsf(g_intent.rx)>fabsf(g_intent.ry)) combo=g_intent.rx>0 ? 1:3;
-        else combo=g_intent.ry>0 ? 2:0;
-    }
-    if (combo>=0 && combo!=previous_combo) {
-        ((This1)g_profile->right_set)(hud,-1-combo);
-        Log_Write("[连招] 选择原版预设 %d。",combo+1);
-    }
-    previous_combo=combo;
+    /* 四套切换已经归入 LT+十字键，RT 右摇杆不再改写 Y 的套组。 */
+
 }
 
 void Game_Update(void)
@@ -253,7 +271,8 @@ void Game_Update(void)
         Game_Release(); return;
     }
     if (!g_profile || !g_input.connected || !g_input.focused || g_intent.layer==LAYER_NONE ||
-        g_intent.layer==LAYER_MOUSE || g_intent.layer==LAYER_MENU || Game_Menu()) { Game_Release();Combat_Suspend();return; }
+        g_intent.layer==LAYER_MOUSE || g_intent.layer==LAYER_NATIVE ||
+        g_intent.layer==LAYER_MENU || Game_Menu()) { Game_Release();Combat_Suspend();return; }
     void *me=player();
     if (!role_valid(me)) { Game_Release();Combat_Reset();return; }
     if (owned_world && owned_world!=world()) Game_Release();
@@ -263,7 +282,7 @@ void Game_Update(void)
     if (g_intent.layer==LAYER_GAME && (g_intent.pressed & KEY(PAD_A))) { inspect_action(me); return; }
     void *candidate=choose_target(me,false);
     Combat_Update(me,candidate ? Read32(candidate,0x14):0);
-    if (g_intent.layer==LAYER_GUARD) { guard_owned=true; return; }
+    if (g_intent.layer==LAYER_GUARD) { guard_owned=true;Guard_Update(me);return; }
     bool attacking=g_intent.layer==LAYER_GAME && (g_intent.held & (KEY(PAD_X)|KEY(PAD_Y)))!=0;
     bool direction=g_intent.lx!=0 || g_intent.ly!=0;
     if (attacking) {
@@ -303,7 +322,7 @@ void Game_Update(void)
 
 void Game_Keyboard(BYTE *keys)
 {
-    if (g_intent.layer==LAYER_NONE || g_intent.layer==LAYER_MOUSE) return;
+    if (g_intent.layer==LAYER_NONE || g_intent.layer==LAYER_MOUSE || g_intent.layer==LAYER_NATIVE) return;
     if (g_intent.menu_toggle) keys[VK_ESCAPE]|=0x80;
     if (g_intent.layer==LAYER_GAME) {
         static const int buttons[]={PAD_UP,PAD_DOWN,PAD_LEFT,PAD_RIGHT,PAD_R3};
@@ -323,11 +342,12 @@ SHORT Game_Async(int key, SHORT native)
 {
     /* 普通手柄世界操作不接受真实鼠标按钮再次产生攻击/转向。鼠标模式保留原版。 */
     if (g_input.connected && g_input.focused && g_intent.layer!=LAYER_NONE &&
-        g_intent.layer!=LAYER_MOUSE &&
+        g_intent.layer!=LAYER_MOUSE && g_intent.layer!=LAYER_NATIVE &&
         (key==VK_LBUTTON || key==VK_RBUTTON || key==VK_MBUTTON)) return 0;
-    /* 原版防御直接读异步 Alt，单改 GetKeyboardState 无效。仅在本游戏线程叠加，不改系统键盘。 */
-    if (g_input.connected && g_input.focused && g_intent.layer==LAYER_GUARD && key==VK_MENU)
-        return (SHORT)(native | 0x8000);
+    /* 手柄防御直接提交原生 ON/OFF，并隔离原版真实 Alt 松开的输入生产点。
+       物理输入来源恢复原版键盘，不再用虚拟 Alt 保持手柄防御。 */
+    if (g_input.connected && g_input.focused && g_intent.layer!=LAYER_NONE &&
+        g_intent.layer!=LAYER_NATIVE && g_intent.layer!=LAYER_MOUSE && key==VK_MENU) return 0;
     if (g_input.connected && g_input.focused && g_intent.layer==LAYER_GAME && g_intent.run && key==VK_SHIFT)
         return (SHORT)(native | 0x8000);
     return native;

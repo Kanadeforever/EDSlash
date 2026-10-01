@@ -118,3 +118,16 @@ Intent Control_Step(ControlState *s, const PadInput *in)
     s->previous = in->buttons; s->previous_layer = next;
     return out;
 }
+
+bool Control_FreshInput(const PadInput *in, const PadInput *old)
+{
+    if (!in->connected || !in->focused) return false;
+    if ((in->buttons & ~old->buttons) || (in->lt && !old->lt) || (in->rt && !old->rt)) return true;
+    /* 慢慢推杆也必须能接管：不能只看相邻两帧的差值，否则每帧变化很小会永远漏掉。 */
+    if ((hypotf(old->lx,old->ly)<=0.15f && hypotf(in->lx,in->ly)>0.15f) ||
+        (hypotf(old->rx,old->ry)<=0.15f && hypotf(in->rx,in->ry)>0.15f)) return true;
+    /* 从中立推杆或明显改变方向/力度才算新操作，稳定按住和轻微漂移不夺回来源。
+     * 与移动死区独立，只用于所有权交接，不改变实际方向和移动力度。 */
+    return fabsf(in->lx-old->lx)>0.15f || fabsf(in->ly-old->ly)>0.15f ||
+           fabsf(in->rx-old->rx)>0.15f || fabsf(in->ry-old->ry)>0.15f;
+}

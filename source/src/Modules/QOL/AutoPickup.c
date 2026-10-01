@@ -26,6 +26,9 @@ static AutoPickupPolicy g_policy;
 static unsigned long g_interval_ms;
 static unsigned long g_last_scan_ms;
 static int g_timer_started;
+static void *g_self_module;
+static int g_scan_logged;
+static unsigned long g_wait_scans;
 
 /*
  * 一次自动拾取只在同步调用原版 action=22 的期间把此标志设为 1。
@@ -182,7 +185,13 @@ static void run_native_pickup_scan(void)
 
     action = locate_pickup_action();
     if (action == 0ul) {
+        if (++g_wait_scans==10ul)
+            RuntimeWin32_Log(g_self_module, "[QoL][等待] 尚未定位唯一拾取对象，未调用动作；进入场景后继续检查。");
         return;
+    }
+    if (!g_scan_logged) {
+        g_scan_logged=1;
+        RuntimeWin32_Log(g_self_module, "[QoL][运行] 已定位拾取对象，开始调用原版动作22扫描；是否入包由原版判断。");
     }
 
     /*
@@ -203,6 +212,7 @@ int AutoPickup_Initialize(const RuntimeContext* runtime,
     }
 
     g_profile = runtime->profile;
+    g_self_module=runtime->self_module;g_scan_logged=0;g_wait_scans=0ul;
     g_policy = policy;
     g_interval_ms = interval_ms;
     g_action_entry = action_entry_from_address(

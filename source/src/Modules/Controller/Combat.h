@@ -16,6 +16,10 @@ typedef struct {
     int selector;
     bool sequence;
 } ResolvedSkill;
+typedef enum { ACTION_LEFT,ACTION_COMBO,ACTION_SKILL,ACTION_THROW } ActionSource;
+/* 快捷请求直接携带选择和来源，不修改右手装备或伪造 Y/鼠标按键。 */
+void Combat_Request(int selection,ActionSource source,bool left_style);
+void Combat_SelectCombo(unsigned index);
 
 bool Skill_Resolve(void *role,int selection,const WorldPoint *point,const ActionHistory *history,ResolvedSkill *out);
 void Combat_Reset(void);
@@ -26,4 +30,8 @@ bool Combat_OwnsHistory(void);
 bool Combat_AllowsMouseRetry(void);
 void Combat_Record(int selector,int direction);
 void Combat_End(void);
+/* 原版鼠标与手柄分别保持自己的历史，只在真实来源交接时同步已成功动作的业务历史。 */
+void Combat_ExportHistory(void);
+void Combat_ImportHistory(void);
+void Combat_RecordExtra(int selector,int direction,int extra);
 #endif

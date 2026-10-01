@@ -1,5 +1,7 @@
 # 源码构建说明
 
+当前主插件编译 DisplayFix＋QOL，独立 Controller 为 v0.1-dev7；历史构建记录保留原阶段，当前配置见末尾 dev7。QOL 与源码审计见 ../docs/自动拾取与地面物品名称说明.md、../docs/源码与文档一致性审计.md。
+
 项目沿用 `source/`、`docs/`、`release/` 三个目录。Controller 是 `src/Modules/Controller/` 子模块，目前独立构建为一份同时包含本体与外传适配的 ASI，尚未并入主插件。
 
 ## 主插件
@@ -35,7 +37,7 @@ python tools\controller\build_controller.py
 
 ## 测试与接档
 
-当前为 `EDSlashController v0.1-dev5` 战斗输入衔接修正版。dev3 移动保持用户暂定手感；dev4 已有本体方向改善但衔接失败的反馈，dev5 恢复旧历史处理和输入时序，仍待两作实机确认，完整手柄设计尚未全部实现。具体实现范围、缺项与两作测试步骤见 [手柄模块接档说明](../docs/手柄模块接档说明.md) 和 [手柄实机验证说明](../docs/手柄实机验证说明.md)。编译通过、模拟回放通过均不能代替实机验收。
+此处保留 dev5 战斗输入衔接阶段记录；当前源码为 `EDSlashController v0.1-dev7`，见下方 dev7 当前版本。dev3 移动保持用户暂定手感；dev4 已有本体方向改善但衔接失败的反馈，dev5 恢复旧历史处理和输入时序，仍待两作实机确认，完整手柄设计尚未全部实现。具体实现范围、缺项与两作测试步骤见 [手柄模块接档说明](../docs/手柄模块接档说明.md) 和 [手柄实机验证说明](../docs/手柄实机验证说明.md)。编译通过、模拟回放通过均不能代替实机验收。
 
 ## 当前构建检查记录（2026-10-01）
 
@@ -44,3 +46,11 @@ python tools\controller\build_controller.py
 两目标完整编译、链接和发布检查通过，空手柄发布目录默认 INI 复制通过。主 ASI 保持零导入表，独立手柄保持 Win32 系统导入和动态 SDL。新增 Runtime 回滚测试可运行 `python tools/run_runtime_checks.py`，需与手柄相同的 32 位 MinGW GCC，当前 23 项通过。
 
 本体 dev5 已有用户反馈正常；新增 QoL、两插件同场运行、外传及所有持续技能不能据离线通过写成全面实机验收。最新地址、踩坑、测试与下一步见 ../docs/完整接档说明.md 第十二节。
+
+## dev6 新验证与配置
+
+dev6 阶段独立手柄为 v0.1-dev6，新增物理鼠标/手柄交接、原生防御/方向闪避及 [Combat] ChargeGuardOnHit、FreeRunOutsideCombat 两个独立开关。构建自动补缺少的新键，保留已有值；修改后重启游戏。主插件新增 QoL 共用日志。新功能仍需两作实机，具体作用范围及测试见 ../docs/手柄防御闪避与热切换说明.md；LT 右摇杆原生左键菜单最后实施，未纳入当前产物。
+
+## dev7 当前版本
+
+当前Controller v0.1-dev7，RT技能/RB投掷直接请求、Y独立四套及LT十字切换。FreeRun是全程不扣跑步体力；GuardHitCost和AttackHitRecovery为-1默认、0无变化、正数体力点数，改后重启。升级保留已有配置值。实机待测；闪避保持dev6未调，已失败并进入调查，详见../docs/手柄快捷施放与体力规则说明.md。
