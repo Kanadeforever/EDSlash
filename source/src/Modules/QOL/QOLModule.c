@@ -2,6 +2,7 @@
 #include "GroundItems.h"
 #include "ItemClassifier.h"
 #include "AutoPickup.h"
+#include "PickupNotice.h"
 #include "../../Runtime/HookManager.h"
 #include "../../Runtime/Win32Bridge.h"
 #include "../../Runtime/X86Detour.h"
@@ -190,13 +191,17 @@ static int __cdecl qol_pickup_entry(int ground_item, int action_this)
         return 0;
     }
 
-    return g_original_pickup_entry(ground_item, action_this);
+    PickupNoticeSnapshot snapshot;
+    PickupNotice_Before((unsigned long)ground_item,(unsigned long)action_this,&snapshot);
+    int result=g_original_pickup_entry(ground_item,action_this);
+    PickupNotice_After(&snapshot);
+    return result;
 }
 
 static void rollback_hooks(void)
 {
     /* 先关闭自动业务，再尝试恢复物理入口，部分回滚失败也不会变成无过滤拾取。 */
-    AutoPickup_Disable();
+    PickupNotice_Disable();AutoPickup_Disable();
     /* 每个入口都要尝试撤销，不能因第一处失败就跳过其余入口。
      * 有入口未撤销时保留所有权，防止后续模块覆盖仍然生效的物理跳转。 */
     int pickup_removed = X86Detour_Remove(&g_pickup_entry_detour);
@@ -227,12 +232,12 @@ static int install_ground_hook(const GameProfile* profile)
     return g_original_ground_update ? 1 : 0;
 }
 
-static int install_auto_pickup_hooks(const GameProfile* profile)
+static int install_auto_pickup_hooks(const GameProfile* profile,int automatic)
 {
     unsigned long input_target;
     unsigned long pickup_target;
 
-    if (!HookManager_Claim(SHARED_HOOK_INPUT_FRAME, RUNTIME_MODULE_QOL) ||
+    if ((automatic && !HookManager_Claim(SHARED_HOOK_INPUT_FRAME, RUNTIME_MODULE_QOL)) ||
         !HookManager_Claim(SHARED_HOOK_PICKUP_ENTRY, RUNTIME_MODULE_QOL)) {
         return 0;
     }
@@ -240,7 +245,7 @@ static int install_auto_pickup_hooks(const GameProfile* profile)
     input_target = GAME_IMAGE_BASE + profile->qol.input_update_rva;
     pickup_target = GAME_IMAGE_BASE + profile->qol.pickup_entry_rva;
 
-    if (!X86Detour_Install(&g_input_update_detour,
+    if (automatic && !X86Detour_Install(&g_input_update_detour,
                            input_target,
                            input_update_address(qol_input_update),
                            5ul)) {
@@ -248,7 +253,7 @@ static int install_auto_pickup_hooks(const GameProfile* profile)
     }
     /* 安装第一处入口后立刻保存原函数。若后面的拾取 Hook 安装失败而
      * 第一处撤销又失败，残留包装函数仍须能够继续调用原版输入更新。 */
-    g_original_input_update = input_update_from_address(g_input_update_detour.gateway);
+    if (automatic) g_original_input_update = input_update_from_address(g_input_update_detour.gateway);
 
     if (!X86Detour_Install(&g_pickup_entry_detour,
                            pickup_target,
@@ -259,7 +264,7 @@ static int install_auto_pickup_hooks(const GameProfile* profile)
 
     g_original_pickup_entry = pickup_entry_from_address(g_pickup_entry_detour.gateway);
 
-    return g_original_input_update && g_original_pickup_entry ? 1 : 0;
+    return (!automatic || g_original_input_update) && g_original_pickup_entry ? 1 : 0;
 }
 
 int QOLModule_Initialize(const RuntimeContext* runtime)
@@ -274,7 +279,7 @@ int QOLModule_Initialize(const RuntimeContext* runtime)
     if (!RuntimeWin32_IsReady()) {
         return 0;
     }
-    RuntimeWin32_Log(runtime->self_module, "[QoL] 开始初始化地面名称与自动拾取模块。");
+    RuntimeWin32_Log(runtime->self_module, "[QoL] v0.1-dev8：初始化地面名称、自动拾取与成功提示。");
     if (!verify_qol_entries(runtime->profile)) {
         RuntimeWin32_Log(runtime->self_module, "[QoL][停止] 原生入口签名不匹配，未安装模块。");
         return 0;
@@ -291,15 +296,14 @@ int QOLModule_Initialize(const RuntimeContext* runtime)
     RuntimeWin32_LogNumber(runtime->self_module, "[QoL] 掉落等待毫秒=", settings.drop_delay_ms);
     need_ground_hook = settings.show_ground_names || need_auto_pickup;
 
-    if (!need_ground_hook && !need_auto_pickup) {
-        RuntimeWin32_Log(runtime->self_module, "[QoL] 全部关闭，保留原版行为。");
-        return 1;
+    if (!PickupNotice_Initialize(runtime)) {
+        RuntimeWin32_Log(runtime->self_module,"[QoL][停止] 拾取提示接口或公共事件订阅验证失败。");return 0;
     }
 
     if (!GroundItems_Initialize(runtime,
                                 settings.show_ground_names,
                                 settings.drop_delay_ms)) {
-        return 0;
+        PickupNotice_Disable();return 0;
     }
 
     if (need_auto_pickup &&
@@ -307,7 +311,7 @@ int QOLModule_Initialize(const RuntimeContext* runtime)
          !AutoPickup_Initialize(runtime,
                                 settings.pickup_policy,
                                 settings.scan_interval_ms))) {
-        return 0;
+        PickupNotice_Disable();return 0;
     }
 
     if (need_ground_hook && !install_ground_hook(runtime->profile)) {
@@ -316,7 +320,7 @@ int QOLModule_Initialize(const RuntimeContext* runtime)
         return 0;
     }
 
-    if (need_auto_pickup && !install_auto_pickup_hooks(runtime->profile)) {
+    if (!install_auto_pickup_hooks(runtime->profile,need_auto_pickup)) {
         RuntimeWin32_Log(runtime->self_module, "[QoL][停止] 自动拾取入口安装失败，开始回滚。");
         rollback_hooks();
         return 0;

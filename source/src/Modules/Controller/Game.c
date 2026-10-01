@@ -1,6 +1,7 @@
 #include "Plugin.h"
 #include "Combat.h"
 #include "Guard.h"
+#include "Feedback.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -233,6 +234,8 @@ static void shortcuts(void)
             Log_Write("[投掷快捷] 槽 %d 直接请求选择=%d。",i+1,selection);
         }
     } else if (g_intent.layer==LAYER_GUARD) {
+        static const int faces[]={PAD_A,PAD_B,PAD_X,PAD_Y};
+        for (unsigned i=0;i<4;++i) if (g_intent.pressed&KEY(faces[i])) Feedback_Ultimate(i);
         static const int directions[]={PAD_UP,PAD_RIGHT,PAD_DOWN,PAD_LEFT};
         for (unsigned i=0;i<4;++i) if (g_intent.pressed&KEY(directions[i])) Combat_SelectCombo(i);
     }

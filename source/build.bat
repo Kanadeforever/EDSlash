@@ -75,6 +75,8 @@ REM 编译已在模块表登记的 QoL 以及它依赖的系统桥和入口跳�
 "%CLANG_EXE%" -target i686-pc-windows-msvc -finput-charset=UTF-8 -fexec-charset=UTF-8 -ffreestanding -fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -Isrc -c src\Modules\QOL\ItemClassifier.c -o "%BUILD_DIR%\ItemClassifier.obj" || goto :build_failed
 "%CLANG_EXE%" -target i686-pc-windows-msvc -finput-charset=UTF-8 -fexec-charset=UTF-8 -ffreestanding -fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -Isrc -c src\Modules\QOL\AutoPickup.c -o "%BUILD_DIR%\AutoPickup.obj" || goto :build_failed
 
+"%CLANG_EXE%" -target i686-pc-windows-msvc -finput-charset=UTF-8 -fexec-charset=UTF-8 -ffreestanding -fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -Isrc -c src\Modules\QOL\PickupNotice.c -o "%BUILD_DIR%\PickupNotice.obj" || goto :build_failed
+
 echo [6/11] 链接单一 BladeSwordQOL.asi...  
 "%LLD_LINK_EXE%" /dll /entry:DllMain@12 /nodefaultlib /machine:x86 /subsystem:windows /dynamicbase:no /nxcompat /implib:"%BUILD_DIR%\BladeSwordQOL.lib" /out:"%RELEASE_DIR%\BladeSwordQOL.asi" ^
   "%BUILD_DIR%\Main.obj" ^
@@ -91,6 +93,7 @@ echo [6/11] 链接单一 BladeSwordQOL.asi...
   "%BUILD_DIR%\QOLModule.obj" ^
   "%BUILD_DIR%\GroundItems.obj" ^
   "%BUILD_DIR%\ItemClassifier.obj" ^
+  "%BUILD_DIR%\PickupNotice.obj" ^
   "%BUILD_DIR%\AutoPickup.obj" || goto :build_failed
 
 echo [7/11] 复制统一配置...  

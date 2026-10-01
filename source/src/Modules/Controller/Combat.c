@@ -1,4 +1,5 @@
 #include "Combat.h"
+#include "Feedback.h"
 #include <math.h>
 #include <string.h>
 
@@ -16,7 +17,7 @@ static struct {
     int combo_cursor,request_index,issued_index;
     /* 输入请求和已经提交给原版的动作分开保存：新按 Y 不能把尚未执行的旧 X 标成右手。 */
     bool issued,issued_right;
-    int issued_selector,issued_combo;
+    int issued_selector,issued_combo,issued_selection;
     uint32_t execution_serial;
     int history_extra;
 } combat;
@@ -26,7 +27,7 @@ static void *manager(void) { return ReadPtr(world(),0x30); }
 static uint32_t tick(void) { return Read32((void *)g_profile->game_tick,0); }
 static void submit(int opcode,int a,int b,int c) { ((This4)g_profile->submit)(manager(),opcode,a,b,c); }
 
-void Combat_Reset(void) { memset(&combat,0,sizeof combat);combat.combo_cursor=-1; }
+void Combat_Reset(void) { Feedback_End();memset(&combat,0,sizeof combat);combat.combo_cursor=-1; }
 void Combat_Suspend(void) { combat.pending=false;combat.request_fresh=false; }
 uint32_t Combat_Target(void) { return combat.target; }
 void Combat_Request(int selection,ActionSource source,bool left_style)
@@ -88,6 +89,7 @@ void Combat_Record(int selector,int direction)
         return;
     }
     combat.issued=false;++combat.execution_serial;
+    Feedback_Start(combat.issued_selection,combat.issued_source);
     /* 只由原生 Runtime 成功建立通知追加。原版自动续段关闭历史门时不会进入此调用点。 */
     if (combat.history.count==64) {
         memmove(combat.history.selectors,combat.history.selectors+1,63*sizeof(int));
@@ -112,6 +114,7 @@ void Combat_Record(int selector,int direction)
 
 void Combat_End(void)
 {
+    Feedback_End();
     if (!Combat_OwnsHistory() || !combat.history.count) return;
     /* 原生结束回调可能和下一段创建发生在同一更新周期，不能只靠下一帧看空指针判断结束。 */
     combat.history.ended=true;combat.history.end_tick=tick();
@@ -234,7 +237,8 @@ void Combat_Update(void *role,uint32_t candidate)
     }
 
     /* RT/RB 的请求已经携带明确选择，可直接发动并有限重试；菜单/防御层不能泄漏攻击。 */
-    if (g_intent.layer!=LAYER_GAME && g_intent.layer!=LAYER_SKILL && g_intent.layer!=LAYER_ITEM) {
+    if (g_intent.layer!=LAYER_GAME && g_intent.layer!=LAYER_SKILL && g_intent.layer!=LAYER_ITEM &&
+        !(g_intent.layer==LAYER_GUARD && combat.pending && combat.source==ACTION_ULTIMATE)) {
         combat.pending=false;combat.request_fresh=false;return;
     }
     bool edge=g_intent.layer==LAYER_GAME && (g_intent.pressed&(KEY(PAD_X)|KEY(PAD_Y)))!=0;
@@ -267,7 +271,7 @@ void Combat_Update(void *role,uint32_t candidate)
     WorldPoint point=aim_point(role);
     ResolvedSkill resolved;
     bool parsed=Skill_Resolve(role,combat.selection,&point,&combat.history,&resolved);
-    if (!parsed && (combat.source==ACTION_SKILL || combat.source==ACTION_THROW)) {
+    if (!parsed && (combat.source==ACTION_SKILL || combat.source==ACTION_THROW || combat.source==ACTION_ULTIMATE)) {
         /* 换快捷技能不要求先凑齐旧套组的序列前缀；尝试它自己的起手招。
          * 只换解析上下文，后面的原生硬直/消耗/执行资格依然完整检查。 */
         ActionHistory first={0};parsed=Skill_Resolve(role,combat.selection,&point,&first,&resolved);
@@ -298,14 +302,14 @@ void Combat_Update(void *role,uint32_t candidate)
         ((This2)g_profile->facing_point)(role,(int)(uintptr_t)&point,(int)(uintptr_t)&origin);
     combat.owned=true;
     bool saved_issued=combat.issued,saved_right=combat.issued_right;
-    int saved_selector=combat.issued_selector,saved_combo=combat.issued_combo;
+    int saved_selector=combat.issued_selector,saved_combo=combat.issued_combo,saved_selection=combat.issued_selection;
     ActionSource saved_source=combat.issued_source;
     unsigned saved_slot=combat.issued_slot,saved_epoch=combat.issued_epoch;
     int saved_index=combat.issued_index;
     uint32_t before_serial=combat.execution_serial;
     combat.issued=true;combat.issued_right=combat.right;combat.issued_selector=resolved.selector;
     combat.issued_combo=(int)Read32(ReadPtr((void *)g_profile->skill_global,0),0x12C);
-    combat.issued_source=combat.source;combat.issued_slot=combat.combo_slot;
+    combat.issued_selection=combat.selection;combat.issued_source=combat.source;combat.issued_slot=combat.combo_slot;
     combat.issued_epoch=combat.combo_epoch;combat.issued_index=combat.request_index;
     void *target_role=Game_Resolve(combat.target);
     int opcode,a2,a3;
@@ -328,7 +332,7 @@ void Combat_Update(void *role,uint32_t candidate)
         Read32(role,pending+12)==(uint32_t)a3;
     if (active && combat.execution_serial==before_serial && !accepted_pending) {
         combat.issued=saved_issued;combat.issued_right=saved_right;
-        combat.issued_selector=saved_selector;combat.issued_combo=saved_combo;
+        combat.issued_selection=saved_selection;combat.issued_selector=saved_selector;combat.issued_combo=saved_combo;
         combat.issued_source=saved_source;combat.issued_slot=saved_slot;
         combat.issued_epoch=saved_epoch;combat.issued_index=saved_index;
         combat.pending=combat.retries!=0;

@@ -16,7 +16,7 @@ typedef struct {
     int selector;
     bool sequence;
 } ResolvedSkill;
-typedef enum { ACTION_LEFT,ACTION_COMBO,ACTION_SKILL,ACTION_THROW } ActionSource;
+typedef enum { ACTION_LEFT,ACTION_COMBO,ACTION_SKILL,ACTION_THROW,ACTION_ULTIMATE } ActionSource;
 /* 快捷请求直接携带选择和来源，不修改右手装备或伪造 Y/鼠标按键。 */
 void Combat_Request(int selection,ActionSource source,bool left_style);
 void Combat_SelectCombo(unsigned index);

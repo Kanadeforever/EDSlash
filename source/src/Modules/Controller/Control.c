@@ -1,6 +1,7 @@
 #include "Control.h"
 #include <math.h>
 #include <string.h>
+#include <wchar.h>
 
 float Control_Axis(int value, int deadzone)
 {
@@ -130,4 +131,30 @@ bool Control_FreshInput(const PadInput *in, const PadInput *old)
      * 与移动死区独立，只用于所有权交接，不改变实际方向和移动力度。 */
     return fabsf(in->lx-old->lx)>0.15f || fabsf(in->ly-old->ly)>0.15f ||
            fabsf(in->rx-old->rx)>0.15f || fabsf(in->ry-old->ry)>0.15f;
+}
+
+int Control_Percent(const wchar_t *text,int fallback)
+{
+    if (!text) return fallback;
+    while (*text==L' ' || *text==L'\t') ++text;
+    if (*text==L'-' && text[1]==L'1' && !text[2]) return -1;
+    /* 把整数和小数拆开读取：最终单位是百分比的百分之一，12.50存成1250。 */
+    unsigned whole=0,fraction=0,digits=0;
+    bool found=false;
+    while (*text>=L'0' && *text<=L'9') {
+        found=true;whole=whole*10+(unsigned)(*text++-L'0');if (whole>100) return fallback;
+    }
+    if (*text==L'.') {
+        ++text;
+        while (*text>=L'0' && *text<=L'9') {
+            if (++digits>2) return fallback;
+            fraction=fraction*10+(unsigned)(*text++-L'0');
+        }
+        if (!digits) return fallback;
+    }
+    /* 5.5与5.50含义一致；第三位小数和超过100%的输入都使用默认值。 */
+    if (digits==1) fraction*=10;
+    while (*text==L' ' || *text==L'\t') ++text;
+    if (!found || *text || whole*100+fraction>10000) return fallback;
+    return (int)(whole*100+fraction);
 }

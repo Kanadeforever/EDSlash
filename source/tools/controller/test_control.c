@@ -109,6 +109,17 @@ int main(void)
     old=current;current.rt=true;CHECK(Control_FreshInput(&current,&old));
     old=current;CHECK(!Control_FreshInput(&current,&old));
     current.focused=false;CHECK(!Control_FreshInput(&current,&old));
+    /* 百分比按十进制定点解析，不能把12.50截断成12或当作体力点数。 */
+    CHECK(Control_Percent(L"12.50",-1)==1250);
+    CHECK(Control_Percent(L"100.00",-1)==10000);
+    CHECK(Control_Percent(L"0.01",-1)==1);
+    CHECK(Control_Percent(L" 5.5 ",-1)==550);
+    CHECK(Control_Percent(L"0",-1)==0);
+    CHECK(Control_Percent(L"-1",999)==-1);
+    CHECK(Control_Percent(L"100.01",999)==999);
+    CHECK(Control_Percent(L"1.234",999)==999);
+    CHECK(Control_Percent(L"12.",999)==999);
+    CHECK(Control_Percent(L"abc",999)==999);
     printf("输入时间线与八方向检查通过：%u 项\n",checks);
     return 0;
 }

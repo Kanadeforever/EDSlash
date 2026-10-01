@@ -1,6 +1,7 @@
 #include "Plugin.h"
 #include "Combat.h"
 #include "Guard.h"
+#include "Feedback.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -20,11 +21,12 @@ static void *world_ptr=world_data,*mouse_ptr=mouse_data,*scene_ptr=scene_data,*t
 static int last_opcode, arg1, arg2, arg3, releases, last_policy, selected, quick_slot;
 static void *last_target;
 static bool page_visible, physical_mouse, busy_gate;
+static int test_dodge_setting=1,test_dodge_distance=128;
 static int test_guard_setting=1,test_run_setting=1,test_cost=-1,test_recovery=-1;
 static unsigned checks;
 static unsigned move_requests;
 static bool reject_move;
-static BYTE choices_data[32],groups_data[2][0x30],methods_data[3][0x90];
+static BYTE choices_data[32],groups_data[2][0x40],methods_data[3][0x90];
 static uint32_t group_members[2][2],engine_tick,history_timeout;
 static int group_table,method_table;
 static bool unavailable_skill,record_actions;
@@ -41,8 +43,18 @@ bool Input_PhysicalDown(int key) { return key==VK_LBUTTON && physical_mouse; }
 int Config_Number(const WCHAR *section,const WCHAR *key,int fallback,int minimum,int maximum)
 {
     (void)section;(void)minimum;(void)maximum;
+    if(!wcscmp(key,L"DodgeDistance"))return test_dodge_distance;
+    if(!wcscmp(key,L"DirectionalDodge"))return test_dodge_setting;
     if(!wcscmp(key,L"ChargeGuardOnHit"))return test_guard_setting;
     if(!wcscmp(key,L"FreeRun"))return test_run_setting;
+    if(!wcscmp(key,L"GuardHitCost"))return test_cost;
+    if(!wcscmp(key,L"AttackHitRecovery"))return test_recovery;
+    return fallback;
+}
+/* 配置读取替身直接返回百分比的百分之一单位，和实际解析器保持一致。 */
+int Config_Percent(const WCHAR *section,const WCHAR *key,int fallback)
+{
+    (void)section;
     if(!wcscmp(key,L"GuardHitCost"))return test_cost;
     if(!wcscmp(key,L"AttackHitRecovery"))return test_recovery;
     return fallback;
@@ -161,6 +173,12 @@ static int __attribute__((thiscall)) native_combo(void *self,int index)
     return (int)(uintptr_t)preset_heads[index];
 }
 
+static int __attribute__((thiscall)) native_prepared(void *self,int selection)
+{ CHECK(self==hud_data);Write32(self,0xBF4,(uint32_t)selection);Write32(self,0xBF8,0);return 1; }
+static int __attribute__((thiscall)) native_icon(void *self,int selection)
+{ CHECK(self==hud_data);return selection+4000; }
+static int __attribute__((thiscall)) native_throw_group(void *role)
+{ CHECK(role==roles[0]);return (int)(uintptr_t)groups_data[1]; }
 static void configure(Profile *profile, bool expansion)
 {
     Combat_Reset();test_throwing=false;test_guard_setting=test_run_setting=1;test_cost=test_recovery=-1;
@@ -175,6 +193,8 @@ static void configure(Profile *profile, bool expansion)
     profile->hover_set=(uintptr_t)native_hover;
     profile->relation=(uintptr_t)native_relation;profile->template_value=(uintptr_t)native_template;
     profile->get_jm=(uintptr_t)native_jm;
+    profile->prepared_set=(uintptr_t)native_prepared;profile->icon_resolve=(uintptr_t)native_icon;
+    profile->throw_group=(uintptr_t)native_throw_group;
     profile->ui_property=(uintptr_t)native_property;profile->combo_get=(uintptr_t)native_combo;
     profile->skill_groups=(uintptr_t)&group_table;profile->methods=(uintptr_t)&method_table;
     profile->game_tick=(uintptr_t)&engine_tick;profile->combo_timeout=(uintptr_t)&history_timeout;
@@ -203,8 +223,10 @@ static void configure(Profile *profile, bool expansion)
     /* 受控角色按原版 typed resolver 的范围验证，不能把所有角色都强制等同普通 Actor 0x28。 */
     Write32(roles[0],0x67,0x3C);
     Write32(roles[0],0x73,1);ptr(roles[0],0x193,choices_data);
+    Write32(hud_data,0xBF4,(uint32_t)-1);
     memset(groups_data,0,sizeof groups_data);memset(methods_data,0,sizeof methods_data);
     for (int i=0;i<2;++i) {
+        Write32(groups_data[i],0x24,i==0 ? 111:222);
         group_members[i][0]=1001+i;Write32(groups_data[i],0x26,1);ptr(groups_data[i],0x2A,group_members[i]);
         Write32(methods_data[i],0x24,1001+i);Write32(methods_data[i],0x27,i==0 ? 111:222);
         Write32(methods_data[i],0x29,500);
@@ -480,6 +502,7 @@ static void transfer_regression(bool expansion)
 }
 
 static float guard_threshold=1.0f;
+static int test_maximum=100;
 static uintptr_t guard_vtable[48];
 static unsigned dodge_installs;
 static float read_float(void *role,unsigned offset)
@@ -490,11 +513,14 @@ static void __attribute__((thiscall)) native_stamina(void *role,float amount)
 {
     float value=read_float(role,g_profile->stamina_offset)+amount;
     if(value<0)value=0;
-    if(value>100)value=100;
+    if(value>test_maximum)value=(float)test_maximum;
     write_float(role,g_profile->stamina_offset,value);
 }
 static int __attribute__((thiscall)) native_guard_state(void *role,int index)
 { CHECK(index==0x6A);return *((BYTE*)role+0x219); }
+/* 等级或装备变化可能改变最大值；每次事件都应重新读取这个原版接口。 */
+static int __attribute__((thiscall)) native_maximum(void *role)
+{ CHECK(role==roles[0]);return test_maximum; }
 static int __attribute__((thiscall)) native_guard_unit(void *role)
 { CHECK(role==roles[0]);return 3; }
 static int __attribute__((thiscall)) native_guard_off(void *role,int opcode,int a,int b,int c,int d,int e)
@@ -504,10 +530,32 @@ static int __attribute__((thiscall)) native_guard_off(void *role,int opcode,int 
 }
 static int __attribute__((thiscall)) native_guard_eligible(void *role)
 { CHECK(role==roles[0]);return 1; }
+static BYTE dash_map[0x80],dash_cells[128*128*19];
+static bool dash_wall;static unsigned legacy_motion_calls,legacy_init_calls;
+static uintptr_t patched_callee(uintptr_t call)
+{ int32_t displacement;memcpy(&displacement,(void *)(call+1),4);return call+5+displacement; }
+static int __attribute__((thiscall)) native_dash_init(void *role)
+{ CHECK(role==roles[0]);++legacy_init_calls;return 1; }
+static int __attribute__((thiscall)) native_dash_motion(void *role)
+{ CHECK(role==roles[0]);++legacy_motion_calls;return 1; }
+static int __attribute__((thiscall)) native_dash_bounds(void *map,int x,int y)
+{ CHECK(map==dash_map);return x>=0 && x<128 && y>=0 && y<128; }
+static int __attribute__((thiscall)) native_dash_cell(void *cell,int kind)
+{ (void)kind;return !dash_wall || (BYTE *)cell<dash_cells+(100*128+101)*19; }
+static int __attribute__((thiscall)) native_dash_commit(void *role,int x,int y,void *mode)
+{ CHECK(role==roles[0] && !mode && x>=0 && x<128 && y>=0 && y<128);return 1; }
+static int __attribute__((thiscall)) native_dash_position(void *role,int x,int y)
+{ CHECK(role==roles[0]);Write32(role,0x2C,(uint32_t)x);Write32(role,0x30,(uint32_t)y);return 1; }
+static WorldPoint *__cdecl native_dash_grid(WorldPoint *out,const WorldPoint *in)
+{ out->x=in->x/64;out->y=in->y/64;return out; }
+static int __attribute__((thiscall)) native_dash_effect(void *role,int effect,int a,int b,int c)
+{ CHECK(role==roles[0] && effect==0x66 && a==b && c==0);return 1; }
 static int __attribute__((thiscall)) native_dodge_install(void *role,int state,int x,int y,int direction)
 {
+    if (state==1) { CHECK(role==roles[0]);Write32(role,0x73,1);return 1; }
     CHECK(role==roles[0] && state==0x17 && direction>=0 && direction<8);
-    CHECK(x!=6400 || y!=6400);Write32(role,0x73,0x17);++dodge_installs;return 1;
+    CHECK(x!=6400 || y!=6400);Write32(role,0x73,0x17);++dodge_installs;
+    return ((This0)patched_callee(g_profile->dodge_init_call))(role);
 }
 static void make_call(BYTE *where,uintptr_t callee)
 { int32_t displacement=(int32_t)(callee-(uintptr_t)where-5);where[0]=0xE8;memcpy(where+1,&displacement,4); }
@@ -529,6 +577,7 @@ static void guard_regression(bool expansion)
     profile.guard_threshold=(uintptr_t)&guard_threshold;profile.guard_get=(uintptr_t)native_guard_state;
     profile.stamina_adjust=(uintptr_t)native_stamina;profile.guard_check=(uintptr_t)native_guard_eligible;
     memset(guard_vtable,0,sizeof guard_vtable);guard_vtable[0xA0/4]=(uintptr_t)native_guard_unit;
+    guard_vtable[0x80/4]=(uintptr_t)native_maximum;
     guard_vtable[0x5C/4]=(uintptr_t)native_guard_off;ptr(roles[0],0,guard_vtable);
     *((BYTE*)roles[0]+0x219)=1;write_float(roles[0],profile.stamina_offset,50);
     Guard_Periodic(roles[0],-6.0f);CHECK(read_float(roles[0],profile.stamina_offset)==50.0f);
@@ -557,6 +606,15 @@ static void guard_regression(bool expansion)
     profile.dodge_gate=(uintptr_t)(code+9);profile.dodge_legacy=(uintptr_t)(code+15);
     profile.dodge_resume=(uintptr_t)(code+32);profile.dodge_failure=(uintptr_t)(code+119);
     profile.install_state=(uintptr_t)native_dodge_install;
+    make_call(code+48,(uintptr_t)native_dash_init);make_call(code+56,(uintptr_t)native_dash_motion);
+    profile.dodge_init_call=(uintptr_t)(code+48);profile.dodge_init=(uintptr_t)native_dash_init;
+    profile.dodge_motion_call=(uintptr_t)(code+56);profile.dodge_motion=(uintptr_t)native_dash_motion;
+    profile.map_bounds=(uintptr_t)native_dash_bounds;profile.cell_passable=(uintptr_t)native_dash_cell;
+    profile.grid_commit=(uintptr_t)native_dash_commit;profile.world_to_grid=(uintptr_t)native_dash_grid;
+    profile.role_effect=(uintptr_t)native_dash_effect;profile.dodge_counter_offset=expansion ? 0x2EB:0x2DF;
+    guard_vtable[8/4]=(uintptr_t)native_dash_position;
+    memset(dash_cells,0xFF,sizeof dash_cells);Write32(dash_map,8,128);ptr(dash_map,0x14,dash_cells);
+    ptr(roles[0],0x6F,dash_map);dash_wall=false;legacy_motion_calls=legacy_init_calls=0;
     memcpy(code+96,"\x64\xA1\x00\x00\x00\x00",6);
     code[102]=0xE9;int32_t hit_jump=(int32_t)((uintptr_t)native_damage_receiver-(uintptr_t)code-107);
     memcpy(code+103,&hit_jump,4);profile.hit_receiver=(uintptr_t)(code+96);
@@ -588,6 +646,44 @@ static void guard_regression(bool expansion)
     Guard_Update(roles[0]);CHECK(dodge_installs==1);
     g_intent.lx=0;Guard_Update(roles[0]);g_intent.lx=-1;Guard_Update(roles[0]);CHECK(dodge_installs==2);
     CHECK(((This0)profile.dodge_start)(roles[1])==0);CHECK(dodge_installs==2);
+    for(unsigned i=0;i<8;++i) ((This0)patched_callee(profile.dodge_motion_call))(roles[0]);
+    float wx,wy;Control_WorldDirection(-1,0,&wx,&wy);
+    CHECK((int)Read32(roles[0],0x2C)==6400+(int)lroundf(wx*128));
+    CHECK((int)Read32(roles[0],0x30)==6400+(int)lroundf(wy*128));
+    CHECK(Read32(roles[0],0x73)==1 && legacy_motion_calls==0 && legacy_init_calls==0);
+    /* 八个推杆方向均沿直线达到配置距离，不回到原版的参考点圆弧。 */
+    const float axes[8][2]={{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1},{0,-1},{1,-1}};
+    for(unsigned n=0;n<8;++n) {
+        Guard_Reset();Write32(roles[0],0x2C,6400);Write32(roles[0],0x30,6400);
+        g_intent.lx=axes[n][0];g_intent.ly=axes[n][1];Guard_Update(roles[0]);
+        for(unsigned i=0;i<8;++i) ((This0)patched_callee(profile.dodge_motion_call))(roles[0]);
+        Control_WorldDirection(g_intent.lx,g_intent.ly,&wx,&wy);
+        CHECK((int)Read32(roles[0],0x2C)==6400+(int)lroundf(wx*128));
+        CHECK((int)Read32(roles[0],0x30)==6400+(int)lroundf(wy*128));
+    }
+    /* 中途墙格提前停，测试长距离终点检查遗漏、以及其它角色占用不被近邻回退绕开。 */
+    for(unsigned n=0;n<2;++n) {
+        Guard_Reset();Write32(roles[0],0x2C,6400);Write32(roles[0],0x30,6400);
+        dash_wall=n==0;
+        if(n==1) {unsigned short occupant=2;memcpy(dash_cells+(100*128+101)*19+10,&occupant,2);}
+        g_intent.lx=1;g_intent.ly=0.5f;Guard_Update(roles[0]);
+        for(unsigned i=0;i<8 && Read32(roles[0],0x73)==0x17;++i)
+            ((This0)patched_callee(profile.dodge_motion_call))(roles[0]);
+        CHECK(Read32(roles[0],0x2C)>6400 && Read32(roles[0],0x2C)<6464);
+        CHECK(Read32(roles[0],0x30)==6400 && Read32(roles[0],0x73)==1);
+    }
+    dash_wall=false;memset(dash_cells,0xFF,sizeof dash_cells);
+        /* 用户改距离后读取新配置，不用256参考点推算距离，也不能沿用上次启动的缓存值。 */
+    Guard_Shutdown();test_dodge_distance=64;CHECK(Guard_Initialize());Guard_Reset();
+    Write32(roles[0],0x2C,6400);Write32(roles[0],0x30,6400);g_intent.lx=1;g_intent.ly=0.5f;
+    Guard_Update(roles[0]);
+    for(unsigned i=0;i<8;++i) ((This0)patched_callee(profile.dodge_motion_call))(roles[0]);
+    CHECK(Read32(roles[0],0x2C)==6464 && Read32(roles[0],0x30)==6400);
+    Guard_Shutdown();test_dodge_distance=128;test_dodge_setting=0;CHECK(Guard_Initialize());
+    ((This0)patched_callee(profile.dodge_init_call))(roles[0]);
+    ((This0)patched_callee(profile.dodge_motion_call))(roles[0]);
+    CHECK(legacy_init_calls==1 && legacy_motion_calls==1);
+    test_dodge_setting=1;
     Guard_Shutdown();CHECK(!memcmp(code+9,"\x85\xFF\x74\x6A\x57\x56",6));
     /* 两个开关分别恢复原版扣费，不关闭原生防御/闪避接口。 */
     test_guard_setting=test_run_setting=0;CHECK(Guard_Initialize());
@@ -602,7 +698,7 @@ static void guard_regression(bool expansion)
     write_float(roles[0],profile.stamina_offset,50);Guard_Periodic(roles[0],-6);Guard_RunCost(roles[0],-3);
     CHECK(read_float(roles[0],profile.stamina_offset)==47);
     Guard_Shutdown();test_guard_setting=test_run_setting=1;CHECK(Guard_Initialize());Guard_Shutdown();
-    test_cost=10;test_recovery=5;CHECK(Guard_Initialize());
+    test_cost=1000;test_recovery=500;CHECK(Guard_Initialize());
     *((BYTE*)roles[0]+0x219)=1;write_float(roles[0],profile.stamina_offset,50);
     Guard_Hit(roles[0],0x6A);CHECK(read_float(roles[0],profile.stamina_offset)==40);
     damage_to_apply=5;((This1)profile.hit_receiver)(roles[1],(int)(uintptr_t)runtime_data);
@@ -610,6 +706,17 @@ static void guard_regression(bool expansion)
     Guard_Shutdown();test_cost=0;test_recovery=0;CHECK(Guard_Initialize());
     Guard_Hit(roles[0],0x6A);((This1)profile.hit_receiver)(roles[1],(int)(uintptr_t)runtime_data);
     CHECK(read_float(roles[0],profile.stamina_offset)==45);
+    /* 最大体力200时12.50%扣25、10.00%回20；更改最大值后立即按新值计算。 */
+    Guard_Shutdown();test_maximum=200;test_cost=1250;test_recovery=1000;CHECK(Guard_Initialize());
+    *((BYTE*)roles[0]+0x219)=1;write_float(roles[0],profile.stamina_offset,100);
+    Guard_Hit(roles[0],0x6A);CHECK(read_float(roles[0],profile.stamina_offset)==75);
+    ((This1)profile.hit_receiver)(roles[1],(int)(uintptr_t)runtime_data);
+    CHECK(read_float(roles[0],profile.stamina_offset)==95);
+    test_maximum=400;Guard_Hit(roles[0],0x6A);
+    CHECK(read_float(roles[0],profile.stamina_offset)==45);
+    ((This1)profile.hit_receiver)(roles[1],(int)(uintptr_t)runtime_data);
+    CHECK(read_float(roles[0],profile.stamina_offset)==85);
+    test_maximum=100;
     Guard_Shutdown();test_cost=test_recovery=-1;CHECK(Guard_Initialize());Guard_Shutdown();
     CHECK(VirtualFree(code,0,MEM_RELEASE));Game_Release();
     printf("%s防御扣费、耗尽、非玩家隔离和闪避裸钩子栈回归通过\n",expansion?"外传":"本体");
@@ -648,6 +755,46 @@ static void quick_cast_regression(bool expansion)
     Combat_Reset();Game_Release();
 }
 
+static int icon_seen,selection_seen,icon_draw_calls;
+static int __attribute__((thiscall)) native_icon_draw(void *self,int context,int icon,int selection,
+    int x,int y,int shade,int alpha,int bindings,int side)
+{
+    CHECK(self==hud_data && context==123 && x==456 && y==789 && bindings==1 && side==0);
+    (void)shade;(void)alpha;icon_seen=icon;selection_seen=selection;++icon_draw_calls;return 17;
+}
+static void feedback_regression(bool expansion)
+{
+    Profile profile;configure(&profile,expansion);record_actions=true;engine_tick=100;
+    Write32(groups_data[0],0x32,1000);Write32(groups_data[1],0x32,1001);
+    BYTE *code=VirtualAlloc(NULL,16,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);CHECK(code!=NULL);
+    make_call(code,(uintptr_t)native_icon_draw);profile.icon_draw=(uintptr_t)native_icon_draw;
+    profile.right_icon_call=(uintptr_t)code;CHECK(Feedback_Initialize());
+    g_input.connected=g_input.focused=true;g_intent.layer=LAYER_GUARD;g_intent.held=g_intent.pressed=0;
+    int selection,icon;releases=0;
+    Feedback_Ultimate(0);CHECK(Read32(hud_data,0xBF4)==111 && releases==0);
+    CHECK(Feedback_Selection(&selection,&icon) && selection==111 && icon==4111);
+    Feedback_Ultimate(1);CHECK(Read32(hud_data,0xBF4)==222 && releases==0);
+    /* 模拟游戏HUD自己的准备过期，下一次必须重新准备，不能沿用插件私有确认标志。 */
+    native_prepared(hud_data,-1);Feedback_Ultimate(1);CHECK(releases==0 && Read32(hud_data,0xBF4)==222);
+    Feedback_Ultimate(1);Combat_Update(roles[0],0);
+    CHECK(releases==1 && arg1==1002 && (int)Read32(hud_data,0xBF4)==-1);
+    CHECK(Feedback_Selection(&selection,&icon) && selection==222);
+    typedef int (__attribute__((thiscall)) *IconCall)(void *,int,int,int,int,int,int,int,int,int);
+    CHECK(((IconCall)patched_callee(profile.right_icon_call))(hud_data,123,0,-1,456,789,4,32,1,0)==17);
+    CHECK(icon_seen==4222 && selection_seen==222);
+    Combat_End();CHECK(!Feedback_Selection(&selection,&icon));
+    Feedback_Start(111,ACTION_SKILL);CHECK(Feedback_Selection(&selection,&icon) && selection==111);
+    /* 物理鼠标接管本身不撤掉正在发动的图标，新Runtime取代旧Runtime才恢复原图标。 */
+    g_intent.layer=LAYER_NATIVE;CHECK(Feedback_Selection(&selection,&icon));
+    ptr(roles[0],profile.active_offset,methods_data[0]);CHECK(!Feedback_Selection(&selection,&icon));
+    ptr(roles[0],profile.active_offset,runtime_data);
+    Feedback_Start(10042,ACTION_THROW);CHECK(Feedback_Selection(&selection,&icon) && selection==222);
+    engine_tick++;ptr(roles[0],profile.active_offset,NULL);CHECK(!Feedback_Selection(&selection,&icon));
+    Feedback_Shutdown();CHECK(patched_callee(profile.right_icon_call)==(uintptr_t)native_icon_draw);
+    CHECK(VirtualFree(code,0,MEM_RELEASE));Combat_Reset();record_actions=false;
+    printf("%s图标包装、结束恢复、来源切换及必杀准备/换选/过期/确认回归通过\n",expansion?"外传":"本体");
+}
+
 int main(void)
 {
     exercise(false);exercise(true);
@@ -656,6 +803,7 @@ int main(void)
     transfer_regression(false);transfer_regression(true);
     guard_regression(false);guard_regression(true);
     quick_cast_regression(false);quick_cast_regression(true);
+    feedback_regression(false);feedback_regression(true);
     printf("原生路由、双版本偏移与调用约定检查通过：%u 项\n",checks);
     return 0;
 }

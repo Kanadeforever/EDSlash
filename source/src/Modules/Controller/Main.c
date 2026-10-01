@@ -1,6 +1,7 @@
 #include "Plugin.h"
 #include "Combat.h"
 #include "Guard.h"
+#include "Feedback.h"
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -240,7 +241,7 @@ static void initialize_runtime(void)
     swprintf(path, MAX_PATH, L"%lsEDSlashController.log", g_directory);
     /* 每次启动覆盖旧日志，符合实机比较需要；不把历史记录追加成一大份混合日志。 */
     log_file = _wfopen(path, L"w");
-    Log_Write("EDSlashController v0.1-dev7：快捷直接施放与命中恢复测试版");
+    Log_Write("EDSlashController v0.1-dev8：最大体力百分比、方向闪避、动作图标与必杀技测试版");
     const Profile *candidate = g_profile;
     if (!Profile_Select() || candidate != g_profile || !Profile_Verify()) {
         Log_Write("[停止] 基线或机器码检查失败，撤回采样入口，未启用游戏动作。");
@@ -292,7 +293,8 @@ static void initialize_runtime(void)
         patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
         patch((void *)g_profile->resolver_call,saved_call,5);return;
     }
-    if (!Guard_Initialize()) {
+    if (!Guard_Initialize() || !Feedback_Initialize()) {
+        Guard_Shutdown();Feedback_Shutdown();
         patch((void *)g_profile->end_call,saved_end_call,5);
         patch((void *)g_profile->retry_call,saved_retry_call,5);
         patch((void *)g_profile->history_call,saved_history_call,5);
@@ -323,7 +325,7 @@ BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID reserved)
             patch((void *)g_profile->keyboard_iat, &hook, 4);
         }
     } else if (reason == DLL_PROCESS_DETACH && !reserved && g_profile && original_keyboard) {
-        Guard_Shutdown();
+        Feedback_Shutdown();Guard_Shutdown();
         if (hooked_window && (WNDPROC)GetWindowLongPtrW(hooked_window,GWLP_WNDPROC)==window_hook)
             SetWindowLongPtrW(hooked_window,GWLP_WNDPROC,(LONG_PTR)previous_window_proc);
         /* 不支持运行中反复热装卸；正常显式卸载时只撤销仍归本插件拥有的补丁。 */

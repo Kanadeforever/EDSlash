@@ -44,6 +44,15 @@ int Config_Number(const WCHAR *section, const WCHAR *key, int fallback, int mini
     return value;
 }
 
+int Config_Percent(const WCHAR *section,const WCHAR *key,int fallback)
+{
+    WCHAR path[MAX_PATH],text[32];
+    if (wcslen(g_directory)+24>=MAX_PATH) return fallback;
+    swprintf(path,MAX_PATH,L"%lsEDSlashController.ini",g_directory);
+    if (!GetPrivateProfileStringW(section,key,L"",text,32,path)) return fallback;
+    return Control_Percent(text,fallback);
+}
+
 static bool load_sdl(void)
 {
     WCHAR path[MAX_PATH];

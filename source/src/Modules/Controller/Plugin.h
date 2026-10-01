@@ -28,6 +28,10 @@ typedef struct {
     uintptr_t guard_periodic_call,guard_hit_call,guard_input_release_call;
     uintptr_t guard_run_call;
     uintptr_t dodge_gate,dodge_legacy,dodge_resume,dodge_failure,guard_threshold;
+    uintptr_t prepared_set,icon_resolve,right_icon_call,icon_draw,throw_group;
+    uintptr_t dodge_init_call,dodge_init,dodge_motion_call,dodge_motion;
+    uintptr_t map_bounds,cell_passable,grid_commit,role_effect;
+    unsigned dodge_counter_offset;
     unsigned stamina_offset;
     unsigned health_offset;
     unsigned pending_offset;
@@ -55,6 +59,7 @@ void Input_Mouse(bool enabled);
 void Input_ReleaseMouse(void);
 bool Input_PhysicalDown(int key);
 int Config_Number(const WCHAR *section, const WCHAR *key, int fallback, int minimum, int maximum);
+int Config_Percent(const WCHAR *section,const WCHAR *key,int fallback);
 bool Game_Menu(void);
 void Game_Update(void);
 void Game_Release(void);

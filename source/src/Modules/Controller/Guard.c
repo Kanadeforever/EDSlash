@@ -18,7 +18,12 @@ static uintptr_t dodge_resume __attribute__((used)),dodge_failure __attribute__(
 typedef int (__attribute__((thiscall)) *Receiver)(void *,void *);
 static Receiver original_receiver;
 static void *receiver_gateway;
-static BYTE saved[6][6];
+static BYTE saved[8][6];
+static bool modern_dodge=true;
+static int dodge_distance=128;
+/* 位移状态与按键锁分开：松开LT或切鼠标不会让已启动的直线闪避突然回到圆弧算法。 */
+static struct { void *world;uint32_t actor;WorldPoint start;float dx,dy;unsigned frame;bool active; } dash;
+
 
 static bool controlled(void *role)
 {
@@ -43,12 +48,15 @@ void Guard_RunCost(void *role,float amount)
 
 static float stamina_per_hit(void *role,bool recovery)
 {
-    /* -1 表示沿用角色原防御一个周期的值；恢复的 -1 跟随实际配置后的扣减值。
-     * 0 可关闭该次增减，正数为明确的体力点数，两个数值共用一次计算规则。 */
+    /* 正数以最大体力百分比计算；1250是12.50%，不是原周期倍率。
+     * -1保留原周期默认；恢复-1跟随扣费设置。最大体力实时查询以跟随等级/属性。 */
     int value=recovery ? attack_hit_recovery:guard_hit_cost;
-    if (value>=0) return (float)value;
-    if (recovery && guard_hit_cost>=0) return (float)guard_hit_cost;
+    if (recovery && value<0) value=guard_hit_cost;
     uintptr_t table=Read32(role,0);
+    if (value>=0) {
+        int maximum=((This0)(uintptr_t)Read32((void *)table,0x80))(role);
+        return maximum>0 ? (float)maximum*(float)value/10000.0f:0.0f;
+    }
     int unit=((This0)(uintptr_t)Read32((void *)table,0xA0))(role);
     return 2.0f*(float)unit;
 }
@@ -131,7 +139,7 @@ static int __attribute__((fastcall)) input_release_hook(void *role,void *unused,
 
 static int __attribute__((used,noinline)) claim_dodge(void *role)
 {
-    return dodge_request && role==dodge_actor && controlled(role);
+    return modern_dodge && dodge_request && role==dodge_actor && controlled(role);
 }
 
 static void __attribute__((naked,used)) dodge_hook(void)
@@ -146,6 +154,91 @@ static void __attribute__((naked,used)) dodge_hook(void)
         "pushl $0x17\n\tmovl %esi,%ecx\n\tcall *_dodge_install\n\tjmp *_dodge_resume\n\t"
         "1:\n\tpopal\n\tpopfl\n\ttestl %edi,%edi\n\tjz 2f\n\t"
         "pushl %edi\n\tpushl %esi\n\tjmp *_dodge_legacy\n\t2:\n\tjmp *_dodge_failure\n\t");
+}
+
+static bool owns_dash(void *role)
+{
+    return dash.active && role && dash.actor==Read32(role,0x14) && controlled(role) &&
+        dash.world==ReadPtr((void *)g_profile->world_global,0);
+}
+
+static bool clear_cell(void *role,int x,int y)
+{
+    void *map=ReadPtr(role,0x6F);
+    if (!Memory_Readable(map,0x18) || !((This2)g_profile->map_bounds)(map,x,y)) return false;
+    unsigned width=Read32(map,8);
+    if (!width || width>65536 || x<0 || y<0) return false;
+    uint64_t index=(uint64_t)(unsigned)y*width+(unsigned)x;
+    if (index>0xFFFFFFFFu/19u) return false;
+    BYTE *cells=(BYTE *)ReadPtr(map,0x14);if (!cells) return false;
+    BYTE *cell=cells+(size_t)index*19;
+    if (!Memory_Readable(cell,19)) return false;
+    /* 和原版一样询问地形通行资格；先拒绝占用，防止grid_commit偷偷找旁边的空格绕路。 */
+    if (!((This1)g_profile->cell_passable)(cell,*((BYTE *)role+0x62))) return false;
+    unsigned occupied=Read32(cell,0xA)&0xFFFFu;
+    return occupied==0xFFFFu || occupied==(Read32(role,0x14)&0xFFFFu);
+}
+
+static bool dash_step(void *role,WorldPoint next)
+{
+    typedef WorldPoint *(__cdecl *Grid)(WorldPoint *,const WorldPoint *);
+    Grid convert=(Grid)g_profile->world_to_grid;
+    WorldPoint before={(int)Read32(role,0x2C),(int)Read32(role,0x30)},a,b;
+    convert(&a,&before);convert(&b,&next);
+    if (!clear_cell(role,b.x,b.y)) return false;
+    /* 斜向跨格时两个相邻侧格也必须可通行，避免从两面墙夹出的角落穿过去。 */
+    if (a.x!=b.x && a.y!=b.y && (!clear_cell(role,a.x,b.y) || !clear_cell(role,b.x,a.y))) return false;
+    if (!((This3)g_profile->grid_commit)(role,b.x,b.y,NULL)) return false;
+    /* 原版提交网格负责占用表，原版位置setter负责当前/上一位置和画面对象。两者都要调用。 */
+    ((This2)(uintptr_t)Read32(ReadPtr(role,0),8))(role,next.x,next.y);
+    return true;
+}
+
+static int __attribute__((fastcall)) dodge_init_hook(void *role,void *unused)
+{
+    (void)unused;
+    if (!claim_dodge(role)) {
+        if (controlled(role)) dash.active=false;
+        return ((This0)g_profile->dodge_init)(role);
+    }
+    memset(&dash,0,sizeof dash);
+    dash.world=ReadPtr((void *)g_profile->world_global,0);dash.actor=Read32(role,0x14);
+    dash.start.x=(int)Read32(role,0x2C);dash.start.y=(int)Read32(role,0x30);
+    Control_WorldDirection(g_intent.lx,g_intent.ly,&dash.dx,&dash.dy);
+    WorldPoint probe={dash.start.x+(int)lroundf(dash.dx*256),dash.start.y+(int)lroundf(dash.dy*256)};
+    ((This2)g_profile->facing_point)(role,(int)(uintptr_t)&probe,(int)(uintptr_t)&dash.start);
+    /* 仍使用原版闪避状态和效果开关，只替换八个逻辑更新周期内的直线位移。 */
+    Write32(role,g_profile->dodge_counter_offset,8);dash.active=true;
+    ((This4)g_profile->role_effect)(role,0x66,1,1,0);
+    return 1;
+}
+
+static void __attribute__((fastcall)) dodge_motion_hook(void *role,void *unused)
+{
+    (void)unused;
+    if (!owns_dash(role)) {((This0)g_profile->dodge_motion)(role);return;}
+    ++dash.frame;
+    WorldPoint current={(int)Read32(role,0x2C),(int)Read32(role,0x30)};
+    WorldPoint goal={dash.start.x+(int)lroundf(dash.dx*dodge_distance*dash.frame/8.0f),
+                     dash.start.y+(int)lroundf(dash.dy*dodge_distance*dash.frame/8.0f)};
+    float length=hypotf((float)(goal.x-current.x),(float)(goal.y-current.y));
+    unsigned pieces=(unsigned)ceilf(length/8.0f);if (!pieces) pieces=1;
+    bool blocked=false;
+    /* 不只检查终点：每八个世界单位检查一次，长距离也不能越过中间墙体或敌人。 */
+    for (unsigned i=1;i<=pieces;++i) {
+        WorldPoint next={current.x+(int)lroundf((goal.x-current.x)*(float)i/pieces),
+                         current.y+(int)lroundf((goal.y-current.y)*(float)i/pieces)};
+        if (!dash_step(role,next)) {blocked=true;break;}
+    }
+    unsigned left=8-dash.frame;Write32(role,g_profile->dodge_counter_offset,left);
+    if (left==4 || blocked || !left) ((This4)g_profile->role_effect)(role,0x66,0,0,0);
+    if (blocked || !left) {
+        dash.active=false;
+        /* 位移结束发原版idle事件，不直接改状态编号；动画收尾和其它副作用仍由原版处理。 */
+        ((This4)g_profile->install_state)(role,1,0,0,0);
+        Log_Write("[方向闪避] 结束，实际位置=%d,%d，%s。",(int)Read32(role,0x2C),
+                  (int)Read32(role,0x30),blocked ? "碰撞提前停止":"达到配置距离");
+    }
 }
 
 void Guard_Reset(void)
@@ -185,21 +278,28 @@ bool Guard_Initialize(void)
 {
     if (installed) return true;
     charge_guard_on_hit=Config_Number(L"Combat",L"ChargeGuardOnHit",1,0,1)!=0;
+    modern_dodge=Config_Number(L"Combat",L"DirectionalDodge",1,0,1)!=0;
+    dodge_distance=Config_Number(L"Combat",L"DodgeDistance",128,16,512);
     free_run=Config_Number(L"Combat",L"FreeRun",1,0,1)!=0;
-    guard_hit_cost=Config_Number(L"Combat",L"GuardHitCost",-1,-1,10000);
-    attack_hit_recovery=Config_Number(L"Combat",L"AttackHitRecovery",-1,-1,10000);
+    guard_hit_cost=Config_Percent(L"Combat",L"GuardHitCost",-1);
+    attack_hit_recovery=Config_Percent(L"Combat",L"AttackHitRecovery",-1);
     Log_Write("[战斗配置] 防御受击扣费=%u；0 时恢复原版周期空耗。",charge_guard_on_hit ? 1u:0u);
     Log_Write("[战斗配置] 奔跑免扣费=%u；不再按战斗状态区分。",free_run ? 1u:0u);
-    uintptr_t targets[6]={g_profile->guard_periodic_call,g_profile->guard_hit_call,
-                         g_profile->guard_input_release_call,g_profile->guard_run_call,g_profile->dodge_gate,g_profile->hit_receiver};
-    uintptr_t replacements[6]={(uintptr_t)periodic_hook,(uintptr_t)hit_hook,
-                              (uintptr_t)input_release_hook,(uintptr_t)run_hook,(uintptr_t)dodge_hook,(uintptr_t)receiver_hook};
-    uintptr_t callees[4]={g_profile->stamina_adjust,g_profile->guard_get,g_profile->guard_get,g_profile->stamina_adjust};
-    for (unsigned i=0;i<6;++i) {
-        unsigned size=i>=4 ? 6:5;
+    Log_Write("[战斗配置] 方向闪避=%u；距离=%d世界单位（64单位=1格）。",modern_dodge ? 1u:0u,dodge_distance);
+    if (guard_hit_cost>=0) Log_Write("[战斗配置] 防御受击扣减最大体力的%d.%02d%%。",guard_hit_cost/100,guard_hit_cost%100);
+    else Log_Write("[战斗配置] 防御受击使用角色原周期扣费。" );
+    if (attack_hit_recovery>=0) Log_Write("[战斗配置] 实伤恢复最大体力的%d.%02d%%。",attack_hit_recovery/100,attack_hit_recovery%100);
+    else Log_Write("[战斗配置] 实伤恢复跟随防御扣费幅度。" );
+    uintptr_t targets[8]={g_profile->guard_periodic_call,g_profile->guard_hit_call,
+                         g_profile->guard_input_release_call,g_profile->guard_run_call,g_profile->dodge_gate,g_profile->hit_receiver,g_profile->dodge_init_call,g_profile->dodge_motion_call};
+    uintptr_t replacements[8]={(uintptr_t)periodic_hook,(uintptr_t)hit_hook,
+                              (uintptr_t)input_release_hook,(uintptr_t)run_hook,(uintptr_t)dodge_hook,(uintptr_t)receiver_hook,(uintptr_t)dodge_init_hook,(uintptr_t)dodge_motion_hook};
+    uintptr_t callees[8]={g_profile->stamina_adjust,g_profile->guard_get,g_profile->guard_get,g_profile->stamina_adjust,0,0,g_profile->dodge_init,g_profile->dodge_motion};
+    for (unsigned i=0;i<8;++i) {
+        unsigned size=(i==4 || i==5) ? 6:5;
         if (!Memory_Readable((void *)targets[i],size)) return false;
         memcpy(saved[i],(void *)targets[i],size);
-        if (i<4) {
+        if (i<4 || i>=6) {
             int32_t displacement;memcpy(&displacement,saved[i]+1,4);
             if (saved[i][0]!=0xE8 || targets[i]+5+displacement!=callees[i]) return false;
         } else if (i==4) {
@@ -219,12 +319,12 @@ bool Guard_Initialize(void)
     original_receiver=(Receiver)receiver_gateway;
     dodge_install=g_profile->install_state;dodge_legacy=g_profile->dodge_legacy;
     dodge_resume=g_profile->dodge_resume;dodge_failure=g_profile->dodge_failure;
-    for (unsigned i=0;i<6;++i) {
-        BYTE bytes[6]={i>=4 ? 0xE9:0xE8,0,0,0,0,0x90};
+    for (unsigned i=0;i<8;++i) {
+        BYTE bytes[6]={(i==4 || i==5) ? 0xE9:0xE8,0,0,0,0,0x90};
         int32_t displacement=(int32_t)(replacements[i]-targets[i]-5);
         memcpy(bytes+1,&displacement,4);
-        if (!Memory_Patch((void *)targets[i],bytes,i>=4 ? 6:5)) {
-            while (i) {--i;Memory_Patch((void *)targets[i],saved[i],i>=4 ? 6:5);}
+        if (!Memory_Patch((void *)targets[i],bytes,(i==4 || i==5) ? 6:5)) {
+            while (i) {--i;Memory_Patch((void *)targets[i],saved[i],(i==4 || i==5) ? 6:5);}
             VirtualFree(receiver_gateway,0,MEM_RELEASE);receiver_gateway=NULL;original_receiver=NULL;
             Log_Write("[防御][停止] 入口安装失败，撤回本模块修改。");return false;
         }
@@ -237,21 +337,21 @@ bool Guard_Initialize(void)
 void Guard_Shutdown(void)
 {
     if (!installed) return;
-    uintptr_t targets[6]={g_profile->guard_periodic_call,g_profile->guard_hit_call,
-                         g_profile->guard_input_release_call,g_profile->guard_run_call,g_profile->dodge_gate,g_profile->hit_receiver};
-    uintptr_t replacements[6]={(uintptr_t)periodic_hook,(uintptr_t)hit_hook,
-                              (uintptr_t)input_release_hook,(uintptr_t)run_hook,(uintptr_t)dodge_hook,(uintptr_t)receiver_hook};
+    uintptr_t targets[8]={g_profile->guard_periodic_call,g_profile->guard_hit_call,
+                         g_profile->guard_input_release_call,g_profile->guard_run_call,g_profile->dodge_gate,g_profile->hit_receiver,g_profile->dodge_init_call,g_profile->dodge_motion_call};
+    uintptr_t replacements[8]={(uintptr_t)periodic_hook,(uintptr_t)hit_hook,
+                              (uintptr_t)input_release_hook,(uintptr_t)run_hook,(uintptr_t)dodge_hook,(uintptr_t)receiver_hook,(uintptr_t)dodge_init_hook,(uintptr_t)dodge_motion_hook};
     bool receiver_removed=false;
-    for (unsigned i=0;i<6;++i) {
-        BYTE expected[6]={i>=4 ? 0xE9:0xE8,0,0,0,0,0x90};
+    for (unsigned i=0;i<8;++i) {
+        BYTE expected[6]={(i==4 || i==5) ? 0xE9:0xE8,0,0,0,0,0x90};
         int32_t displacement=(int32_t)(replacements[i]-targets[i]-5);
         memcpy(expected+1,&displacement,4);
-        unsigned size=i>=4 ? 6:5;
+        unsigned size=(i==4 || i==5) ? 6:5;
         if (Memory_Readable((void *)targets[i],size) && !memcmp((void *)targets[i],expected,size)) {
             bool removed=Memory_Patch((void *)targets[i],saved[i],size);
             if(i==5) receiver_removed=removed;
         }
     }
     if (receiver_removed) {VirtualFree(receiver_gateway,0,MEM_RELEASE);receiver_gateway=NULL;original_receiver=NULL;}
-    installed=false;Guard_Reset();
+    installed=false;dash.active=false;Guard_Reset();
 }
