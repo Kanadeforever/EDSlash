@@ -58,6 +58,13 @@ edslash_test(test_game src/Modules/Controller/Control.c src/Modules/Controller/G
     src/Modules/Controller/Combat.c src/Modules/Controller/SkillResolver.c
     src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c tools/controller/test_game.c)
 target_link_libraries(test_game PRIVATE user32 m)
+# 设置回归调用生产同步入口、Guard及真实配置保存，补足原先两个单元间的断点。
+edslash_test(test_guard_settings src/Modules/Controller/Control.c src/Modules/Controller/Game.c
+    src/Modules/Controller/Combat.c src/Modules/Controller/SkillResolver.c
+    src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
+    src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c tools/controller/test_guard_settings.c)
+target_link_libraries(test_guard_settings PRIVATE user32 m)
+
 edslash_test(test_notice tools/qol/test_notice.c)
 edslash_test(test_runtime tools/test_runtime.c src/Runtime/X86Detour.c)
 edslash_test(test_input_frame tools/test_input_frame.c)

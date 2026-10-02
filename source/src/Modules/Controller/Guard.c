@@ -329,18 +329,43 @@ void Guard_Update(void *role)
     }
 }
 
-void Guard_ApplySettings(void)
+bool Guard_IsDodging(void *role)
+{
+    /* 角色状态17是原版闪避。调用者传当前有效玩家，不依据已失效的旧角色/世界缓存。
+     * 本方法只在存在配置候选或待确认代数时查询，不增加普通帧的玩家解析开销。 */
+    return role && Memory_Readable(role,0x77) && Read32(role,0x73)==0x17;
+}
+
+void Guard_SyncSettings(const PadInput *input,unsigned *applied_generation)
+{
+    if (!input || !applied_generation) return;
+    if (RuntimeConfig_HasPending()) {
+        void *role=Game_Player();
+        /* 松开按键不是动作结束：闪避可能仍在移动且没有ActiveRuntime，必须单独判断。 */
+        bool idle=!input->buttons && !input->lt && !input->rt &&
+            (!role || !ReadPtr(role,g_profile->active_offset)) && !Guard_IsDodging(role);
+        (void)RuntimeConfig_ApplyFrame(idle);
+    }
+    unsigned generation=RuntimeConfig_Current()->generation;
+    /* Guard暂缓接收时不消费代数，后续帧继续确认；没有变化的正常帧不重复应用。 */
+    if (generation!=*applied_generation && Guard_ApplySettings()) *applied_generation=generation;
+}
+
+bool Guard_ApplySettings(void)
 {
     charge_guard_on_hit=RuntimeConfig_GetInt(CONFIG_CHARGE_GUARD)!=0;
     omnidirectional_guard=RuntimeConfig_GetInt(CONFIG_OMNI_GUARD)!=0;
     free_run=RuntimeConfig_GetInt(CONFIG_FREE_RUN)!=0;
     guard_hit_cost=RuntimeConfig_GetInt(CONFIG_GUARD_MODE) ? RuntimeConfig_GetInt(CONFIG_GUARD_PERCENT):-1;
     attack_hit_recovery=RuntimeConfig_GetInt(CONFIG_RECOVERY_MODE) ? RuntimeConfig_GetInt(CONFIG_RECOVERY_PERCENT):-1;
-    /* 位移参数只能在当前闪避结束后更新，避免半程改变运动协议。 */
-    if (!dash.active) {
-        modern_dodge=RuntimeConfig_GetInt(CONFIG_DIRECTIONAL_DODGE)!=0;
-        dodge_distance=RuntimeConfig_GetInt(CONFIG_DODGE_DISTANCE);
-    }
+    bool next_directional=RuntimeConfig_GetInt(CONFIG_DIRECTIONAL_DODGE)!=0;
+    int next_distance=RuntimeConfig_GetInt(CONFIG_DODGE_DISTANCE);
+    /* 普通字段可以接收；确有运动参数变化才解析玩家。已切图/换角色/中断的旧dash不再阻塞。
+     * 即使别的调用者错误地提前提交快照，此处也拒绝半程改参数并返回未完成。 */
+    if ((modern_dodge!=next_directional || dodge_distance!=next_distance) && Guard_IsDodging(Game_Player()))
+        return false;
+    modern_dodge=next_directional;dodge_distance=next_distance;
+    return true;
 }
 
 bool Guard_Initialize(void)

@@ -144,17 +144,9 @@ static BOOL WINAPI keyboard_hook(PBYTE keys)
     }
     g_input.menu = Game_Menu();
     g_input.connected = Input_Poll(&g_input);
-    /* 没有待应用设置时不多解析一遍玩家／句柄，保持旧输入链的正常帧开销。 */
-    if (RuntimeConfig_HasPending()) {
-        void *current_player=Game_Player();
-        int idle=!g_input.buttons && !g_input.lt && !g_input.rt &&
-            (!current_player || !ReadPtr(current_player,g_profile->active_offset));
-        (void)RuntimeConfig_ApplyFrame(idle);
-    }
-    /* 外层公共帧可能已经提交普通设置，因此按代数同步Guard，而不是只看本次Apply的返回值。 */
+    /* 安全点及模块确认由同一个生产函数协调，Guard延后接收时保留代数，下帧再确认。 */
     static unsigned guard_generation;
-    unsigned generation=RuntimeConfig_Current()->generation;
-    if (generation!=guard_generation) {Guard_ApplySettings();guard_generation=generation;}
+    Guard_SyncSettings(&g_input,&guard_generation);
     Runtime_EmitEvent(RUNTIME_EVENT_INPUT_SAMPLED,keys,g_input.now,0);
     /* 鼠标事件可能尚未派发到窗口，补查真实按键的新边沿；稳定按住不反复争抢。 */
     unsigned mouse_buttons=(Input_PhysicalDown(VK_LBUTTON) ? 1u:0u) |

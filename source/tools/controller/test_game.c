@@ -52,6 +52,11 @@ void Log_Write(const char *format, ...)
     }
 }
 bool Input_PhysicalDown(int key) { return key==VK_LBUTTON && physical_mouse; }
+#ifndef EDSLASH_REAL_CONFIG
+static ConfigSnapshot test_snapshot={.generation=1};
+int RuntimeConfig_HasPending(void) {return 0;}
+int RuntimeConfig_ApplyFrame(int idle) {(void)idle;return 0;}
+const ConfigSnapshot *RuntimeConfig_Current(void) {return &test_snapshot;}
 int RuntimeConfig_GetInt(ConfigId id)
 {
     switch (id) {
@@ -68,15 +73,18 @@ int RuntimeConfig_GetInt(ConfigId id)
     default:return 0;
     }
 }
+#endif
 static GameProfile runtime_profile={.game_id=GAME_ID_DAOJIAN};
 static const RuntimeContext runtime_context={.profile=&runtime_profile};
 const RuntimeContext *Runtime_GetContext(void) {return &runtime_context;}
+#ifndef EDSLASH_REAL_CONFIG
 ConfigBinding RuntimeConfig_GetBinding(unsigned game,unsigned role,unsigned slot)
 {
     CHECK(game==runtime_profile.game_id);
     CHECK(role==4 || role==30);
     ConfigBinding binding={custom_binding && slot==1 && role==4,111,custom_right};return binding;
 }
+#endif
 bool Memory_Readable(const void *p,size_t bytes)
 {
     MEMORY_BASIC_INFORMATION info;

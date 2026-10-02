@@ -3,7 +3,12 @@
 #include "Plugin.h"
 
 /* 成对验证并安装受控角色防御扣费和方向闪避入口，不改 NPC 或物品消耗。 */
-void Guard_ApplySettings(void);
+/* 使用当前有效玩家的原版动作状态，包含新旧闪避；旧dash标志不能阻塞新场景。 */
+bool Guard_IsDodging(void *role);
+/* 运动参数尚未能接收时返回false，调用者必须保留待同步代数。 */
+bool Guard_ApplySettings(void);
+/* 生产采样桥与集成回归共用同一安全点及确认流程，无变化时只读内存状态。 */
+void Guard_SyncSettings(const PadInput *input,unsigned *applied_generation);
 bool Guard_Initialize(void);
 void Guard_Shutdown(void);
 void Guard_Update(void *role);
