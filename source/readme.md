@@ -29,16 +29,16 @@ python source/tools/build.py --upx
 
 两件运行代码和优化级别相同；Debug不等于-O0，完整信息仅留在_debug。运行时配置／日志仍叫EDSlash.toml／EDSlash.log，不能同时安装两件。
 
-中间目录固定source/.build/Unified；SDL在其SDL子目录构建，上游源码保持原样。失败保留诊断。无需读取参考资料中的旧SDL ZIP；未携带两份游戏EXE时明确跳过样本复核，源码仍可构建，不能称本次双样本验证通过。
+中间目录固定source/.build；SDL在其SDL子目录构建，上游源码保持原样。失败保留诊断。无需读取参考资料中的旧SDL ZIP；未携带两份游戏EXE时明确跳过样本复核，源码仍可构建，不能称本次双样本验证通过。
 
 ## 产物与配置
 
-- release/unified/EDSlash.asi：发行版，已剥离符号、未压缩。
-- release/unified/debug/EDSlash_debug.asi：完整版，保留项目和SDL源码调试信息，不strip、不UPX；同目录有独立配置／许可。
-- release/unified/EDSlash.toml：只有缺失时复制默认值，已有新TOML保留。
-- release/unified/统一构建验证.json：实际散列、体积、导入、SDL选项及验收边界。
-- release/unified/第三方许可.txt：随发布保留的声明。
-- --upx时生成release/unified/upx/EDSlash.asi及配套配置／许可。
+- release/EDSlash.asi：发行版，已剥离符号、未压缩。
+- release/debug/EDSlash_debug.asi：完整版，保留项目和SDL源码调试信息，不strip、不UPX；同目录有独立配置／许可。
+- release/EDSlash.toml：只有缺失时复制默认值，已有新TOML保留。
+- release/统一构建验证.json：实际散列、体积、导入、SDL选项及验收边界。
+- release/第三方许可.txt：随发布保留的声明。
+- --upx时生成release/upx/EDSlash.asi及配套配置／许可。
 
 配置模板source/config/EDSlash.toml由同一生产描述表生成；构建不拿它覆盖玩家已有配置，不删除共享release内的历史产物。项目打包应带docs和thirdparty，不分发游戏EXE。
 

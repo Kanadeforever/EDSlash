@@ -13,8 +13,8 @@ from verify_build import verify, verify_variants, verify_debug_info
 
 SOURCE = Path(__file__).resolve().parents[1]
 ROOT = SOURCE.parent
-BUILD = SOURCE / ".build/Unified"
-RELEASE = ROOT / "release/unified"
+BUILD = SOURCE / ".build"
+RELEASE = ROOT / "release"
 
 
 def run(arguments, environment):
