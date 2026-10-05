@@ -36,6 +36,21 @@ typedef struct {
     uintptr_t animation_get,animation_finished,guard_angle_gate;
     /* PlayerInit确认的全局角色类别，不能使用对象分类字段代替。 */
     uintptr_t player_class_global,player_class_probe;
+    /* 菜单入口成对来自两份准确基线；虚表槽另核原函数，不能猜其它GUI的回调。 */
+    uintptr_t menu_title_vtable,menu_system_vtable,menu_confirm_vtable;
+    uintptr_t menu_title_activate,menu_texture,menu_animation_reset;
+    uintptr_t menu_system_primary,menu_confirm_submit;
+    uintptr_t menu_title_tick,menu_title_show,menu_title_hover;
+    uintptr_t menu_system_tick,menu_system_show,menu_system_hover;
+    uintptr_t menu_confirm_tick,menu_confirm_show,menu_confirm_hover;
+    /* 读档页与原生软件光标绘制入口，不改世界鼠标采样或真实光标坐标。 */
+    uintptr_t menu_load_vtable,menu_load_tick,menu_load_show,menu_load_hover;
+    uintptr_t menu_load_select,menu_load_page,menu_load_submit,menu_load_primary,menu_sound;
+    uintptr_t cursor_position_call,cursor_position_iat,cursor_sprite_call1,cursor_sprite_call2,cursor_sprite_draw;
+    uintptr_t inspect_hover_call,inspect_hover,inspect_portal_gate;
+    uintptr_t menu_message_vtable,menu_message_global,menu_message_open,menu_message_text_lookup,menu_message_text_table;
+    uintptr_t menu_message_tick,menu_message_show,menu_message_hover,menu_message_primary,menu_message_base_tick;
+    unsigned inspect_ready_offset;
     unsigned dodge_counter_offset;
     unsigned stamina_offset;
     unsigned health_offset;

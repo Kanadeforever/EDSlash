@@ -20,7 +20,12 @@ typedef enum SharedHookId {
     SHARED_HOOK_CONTROLLER_KEYBOARD = 9,
     SHARED_HOOK_CONTROLLER_ASYNC = 10,
     SHARED_HOOK_CONTROLLER_RESOLVER = 11,
-    SHARED_HOOK_COUNT = 12
+    /* Controller独占三类菜单的Tick/Show/hover槽，绘制仍归DisplayFix。 */
+    SHARED_HOOK_CONTROLLER_MENU = 12,
+    /* 两组只由Controller提供；软件光标绘制与世界悬停事件分别登记，避免跨模块抢入口。 */
+    SHARED_HOOK_CONTROLLER_CURSOR = 13,
+    SHARED_HOOK_CONTROLLER_INSPECT = 14,
+    SHARED_HOOK_COUNT = 15
 } SharedHookId;
 
 typedef enum RuntimeModuleId {

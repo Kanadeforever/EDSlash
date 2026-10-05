@@ -6,6 +6,9 @@
 #include "Combat.h"
 #include "Guard.h"
 #include "Feedback.h"
+#include "Menu.h"
+#include "Cursor.h"
+#include "Inspect.h"
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -41,7 +44,7 @@ static void use_physical_mouse(void)
     if (runtime_state!=1 || control.mouse || native_control) return;
     Combat_ExportHistory();
     native_pad_anchor=previous_pad;
-    Game_Release();Combat_Suspend();
+    Menu_Suspend();Game_Release();Combat_Suspend();
     native_control=true;
     memset(&g_intent,0,sizeof g_intent);g_intent.layer=LAYER_NATIVE;
     Log_Write("[输入来源] 物理鼠标接管；恢复原版鼠标解析、重试和动作历史。");
@@ -56,8 +59,7 @@ static LRESULT CALLBACK window_hook(HWND window, UINT message, WPARAM wp, LPARAM
         previous_mouse_position=lp;mouse_position_known=true;
     } else if (message==WM_LBUTTONDOWN || message==WM_RBUTTONDOWN ||
                message==WM_MBUTTONDOWN || message==WM_MOUSEWHEEL ||
-               ((message==WM_KEYDOWN || message==WM_SYSKEYDOWN) &&
-                (wp==VK_MENU || wp==VK_SPACE))) use_physical_mouse();
+               ((message==WM_KEYDOWN || message==WM_SYSKEYDOWN) && !(lp & (1L<<30)))) use_physical_mouse();
     if ((message == WM_ACTIVATEAPP && !wp) || message == WM_KILLFOCUS) {
         /* 游戏失焦后可能不再轮询键盘，不能等下一帧才松开插件按下的鼠标按钮。 */
         g_input.focused = false;
@@ -65,7 +67,7 @@ static LRESULT CALLBACK window_hook(HWND window, UINT message, WPARAM wp, LPARAM
         control.previous_layer = LAYER_NONE;
         memset(&g_intent, 0, sizeof g_intent);
         Game_Release(); Input_ReleaseMouse(); Input_Rumble(0);
-        Combat_Reset();
+        Combat_Reset();Menu_Suspend();
     }
     LRESULT result = CallWindowProcW(previous_window_proc, window, message, wp, lp);
     if (message == WM_NCDESTROY) {
@@ -179,6 +181,8 @@ static BOOL WINAPI keyboard_hook(PBYTE keys)
         Log_Write("[模式] 已切换为%s，震动 %u 毫秒。", control.mouse ? "鼠标模式" : "手柄模式", g_intent.rumble_ms);
     }
     Input_Mouse(g_intent.layer == LAYER_MOUSE && !g_intent.mode_changed);
+    /* 菜单不能依赖世界/玩家就绪；在真实游戏键盘采样线程完成独立焦点与业务。 */
+    Menu_Update();
     Game_Keyboard(keys);
     return result;
 }
@@ -240,7 +244,7 @@ static void initialize_runtime(void)
     /* 此时已经离开 DllMain 的 Loader 锁，允许文件散列、配置与 SDL 动态加载。
        先置失败状态；只有所有验证和安装成功才改成可运行，递归也不会重复初始化。 */
     runtime_state = -1;
-    Log_Write("[Controller] 统一模块启动，保留dev9动作协议。");
+    Log_Write("[Controller] 统一模块启动，战斗保留dev9动作协议，菜单使用独立焦点与原生入口。");
     if (!Profile_Select() || !Profile_Verify()) {
         Log_Write("[停止] Controller基线或机器码不匹配，撤回采样入口，其他模块继续。");
         if (*(void **)g_profile->keyboard_iat==(void *)keyboard_hook)
@@ -292,15 +296,15 @@ static void initialize_runtime(void)
         patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
         patch((void *)g_profile->resolver_call,saved_call,5);return;
     }
-    if (!Guard_Initialize() || !Feedback_Initialize()) {
-        Guard_Shutdown();Feedback_Shutdown();
+    if (!Guard_Initialize() || !Feedback_Initialize() || !Menu_Initialize() || !Cursor_Initialize() || !Inspect_Initialize()) {
+        Inspect_Shutdown();Cursor_Shutdown();Menu_Shutdown();Guard_Shutdown();Feedback_Shutdown();
         patch((void *)g_profile->end_call,saved_end_call,5);
         patch((void *)g_profile->retry_call,saved_retry_call,5);
         patch((void *)g_profile->history_call,saved_history_call,5);
         patch((void *)g_profile->async_iat,&original_async,4);
         patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
         patch((void *)g_profile->resolver_call,saved_call,5);
-        Log_Write("[停止] 防御/闪避入口未通过安装，已撤回手柄动作阶段。");return;
+        Log_Write("[停止] 防御/闪避/菜单入口未通过安装，已撤回手柄动作阶段。");return;
     }
     installed = true;
     runtime_state = 1;
@@ -335,7 +339,7 @@ void ControllerModule_Shutdown(void)
 {
     /* 仅在显式卸载时撤回仍归本模块的入口；进程终止不在Loader锁内关闭SDL线程。 */
     if (!g_profile || !original_keyboard) return;
-        Feedback_Shutdown();Guard_Shutdown();
+        Inspect_Shutdown();Cursor_Shutdown();Menu_Shutdown();Feedback_Shutdown();Guard_Shutdown();
         if (hooked_window && (WNDPROC)GetWindowLongPtrW(hooked_window,GWLP_WNDPROC)==window_hook)
             SetWindowLongPtrW(hooked_window,GWLP_WNDPROC,(LONG_PTR)previous_window_proc);
         /* 不支持运行中反复热装卸；正常显式卸载时只撤销仍归本插件拥有的补丁。 */

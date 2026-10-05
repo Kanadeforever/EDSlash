@@ -2,6 +2,8 @@
 #include "Combat.h"
 #include "Guard.h"
 #include "Feedback.h"
+#include "Menu.h"
+#include "Inspect.h"
 #include "../../Runtime/Perf.h"
 #include <math.h>
 #include <stdio.h>
@@ -63,40 +65,14 @@ static void submit(int opcode, int a, int b, int c)
     if (Memory_Readable(owner, 0x10)) ((This4)g_profile->submit)(owner, opcode, a, b, c);
 }
 
-static bool ui_active(void *object)
-{
-    /* 原版 active helper 会顺便写 latch；这里只判断，不调用有副作用的查询函数。 */
-    return Memory_Readable(object, 0xBC) && (Read32(object, 0x64) || Read32(object, 0x68));
-}
-
 bool Game_Menu(void)
 {
     if (!g_profile) return true;
-    context_reason=context_id=0;context_object=0;
-    void *ui = (void *)g_profile->ui;
-    void *capture = ReadPtr(ui, 0x3C);
-    void *hud = global(g_profile->skill_global);
-    if (capture && capture != hud) {
-        context_reason=1;context_object=(uintptr_t)capture;context_id=Read32(capture,0x28);return true;
-    }
-    /* 原版 picker 仅枚举真实顶层链，并要求资源属性 0x0D==1。
-       旧版按全局 ID 查对象后只看 active，会把局部子控件误判成整页菜单。
-       遍历读取自己的游标，不写原版 CJMMng+0x20 迭代器，也不重排链。 */
-    void *page=ReadPtr(ui,0x18),*tail=ReadPtr(ui,0x1C);
-    for (unsigned count=0;page && page!=ui && count<256;++count) {
-        if (!Memory_Readable(page,0xBC)) break;
-        void *resource=ReadPtr(page,0x50);
-        if (page!=hud && ui_active(page) && Memory_Readable(resource,12) &&
-            ((This1)g_profile->ui_property)(resource,0x0D)==1) {
-            context_reason=2;context_object=(uintptr_t)page;context_id=Read32(page,0x28);return true;
-        }
-        if (page==tail) break;
-        void *next=ReadPtr(page,0x0C);
-        if (next==page) break;
-        page=next;
-    }
-    /* 玩家尚未就绪是另一种阻塞，绝不能改名成“菜单”再向游戏注入 Enter。 */
-    return false;
+    unsigned reason;
+    void *root=Menu_Context(&reason);
+    context_reason=reason;context_id=Read32(root,0x28);context_object=(uintptr_t)root;
+    /* 页面关闭后仍等手柄回中，避免菜单方向/扳机立刻变成走路和技能。 */
+    return root!=NULL || Menu_BlocksGameplay();
 }
 
 void Game_Diagnose(void)
@@ -119,7 +95,7 @@ void Game_Diagnose(void)
 
 void Game_Release(void)
 {
-    Guard_Reset();
+    Guard_Reset();Inspect_Reset();
     if (!g_profile) return;
     /* 只终止本插件启动的移动，而且必须仍是同一世界、同一句柄的移动状态。
        技能追敌、其它地图复用的内存、鼠标自己发起的移动都不能被盲目停掉。 */
@@ -152,12 +128,12 @@ static bool enemy(void *me, void *candidate)
 void *Game_Resolve(uint32_t handle) { return resolve(handle); }
 bool Game_Enemy(void *role,void *candidate) { return enemy(role,candidate); }
 
-static void *choose_target_impl(void *me, bool inspect)
+static void *choose_target_impl(void *me)
 {
     scan_count=eligible_count=0;
     void *entities = global(g_profile->entities_global);
     void *candidate = ReadPtr(entities, 0x1C), *best = NULL;
-    float limit = inspect ? 192.0f : 640.0f, best_score = limit * limit;
+    float limit = 640.0f, best_score = limit * limit;
     float fx, fy;
     Control_WorldDirection(facing_x, facing_y, &fx, &fy);
     bool direction = g_intent.lx != 0 || g_intent.ly != 0;
@@ -166,8 +142,7 @@ static void *choose_target_impl(void *me, bool inspect)
         if (!Memory_Readable(candidate, g_profile->invalid_offset + 4)) break;
         ++scan_count;
         void *next = ReadPtr(candidate, 8);
-        bool valid = inspect ? candidate != me && role_valid(candidate) && Read32(candidate,0x67)==0x28 &&
-            Read32(candidate, g_profile->interact_offset) != 0 : enemy(me, candidate);
+        bool valid=enemy(me,candidate);
         if (valid) {
             ++eligible_count;
             float dx = (float)(int)Read32(candidate,0x2C) - (int)Read32(me,0x2C);
@@ -184,36 +159,10 @@ static void *choose_target_impl(void *me, bool inspect)
 }
 
 /* 一次完整遍历只读两次时钟，不在每个敌人资格判断里增加计时调用。 */
-static void *choose_target(void *me,bool inspect)
+static void *choose_target(void *me)
 {
-    int64_t perf=RuntimePerf_Begin();void *target=choose_target_impl(me,inspect);
+    int64_t perf=RuntimePerf_Begin();void *target=choose_target_impl(me);
     RuntimePerf_End(PERF_TARGET,perf);return target;
-}
-
-static void inspect_action(void *me)
-{
-    void *focus = choose_target(me, true);
-    if (focus) {
-        uint32_t handle = Read32(focus, 0x14);
-        /* 调用原版悬停 setter 提供名字/高亮反馈，和调查动作本身分开，不写 CombatTarget。 */
-        ((This1)g_profile->hover_set)(manager(),(int)handle);
-        if (!((This1)g_profile->inspect_gate)(manager(), (int)handle)) {
-            submit(19, (int)handle, 0, 0);
-            Log_Write("[调查] 动态交互句柄=0x%08lx。", (unsigned long)handle);
-        } else Log_Write("[调查] 原版句柄占用门阻止重复交互，句柄=%08lx。",(unsigned long)handle);
-        return;
-    }
-    /* 静态交互目前复用原版鼠标已有的有效候选，不把未知静态类型或地面掉落当成调查。 */
-    focus = ReadPtr(mouse(), 0x40);
-    if (focus && resolve(Read32(focus,0x14)) == focus && Read32(focus,0x67) == 0x0C) {
-        int subtype = (int)(Read32(focus,0x54) & 0xFFFFu);
-        if (subtype == 0x87 || subtype == 0x88 || subtype == 0x89) {
-            submit(subtype == 0x89 ? 24 : 23, (int)Read32(focus,0x14), 0, 0);
-            Log_Write("[调查] 原版静态候选，类型=0x%02x。", subtype);
-            return;
-        }
-    }
-    Log_Write("[调查] 未找到可提交的目标：角色链=%u，通过交互资格=%u，附近范围=192 世界单位。",scan_count,eligible_count);
 }
 
 static void shortcuts(void)
@@ -294,8 +243,10 @@ void Game_Update(void)
     if (g_intent.lx!=0 || g_intent.ly!=0) { facing_x=g_intent.lx; facing_y=g_intent.ly; }
     owned_world=world();
     shortcuts();
-    if (g_intent.layer==LAYER_GAME && (g_intent.pressed & KEY(PAD_A))) { inspect_action(me); return; }
-    void *candidate=choose_target(me,false);
+    bool entering=Inspect_Update(me);
+    if (g_intent.layer==LAYER_GAME && (g_intent.pressed & KEY(PAD_A))) { Inspect_Activate();return; }
+    if (entering) return;
+    void *candidate=choose_target(me);
     Combat_Update(me,candidate ? Read32(candidate,0x14):0);
     if (g_intent.layer==LAYER_GUARD) { guard_owned=true;Guard_Update(me);return; }
     bool attacking=g_intent.layer==LAYER_GAME && (g_intent.held & (KEY(PAD_X)|KEY(PAD_Y)))!=0;
@@ -338,6 +289,9 @@ void Game_Update(void)
 void Game_Keyboard(BYTE *keys)
 {
     if (g_intent.layer==LAYER_NONE || g_intent.layer==LAYER_MOUSE || g_intent.layer==LAYER_NATIVE) return;
+    /* 本批页面已消费A/B/方向/START，不再把同一操作桥成Esc或世界热键。
+     * 未实现页面保留原有限键盘导航，A仍不写Enter。 */
+    if (Menu_CapturesInput()) return;
     if (g_intent.menu_toggle) keys[VK_ESCAPE]|=0x80;
     if (g_intent.layer==LAYER_GAME) {
         static const int buttons[]={PAD_UP,PAD_DOWN,PAD_LEFT,PAD_RIGHT,PAD_R3};

@@ -25,7 +25,7 @@ python source/tools/build.py --checks-only
 python source/tools/build.py --upx
 ~~~
 
-默认一次带-g的优化编译，保留完整链接件，副本strip --strip-unneeded后作为发行件。11组CTest、双基线复核、两件PE／入口／重定位／依赖、TOML解析、运行段一致及实际加载通过后才发布。checks-only不更新发布目录。upx使用PATH或UPX_BIN中的本机工具，只从剥离后的发行件生成压缩副本，执行upx -t及非游戏加载／重定位检查；不替换未压缩件，不自动安装UPX。
+默认一次带-g的优化编译，保留完整链接件，副本strip --strip-unneeded后作为发行件。13组CTest、双基线复核、两件PE／入口／重定位／依赖、TOML解析、运行段一致及实际加载通过后才发布。checks-only不更新发布目录。upx使用PATH或UPX_BIN中的本机工具，只从剥离后的发行件生成压缩副本，执行upx -t及非游戏加载／重定位检查；不替换未压缩件，不自动安装UPX。
 
 两件运行代码和优化级别相同；Debug不等于-O0，完整信息仅留在_debug。运行时配置／日志仍叫EDSlash.toml／EDSlash.log，不能同时安装两件。
 
@@ -44,7 +44,7 @@ python source/tools/build.py --upx
 
 ## 当前验证
 
-11组：输入规则、连续方向、两作宿主战斗／调用约定、拾取提示、Runtime写入／回滚、公共输入阶段、真实后台日志、TOML与原子保存、生产Input＋静态SDL虚拟设备、未知宿主ASI加载。UPX另外验证压缩完整性和加载。
+13组：输入规则、连续方向、两作宿主战斗／调用约定、原生菜单/删除确认/软件光标、调查扇区与静态原事件、拾取提示、Runtime写入／回滚、公共输入阶段、真实后台日志、TOML与原子保存、生产Input＋静态SDL虚拟设备、未知宿主ASI加载。UPX另外验证压缩完整性和加载。
 
 产物必须PE32/i386、DLL、非零入口、唯一InitializeASI导出、重定位可用，不依赖SDL3.dll或外置libgcc／libstdc++／libwinpthread；标准Windows系统DLL允许导入，主目标零导入已不再作为最终契约。
 
@@ -59,4 +59,4 @@ python source/tools/build.py --upx
 配置标量核心改编自Castle Reforge Runtime TOML v1，已纳入本项目，无外部项目路径依赖。SDL完整固定源码及原始许可保留，版权和实际编译器声明见[配置与SDL第三方许可](../docs/配置与SDL第三方许可.txt)。
 
 
-2026-10-02闪避设置修复：生产Guard_SyncSettings统一判断实际角色闪避状态，并等待Guard确认完成后更新同步代数。新增test_guard_settings使用真实TOML保存/快照和双版本Guard回放，覆盖松LT仍在位移、结束后自动应用、提前提交快照、开关、原版状态、中断和角色/场景变化。当前共11组CTest；游戏内设置界面仍后置。
+Guard设置应用测试使用真实TOML与双版本运动回放；test_menu链接生产Control/Menu/Game和真实虚表包装，检查标题无玩家、独立焦点、页面/来源中立门、业务ABI及逐槽失败回滚。游戏内MOD设置界面仍后置，真实高亮/动画/设备时序必须两作实机确认。

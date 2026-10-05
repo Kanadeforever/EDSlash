@@ -152,7 +152,7 @@ static int __attribute__((thiscall)) native_right(void *self)
 static int __attribute__((thiscall)) native_select(void *self,int value) { CHECK(self==hud_data);selected=value;return 1; }
 static int __attribute__((thiscall)) native_quick(void *self,int value) { CHECK(self==hud_data);quick_slot=value;return 1; }
 static int __attribute__((thiscall)) native_inspect_gate(void *self,int handle) { CHECK(self==manager_data && handle==3);return busy_gate; }
-static int __attribute__((thiscall)) native_hover(void *self,int handle) { CHECK(self==manager_data && handle==3);return 1; }
+static int __attribute__((thiscall)) native_hover(void *self,int handle) { CHECK(self==manager_data && handle>=0 && handle<=3);Write32(self,4,(uint32_t)handle);return 1; }
 static int __cdecl native_relation(void *a,void *b) { CHECK(a==roles[0] && b==roles[1]);return 1; }
 static int __attribute__((thiscall)) native_template(void *self,int a,int b) { CHECK(self==record_data && a==0x1F && b==1);return 0xFFFF; }
 static int __attribute__((thiscall)) native_jm(void *self,int id)
@@ -212,6 +212,7 @@ static int __attribute__((thiscall)) native_animation(void *role)
 { CHECK(role==roles[0]);return (int)(uintptr_t)animation_pointer; }
 static int __attribute__((thiscall)) native_animation_finished(void *animation)
 { CHECK(animation==animation_pointer);return animation_done; }
+static WorldPoint *__cdecl native_dash_grid(WorldPoint *out,const WorldPoint *in);
 static void configure(Profile *profile, bool expansion)
 {
     Feedback_End();Combat_Reset();animation_pointer=animation_data;animation_done=false;test_throwing=false;test_guard_setting=test_run_setting=1;test_cost=test_recovery=-1;
@@ -225,7 +226,7 @@ static void configure(Profile *profile, bool expansion)
     profile->skill_release=(uintptr_t)native_release;profile->left_get=(uintptr_t)native_left;
     profile->right_get=(uintptr_t)native_right;profile->left_set=profile->right_set=(uintptr_t)native_select;
     profile->quick_use=(uintptr_t)native_quick;profile->inspect_gate=(uintptr_t)native_inspect_gate;
-    profile->hover_set=(uintptr_t)native_hover;
+    profile->hover_set=(uintptr_t)native_hover;profile->world_to_grid=(uintptr_t)native_dash_grid;
     profile->relation=(uintptr_t)native_relation;profile->template_value=(uintptr_t)native_template;
     profile->get_jm=(uintptr_t)native_jm;
     profile->prepared_set=(uintptr_t)native_prepared;profile->icon_resolve=(uintptr_t)native_icon;
@@ -241,6 +242,7 @@ static void configure(Profile *profile, bool expansion)
     profile->invalid_offset=expansion?0x446:0x43A;profile->interact_offset=expansion?0x32D:0x321;
     profile->active_offset=expansion?0x359:0x34D;
     profile->pending_offset=expansion?0x456:0x446;
+    profile->inspect_ready_offset=expansion?0x412:0x406;
     g_profile=profile;
     memset(roles,0,sizeof roles);memset(table_data,0,sizeof table_data);
     /* 原始PlayerInit两版都写+0x348，4是已确认selector，不能用对象类型替代。 */
@@ -257,7 +259,7 @@ static void configure(Profile *profile, bool expansion)
         ptr(table_data,(i+1)*6+2,roles[i]);
         ptr(roles[i],8,i<2 ? roles[i+1]:NULL);
     }
-    Write32(roles[2],profile->interact_offset,1);
+    Write32(roles[2],profile->interact_offset,1);Write32(roles[2],profile->inspect_ready_offset,1);
     /* 受控角色按原版 typed resolver 的范围验证，不能把所有角色都强制等同普通 Actor 0x28。 */
     Write32(roles[0],0x67,0x3C);
     Write32(roles[0],0x73,1);ptr(roles[0],0x193,choices_data);

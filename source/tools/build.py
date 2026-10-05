@@ -110,7 +110,8 @@ def main():
         evidence["UPX"] = {"源": "已剥离发行件", "SHA256": hashlib.sha256(packed.read_bytes()).hexdigest(),
                            "字节数": packed.stat().st_size, "压缩完整性及非游戏加载": "通过",
                            "本轮新文件实机": "尚未单独复测"}
-    evidence["范围"] = "单ASI、静态SDL、TOML与保存应用接口；MOD设置界面后置"
+    evidence["范围"] = "单ASI、静态SDL、TOML与保存应用接口；标题/读档含删除确认/系统/资金确认取消菜单与独立调查焦点；MOD设置界面后置"
+    evidence["菜单验收"] = "两作菜单、软件光标标记、调查扇区/静态原事件宿主通过；GUI高亮/音效/删除及地图脚本待两作实机"
     if args.checks_only:
         print("发行件／完整版及全部离线检查通过；未更新发布目录。")
         return

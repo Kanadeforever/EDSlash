@@ -56,12 +56,26 @@ edslash_test(test_motion src/Modules/Controller/Control.c tools/controller/test_
 target_link_libraries(test_motion PRIVATE m)
 edslash_test(test_game src/Modules/Controller/Control.c src/Modules/Controller/Game.c
     src/Modules/Controller/Combat.c src/Modules/Controller/SkillResolver.c
-    src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c tools/controller/test_game.c)
+    src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
+    src/Modules/Controller/Menu.c src/Modules/Controller/Inspect.c src/Runtime/HookManager.c tools/controller/test_game.c)
 target_link_libraries(test_game PRIVATE user32 m)
+# 菜单回放同时调用真实Control/Menu/Game，验证虚表清栈和关闭后不泄漏战斗输入。
+edslash_test(test_menu src/Modules/Controller/Control.c src/Modules/Controller/Game.c
+    src/Modules/Controller/Combat.c src/Modules/Controller/SkillResolver.c
+    src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
+    src/Modules/Controller/Menu.c src/Modules/Controller/Inspect.c src/Modules/Controller/Cursor.c src/Runtime/HookManager.c tools/controller/test_menu.c)
+target_link_libraries(test_menu PRIVATE user32 m)
+# 调查回放使用真实地图格/句柄与原事件包装，不读取游戏进程或真实资源脚本。
+edslash_test(test_inspect src/Modules/Controller/Control.c src/Modules/Controller/Game.c
+    src/Modules/Controller/Combat.c src/Modules/Controller/SkillResolver.c
+    src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
+    src/Modules/Controller/Menu.c src/Modules/Controller/Inspect.c src/Runtime/HookManager.c tools/controller/test_inspect.c)
+target_link_libraries(test_inspect PRIVATE user32 m)
 # 设置回归调用生产同步入口、Guard及真实配置保存，补足原先两个单元间的断点。
 edslash_test(test_guard_settings src/Modules/Controller/Control.c src/Modules/Controller/Game.c
     src/Modules/Controller/Combat.c src/Modules/Controller/SkillResolver.c
     src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
+    src/Modules/Controller/Menu.c src/Modules/Controller/Inspect.c src/Runtime/HookManager.c
     src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c tools/controller/test_guard_settings.c)
 target_link_libraries(test_guard_settings PRIVATE user32 m)
 
