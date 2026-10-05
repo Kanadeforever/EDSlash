@@ -50,6 +50,10 @@ typedef struct {
     uintptr_t inspect_hover_call,inspect_hover,inspect_portal_gate;
     uintptr_t menu_message_vtable,menu_message_global,menu_message_open,menu_message_text_lookup,menu_message_text_table;
     uintptr_t menu_message_tick,menu_message_show,menu_message_hover,menu_message_primary,menu_message_base_tick;
+    uintptr_t inspect_static_gate,inspect_map_global,inspect_basic_get;
+    uintptr_t menu_talk_vtable,menu_talk_tick,menu_talk_show,menu_talk_hover,menu_talk_select,menu_talk_cancel;
+    uintptr_t menu_text_vtable,menu_text_tick,menu_text_show,menu_text_hover,menu_text_next;
+    uintptr_t menu_talk_picker_call,menu_talk_picker,menu_talk_delay_global;
     unsigned inspect_ready_offset;
     unsigned dodge_counter_offset;
     unsigned stamina_offset;

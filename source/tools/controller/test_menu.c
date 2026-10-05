@@ -8,9 +8,9 @@
 #include "Menu.h"
 #include "Cursor.h"
 
-static BYTE menu_roots[5][0xE0],menu_children[5][6][0xE4],menu_sprites[5][6][4*32];
+static BYTE menu_roots[7][0x300],menu_children[7][6][0xE4],menu_sprites[7][6][4*32];
 static BYTE unknown_root[0xD0],menu_resource[16];
-static uintptr_t menu_tables[5][26];
+static uintptr_t menu_tables[7][26];
 static ControlState menu_control;
 static bool expansion_case,transition_after_action;
 static unsigned title_actions,system_actions,confirm_actions,native_hovers,tick_calls,animation_resets;
@@ -18,6 +18,12 @@ static unsigned selected_action,pending_ticks;
 static unsigned patch_attempt,patch_fail_at;
 static unsigned focus_sounds,load_actions,cursor_draws,delete_requests,deleted_records;
 static void *message_pointer;
+static BYTE talk_picker_code[8];
+static unsigned talk_selected,talk_cancelled,text_next_count,talk_delay;
+static int __attribute__((thiscall)) talk_picker(void *root) {CHECK(root==menu_roots[5]);return (int)(uintptr_t)menu_children[5][1];}
+static int __attribute__((thiscall)) talk_select(void *root) {CHECK(root==menu_roots[5]);talk_selected=Read32(ReadPtr(root,0xA8),0xC4);return 1;}
+static int __attribute__((thiscall)) talk_cancel(void *root,int e,int x,void *y) {CHECK(root==menu_roots[5] && !e && !x && !y);++talk_cancelled;Write32(root,0x64,0);ptr(ui_data,0x3C,NULL);return 1;}
+static int __attribute__((thiscall)) text_next(void *root) {CHECK(root==menu_roots[6]);++text_next_count;Write32(root,0x64,0);ptr(ui_data,0x3C,NULL);return 1;}
 static BYTE load_nodes[6][12],load_data[6][0x40],cursor_code[24];
 static uintptr_t cursor_position_pointer;
 static int cursor_x,cursor_y;
@@ -30,7 +36,7 @@ bool Memory_Patch(void *target,const void *data,size_t bytes)
 
 static int root_kind(void *self)
 {
-    for (int i=0;i<5;++i) if (self==menu_roots[i]) return i;
+    for (int i=0;i<7;++i) if (self==menu_roots[i]) return i;
     CHECK(false);return -1;
 }
 static int __attribute__((thiscall)) menu_property(void *self,int field)
@@ -42,7 +48,8 @@ static int __attribute__((thiscall)) menu_show(void *self,int active,int mode)
 {
     int k=root_kind(self);CHECK(mode==0 || mode==-1);
     Write32(self,0x64,active!=0);Write32(self,0x68,0);
-    if (k==2 || k==4) ptr(ui_data,0x3C,active ? self:NULL);
+    if (k==2 || k==4 || k==5 || k==6) ptr(ui_data,0x3C,active ? self:NULL);
+    if (k==6 && active) {Write32(self,0xF0,1);Write32(self,0xF4,(unsigned)-20);}
     if (k==3 && active) {Write32(self,0xD0,0);Write32(self,0xD4,0);}
     return 1;
 }
@@ -51,6 +58,8 @@ static int __attribute__((thiscall)) menu_tick(void *self)
     int k=root_kind(self);++tick_calls;
     /* 模拟原base Tick因鼠标离开根页而清悬停；生产wrapper必须重新投影自己的选择。 */
     ptr(self,0xA8,NULL);
+    if (k==5) ptr(self,0xA8,(void *)(uintptr_t)((This0)patched_callee((uintptr_t)talk_picker_code))(self));
+    if (k==6 && Read32(self,0x64)) Write32(self,0xF4,Read32(self,0xF4)-Read32(self,0xF0));
     if (k==0 && pending_ticks) {
         for (unsigned i=0;i<6;++i)
             if (Read32(menu_children[0][i],0x28)==selected_action) Write32(menu_children[0][i],0x40,3);
@@ -162,7 +171,7 @@ static void cursor_fixture(Profile *profile)
 }
 static void activate_page(unsigned kind)
 {
-    for (unsigned k=0;k<5;++k) if (k!=kind) Write32(menu_roots[k],0x64,0);
+    for (unsigned k=0;k<7;++k) if (k!=kind) Write32(menu_roots[k],0x64,0);
     Write32(unknown_root,0x64,0);
     ((This2)menu_tables[kind][0x1C/4])(menu_roots[kind],1,0);
 }
@@ -189,12 +198,12 @@ static void menu_fixture(Profile *profile,bool expansion)
     memset(&menu_control,0,sizeof menu_control);pending_ticks=0;
     title_actions=system_actions=confirm_actions=native_hovers=tick_calls=animation_resets=0;
     transition_after_action=false;selected_action=0;
-    static const unsigned ids[5][6]={{0x1F,0x20,0x21,0x22,0x23,0xA7},
-        {0x2E,0x30,0x31,0x2F,0,0},{0x9A,0x9B,0x99,0,0,0},{0x97,0x96,0xA2,0xA3,0,0},{0x2A,0x2A,0x2A,0,0,0}};
-    for (unsigned k=0;k<5;++k) {
+    static const unsigned ids[7][6]={{0x1F,0x20,0x21,0x22,0x23,0xA7},
+        {0x2E,0x30,0x31,0x2F,0,0},{0x9A,0x9B,0x99,0,0,0},{0x97,0x96,0xA2,0xA3,0,0},{0x2A,0x2A,0x2A,0,0,0},{0x2A,0x2A,0x2A,0,0,0},{0,0,0,0,0,0}};
+    for (unsigned k=0;k<7;++k) {
         ptr(menu_roots[k],0,menu_tables[k]);ptr(menu_roots[k],0x50,menu_resource);
-        Write32(menu_roots[k],0x28,k==0 ? 0x19:k==1 ? 0x2D:k==2 ? 0x98:k==3 ? 0x94:0x29);
-        ptr(menu_roots[k],0x0C,k<4 ? menu_roots[k+1]:NULL);
+        Write32(menu_roots[k],0x28,k==0 ? 0x19:k==1 ? 0x2D:k==2 ? 0x98:k==3 ? 0x94:k==4 ? 0x29:k==5 ? 0x28:0x2C);
+        ptr(menu_roots[k],0x0C,k<6 ? menu_roots[k+1]:NULL);
         ptr(menu_roots[k],0x9C,menu_children[k][0]);
         menu_tables[k][1]=(uintptr_t)menu_tick;menu_tables[k][0x1C/4]=(uintptr_t)menu_show;
         menu_tables[k][0x30/4]=(uintptr_t)menu_hover;
@@ -207,6 +216,7 @@ static void menu_fixture(Profile *profile,bool expansion)
             Write32(c,0x1C,80);Write32(c,0x20,30);Write32(c,0x44,4);ptr(c,0x48,menu_sprites[k][j]);
             Write32(c,0xC8,42);
             if (k==4) Write32(c,0xC4,j<2 ? j:(unsigned)-1);
+            if (k==5) Write32(c,0xC4,j<2 ? (j+1)*10:(unsigned)-1);
         }
     }
     if (!expansion) Write32(menu_children[0][5],0x64,0);
@@ -224,6 +234,15 @@ static void menu_fixture(Profile *profile,bool expansion)
     profile->menu_message_hover=(uintptr_t)menu_hover;profile->menu_message_primary=(uintptr_t)message_primary;
     profile->menu_message_base_tick=(uintptr_t)menu_tick;menu_tables[4][0x24/4]=(uintptr_t)message_primary;
     delete_requests=deleted_records=0;
+    profile->menu_talk_vtable=(uintptr_t)menu_tables[5];profile->menu_text_vtable=(uintptr_t)menu_tables[6];
+    profile->menu_talk_tick=profile->menu_text_tick=(uintptr_t)menu_tick;
+    profile->menu_talk_show=profile->menu_text_show=(uintptr_t)menu_show;
+    profile->menu_talk_hover=profile->menu_text_hover=(uintptr_t)menu_hover;
+    profile->menu_talk_delay_global=(uintptr_t)&talk_delay;talk_delay=0;Write32(menu_roots[5],0x2C4,0);
+    profile->menu_talk_select=(uintptr_t)talk_select;profile->menu_talk_cancel=(uintptr_t)talk_cancel;profile->menu_text_next=(uintptr_t)text_next;
+    make_call(talk_picker_code,(uintptr_t)talk_picker);profile->menu_talk_picker_call=(uintptr_t)talk_picker_code;profile->menu_talk_picker=(uintptr_t)talk_picker;
+    talk_selected=talk_cancelled=text_next_count=0;
+    Write32(menu_roots[6],0xD4,10);Write32(menu_roots[6],0xD8,20);Write32(menu_roots[6],0xDC,100);Write32(menu_roots[6],0xE0,40);
     profile->menu_load_vtable=(uintptr_t)menu_tables[3];
     profile->menu_load_tick=(uintptr_t)menu_tick;profile->menu_load_show=(uintptr_t)menu_show;profile->menu_load_hover=(uintptr_t)menu_hover;
     profile->menu_load_primary=(uintptr_t)menu_primary;profile->menu_load_select=(uintptr_t)load_select;
@@ -231,7 +250,7 @@ static void menu_fixture(Profile *profile,bool expansion)
     profile->template_value=(uintptr_t)menu_template;focus_sounds=load_actions=0;
     profile->menu_title_activate=(uintptr_t)menu_activate;profile->menu_texture=(uintptr_t)menu_texture;
     profile->menu_animation_reset=(uintptr_t)menu_animation_reset;profile->ui_property=(uintptr_t)menu_property;
-    ptr(ui_data,0x18,menu_roots[0]);ptr(ui_data,0x1C,menu_roots[4]);ptr(ui_data,0x20,(void *)0x12345678);
+    ptr(ui_data,0x18,menu_roots[0]);ptr(ui_data,0x1C,menu_roots[6]);ptr(ui_data,0x20,(void *)0x12345678);
     ptr(unknown_root,0x50,menu_resource);Write32(unknown_root,0x28,0xAA);
     Write32(menu_roots[3],0xC0,6);ptr(menu_roots[3],0xC4,load_nodes[0]);
     for (unsigned i=0;i<6;++i) {
@@ -263,7 +282,7 @@ static void menu_regression(bool expansion)
     unsigned routed_reason;CHECK(Menu_Context(&routed_reason)==menu_roots[0]);
     Write32(unknown_root,0x64,0);ptr(ui_data,0x40,NULL);
     neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(title_actions==1 && selected_action==0x20);
-    for (unsigned i=0;i<5;++i) menu_step(KEY(PAD_A),0,0);
+    for (unsigned i=0;i<7;++i) menu_step(KEY(PAD_A),0,0);
     CHECK(title_actions==1);game_isolated();
     if (!expansion) {
         ((This0)menu_tables[0][1])(menu_roots[0]);CHECK(Read32(menu_children[0][1],0x40)==3);
@@ -339,8 +358,21 @@ static void menu_regression(bool expansion)
     CHECK(Menu_CapturesInput());game_isolated();
     activate_page(3);Write32(menu_roots[3],0xC0,0);neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(load_actions==1);
     CHECK(!Menu_CursorAnchor(&anchor));
+    /* NPC选项按脚本记录，提示项不选；Tick原命中调用被独立焦点替代。 */
+    activate_page(5);neutral_menu();CHECK(Read32(ReadPtr(menu_roots[5],0xA8),0xC4)==10);
+    ((This0)menu_tables[5][1])(menu_roots[5]);CHECK(Read32(ReadPtr(menu_roots[5],0xA8),0xC4)==10);
+    menu_step(KEY(PAD_DOWN),0,0);CHECK(Read32(ReadPtr(menu_roots[5],0xA8),0xC4)==20);
+    talk_delay=2;neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(talk_selected==0);
+    talk_delay=0;neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(talk_selected==20);
+    neutral_menu();menu_step(KEY(PAD_B),0,0);CHECK(talk_cancelled==1);
+    activate_page(6);neutral_menu();int before_scroll=(int)Read32(menu_roots[6],0xF4);
+    menu_step(KEY(PAD_A),0,0);CHECK(text_next_count==0 && Read32(menu_roots[6],0x64));
+    ((This0)menu_tables[6][1])(menu_roots[6]);CHECK((int)Read32(menu_roots[6],0xF4)==before_scroll-3 && text_next_count==0);
+    menu_step(0,0,0);before_scroll=(int)Read32(menu_roots[6],0xF4);
+    ((This0)menu_tables[6][1])(menu_roots[6]);CHECK((int)Read32(menu_roots[6],0xF4)==before_scroll-1);
+    menu_step(KEY(PAD_B),0,0);CHECK(text_next_count==1);
     /* 未实现页面保留B/方向旧键盘能力，仍绝不注入Enter或直接猜+3C。 */
-    for (unsigned k=0;k<5;++k) Write32(menu_roots[k],0x64,0);
+    for (unsigned k=0;k<7;++k) Write32(menu_roots[k],0x64,0);
     Write32(unknown_root,0x64,1);ptr(ui_data,0x18,unknown_root);ptr(ui_data,0x1C,unknown_root);
     neutral_menu();menu_step(KEY(PAD_B)|KEY(PAD_A),0,0);
     BYTE keys[256]={0};Game_Keyboard(keys);CHECK(keys[VK_ESCAPE]==0x80 && keys[VK_RETURN]==0);
@@ -351,13 +383,13 @@ static void menu_regression(bool expansion)
     CHECK(((Draw)patched_callee((uintptr_t)(cursor_code+8)))(menu_sprites[0][0],(void *)0x246,37,49,0,-1,0)==6);
     Cursor_Shutdown();CHECK(cursor_code[0]==0xFF && cursor_code[1]==0x15);
     Menu_Shutdown();
-    for (unsigned k=0;k<5;++k) CHECK(menu_tables[k][1]==(uintptr_t)menu_tick && menu_tables[k][0x30/4]==(uintptr_t)menu_hover);
+    for (unsigned k=0;k<7;++k) CHECK(menu_tables[k][1]==(uintptr_t)menu_tick && menu_tables[k][0x30/4]==(uintptr_t)menu_hover);
     HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
     CHECK(!Menu_BlocksGameplay());
     /* 每个入口写失败都回滚，不能留下半套Tick/Show/hover。所有原槽先核对再允许重试。 */
-    for (unsigned fail=1;fail<=15;++fail) {
+    for (unsigned fail=1;fail<=22;++fail) {
         patch_attempt=0;patch_fail_at=fail;CHECK(!Menu_Initialize());
-        for (unsigned k=0;k<5;++k) {
+        for (unsigned k=0;k<7;++k) {
             CHECK(menu_tables[k][1]==(uintptr_t)menu_tick);
             CHECK(menu_tables[k][0x1C/4]==(uintptr_t)menu_show);
             CHECK(menu_tables[k][0x30/4]==(uintptr_t)menu_hover);

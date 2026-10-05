@@ -27,6 +27,9 @@ static int last_opcode, arg1, arg2, arg3, releases, last_policy, selected, quick
 static void *last_target;
 static bool page_visible, physical_mouse, busy_gate;
 static int test_omni_setting=1;
+#ifndef EDSLASH_REAL_CONFIG
+static int test_inspect_distance=160;
+#endif
 static int test_dodge_setting=1,test_dodge_distance=128;
 static int test_guard_setting=1,test_run_setting=1,test_cost=-1,test_recovery=-1;
 static unsigned checks;
@@ -60,6 +63,7 @@ const ConfigSnapshot *RuntimeConfig_Current(void) {return &test_snapshot;}
 int RuntimeConfig_GetInt(ConfigId id)
 {
     switch (id) {
+    case CONFIG_INSPECT_DISTANCE:return test_inspect_distance;
     case CONFIG_OMNI_GUARD:return test_omni_setting;
     case CONFIG_DODGE_DISTANCE:return test_dodge_distance;
     case CONFIG_DIRECTIONAL_DODGE:return test_dodge_setting;

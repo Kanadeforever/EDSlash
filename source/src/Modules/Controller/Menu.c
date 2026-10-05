@@ -14,7 +14,7 @@ typedef struct {
 } MenuState;
 static MenuState state;
 static bool installed,frame_captured;
-static uintptr_t tables[5],original[5][3];
+static uintptr_t tables[7],original[7][3];
 static const unsigned offsets[3]={4,0x1C,0x30};
 
 static bool visible(void *object)
@@ -34,11 +34,14 @@ static int kind_of(void *root)
     void *owner=ReadPtr(root,0xCC);
     if (table && table==g_profile->menu_message_vtable && Read32(owner,0)==g_profile->menu_load_vtable &&
         Read32(owner,0x28)==0x94) return 4;
+    if (table && table==g_profile->menu_talk_vtable) return 5;
+    if (table && table==g_profile->menu_text_vtable) return 6;
     return -1;
 }
 static bool page(void *object,void *hud)
 {
     void *resource=ReadPtr(object,0x50);
+    if (object!=hud && visible(object) && (kind_of(object)==5 || kind_of(object)==6)) return true;
     return object!=hud && visible(object) && Memory_Readable(resource,12) &&
         ((This1)g_profile->ui_property)(resource,13)==1;
 }
@@ -65,7 +68,7 @@ void *Menu_Context(unsigned *reason)
     for (unsigned n=0;node && node!=ui && n<256;++n) {
         if (!Memory_Readable(node,0xC0)) break;
         if (page(node,hud)) {
-            if (kind_of(node)==2 || kind_of(node)==4) { *reason=2;return node; }
+            if (kind_of(node)==2 || kind_of(node)==4 || kind_of(node)==6) { *reason=2;return node; }
             if (!first) first=node;
         }
         if (node==tail) break;
@@ -91,12 +94,13 @@ static unsigned buttons(void *root,int kind,MenuButton *out)
 {
     unsigned count=0;
     void *node=ReadPtr(root,0x9C);
-    for (unsigned n=0;node && n<32;++n) {
+    for (unsigned n=0;node && n<128;++n) {
         if (!Memory_Readable(node,0xC0)) break;
         unsigned id=Read32(node,0x28);
         if (kind==4 && id==0x2A && Read32(node,0xC4)<=1) id=0x200+Read32(node,0xC4);
+        if (kind==5 && id==0x2A) id=Read32(node,0xC4);
         int width=(int)Read32(node,0x1C),height=(int)Read32(node,0x20);
-        if (count<8 && (kind==4 ? id==0x200 || id==0x201:allowed(kind,id)) && ReadPtr(node,0xA4)==root &&
+        if (count<64 && (kind==5 ? Read32(node,0x28)==0x2A && id!=0xFFFFFFFFu:kind==4 ? id==0x200 || id==0x201:allowed(kind,id)) && ReadPtr(node,0xA4)==root &&
             Read32(node,0x64) && width>0 && height>0) {
             out[count++]=(MenuButton){node,id,(int)Read32(node,0x14)+width/2.0,
                                            (int)Read32(node,0x18)+height/2.0};
@@ -104,6 +108,16 @@ static unsigned buttons(void *root,int kind,MenuButton *out)
         void *next=ReadPtr(node,8);
         if (next==node) break;
         node=next;
+    }
+    if (kind==5) {
+        /* 原子链从末尾倒走；按真实几何排序，默认最上方选项，不能误选最后一项。 */
+        for (unsigned i=1;i<count;++i) {
+            MenuButton value=out[i];unsigned j=i;
+            while (j && (out[j-1].y>value.y || (out[j-1].y==value.y && out[j-1].x>value.x))) {
+                out[j]=out[j-1];--j;
+            }
+            out[j]=value;
+        }
     }
     return count;
 }
@@ -125,10 +139,10 @@ static void clear_focus(void)
     int kind=kind_of(state.root);
     if (kind<0) return;
     if (kind==0 && (int)Read32(state.root,0xC0)!=-1) return;
-    MenuButton list[8];unsigned count=buttons(state.root,kind,list);
+    MenuButton list[64];unsigned count=buttons(state.root,kind,list);
     for (unsigned i=0;i<count;++i) if (list[i].id==state.id) {
         if (kind==1) ((This2)g_profile->menu_texture)(list[i].object,-1,0);
-        else if (kind!=4 && Read32(list[i].object,0x40)==1) sprite(list[i].object,0);
+        else if (kind<4 && Read32(list[i].object,0x40)==1) sprite(list[i].object,0);
         if (ReadPtr(state.root,0xA8)==list[i].object) Write32(state.root,0xA8,0);
     }
 }
@@ -160,13 +174,13 @@ static void project(void)
     unsigned reason;void *current=Menu_Context(&reason);
     if (current!=state.root) return;
     int kind=kind_of(current);
-    if (kind<0 || kind==3 || (kind==0 && (int)Read32(current,0xC0)!=-1)) return;
-    MenuButton list[8];unsigned count=buttons(current,kind,list);
+    if (kind<0 || kind==3 || kind==6 || (kind==0 && (int)Read32(current,0xC0)!=-1)) return;
+    MenuButton list[64];unsigned count=buttons(current,kind,list);
     void *focused=NULL;
     for (unsigned i=0;i<count;++i) {
         bool selected=list[i].id==state.id;
         if (kind==1) ((This2)g_profile->menu_texture)(list[i].object,selected ? 0:-1,0);
-        else if (kind!=4) sprite(list[i].object,selected ? 1:0);
+        else if (kind<4) sprite(list[i].object,selected ? 1:0);
         if (selected) focused=list[i].object;
     }
     /* 所选按钮若在本帧被移走/隐藏，立即清空上下文，不能留悬空的A8。 */
@@ -276,6 +290,11 @@ bool Menu_CursorAnchor(POINT *point)
     if (!point || !owns() || !state.owned || !Read32(state.root,0x64)) return false;
     unsigned reason;if (Menu_Context(&reason)!=state.root) return false;
     int kind=kind_of(state.root);
+    if (kind==6) {
+        int w=(int)Read32(state.root,0xDC),h=(int)Read32(state.root,0xE0);
+        if (w<=0 || h<=0) return false;
+        point->x=(int)Read32(state.root,0xD4)+w-6;point->y=(int)Read32(state.root,0xD8)+h-6;return true;
+    }
     if (kind==3) {
         if (!load_rows(state.root)) return false;
         void *resource=ReadPtr(state.root,0x50);
@@ -286,7 +305,7 @@ bool Menu_CursorAnchor(POINT *point)
         if (w<=0 || h<=0 || Read32(state.root,0xD4)>=4) return false;
         point->x=x+w-6;point->y=y+h*((int)Read32(state.root,0xD4)+1)-6;return true;
     }
-    MenuButton list[8];unsigned count=buttons(state.root,kind,list);
+    MenuButton list[64];unsigned count=buttons(state.root,kind,list);
     for (unsigned i=0;i<count;++i) if (list[i].id==state.id) {
         point->x=(LONG)Read32(list[i].object,0x14)+(LONG)Read32(list[i].object,0x1C)-6;
         point->y=(LONG)Read32(list[i].object,0x18)+(LONG)Read32(list[i].object,0x20)-6;
@@ -314,7 +333,7 @@ void Menu_Update(void)
     int kind=root ? kind_of(root):-1;
     frame_captured=state.barrier || kind>=0;
     if (root!=state.root || !state.owned) {
-        clear_focus();state.root=root;state.id=0;state.direction=0;
+        clear_focus();state.root=root;state.id=kind==5 ? 0xFFFFFFFFu:0;state.direction=0;
         state.owned=true;state.barrier=true;frame_captured=true;
         Log_Write("[菜单路由] 页面=%02lX 类型=%d 来源=手柄；等待旧输入释放。",(unsigned long)Read32(root,0x28),kind);
     }
@@ -322,8 +341,16 @@ void Menu_Update(void)
         /* 进入/离开页面和接管时先吸收旧操作；中立帧本身也不执行按钮。 */
         if (neutral()) state.barrier=false;
     }
+    if (kind==6) {
+        /* A只加速原滚动，效果在原Tick之后施加；不人工结束或跳到下一句。
+         * B仍对应原Esc收起语义，原自动滚完后的生命周期继续由游戏完成。 */
+        if (!state.barrier && (g_intent.pressed & KEY(PAD_B))) {
+            ((This0)g_profile->menu_text_next)(root);state.barrier=true;
+        }
+        return;
+    }
     if (kind==3 && Read32(root,0x64)) { load_update(root);return; }
-    MenuButton list[8];unsigned count=kind>=0 ? buttons(root,kind,list):0;
+    MenuButton list[64];unsigned count=kind>=0 ? buttons(root,kind,list):0;
     if (!count || !Read32(root,0x64)) return;
     unsigned selected=0;bool found=false;
     for (unsigned i=0;i<count;++i) if (list[i].id==state.id) {selected=i;found=true;break;}
@@ -351,7 +378,9 @@ void Menu_Update(void)
     /* B优先于同帧A，避免同时按下时既确认又关闭。标题根没有可靠的返回父页，因此B留空。 */
     bool cancel=(g_intent.pressed & KEY(PAD_B))!=0 || g_intent.menu_toggle;
     if (cancel) {
-        if (kind==4) {
+        if (kind==5) {
+            ((This3)g_profile->menu_talk_cancel)(root,0,0,NULL);state.barrier=true;
+        } else if (kind==4) {
             for (unsigned i=0;i<count;++i) if (list[i].id==0x200) {
                 Write32(root,0xA8,(uint32_t)(uintptr_t)list[i].object);
                 ((This3)g_profile->menu_message_primary)(root,0,0,NULL);break;
@@ -362,7 +391,16 @@ void Menu_Update(void)
     }
     if (!(g_intent.pressed & KEY(PAD_A))) return;
     Log_Write("[菜单操作] 页面=%02lX 控件=%02X 确认。",(unsigned long)Read32(root,0x28),state.id);
-    if (kind==4) {
+    if (kind==5) {
+        /* 2C4是鼠标按下/释放配对标记，不是业务ready；手柄语义不能要求先伪造鼠标按下。
+         * 真正保留的是原显示时间防穿透和外传输入冷却，随后提交独立选项。 */
+        bool delayed=g_profile->menu_talk_delay_global && Read32((void *)g_profile->menu_talk_delay_global,0)>0;
+        uint32_t delta=Read32((void *)g_profile->game_tick,0)-Read32(root,0x74);
+        bool recent=(int32_t)delta>=-10 && (int32_t)delta<=10;
+        if (!recent && !delayed) {
+            project();((This0)g_profile->menu_talk_select)(root);Menu_Suspend();
+        } else Log_Write("[对话] 原显示保护期或外传输入冷却内，本次不提交。");
+    } else if (kind==4) {
         project();((This3)g_profile->menu_message_primary)(root,0,0,NULL);
     } else if (kind==0) ((This1)g_profile->menu_title_activate)(root,(int)state.id);
     else if (kind==1) {
@@ -382,6 +420,17 @@ static int tick(void *self,unsigned kind)
         ((This0)g_profile->menu_message_base_tick)(self):((This0)original[kind][0])(self);
     /* 原版Tick可能因鼠标不在根页上而清A8；随后重新投影独立焦点，不改全局鼠标路由。 */
     if (self==state.root) project();
+    /* 原Space在每次Tick额外F4减去2×F0。只改原滚动位移，不加速脚本或强制关文字。
+     * 原Tick可能自动关闭/换页，返回后重新核对拥有权，不能改写已经关闭的文本。 */
+    if (kind==6 && self==state.root && owns() && !state.barrier && Read32(self,0x64) &&
+        (g_intent.held & KEY(PAD_A)) && !Input_PhysicalDown(VK_SPACE)) {
+        int64_t position=(int32_t)Read32(self,0xF4),speed=(int32_t)Read32(self,0xF0);
+        if (speed>0 && speed<=1024) {
+            position-=speed*2;
+            if (position<INT32_MIN) position=INT32_MIN;
+            Write32(self,0xF4,(uint32_t)(int32_t)position);
+        }
+    }
     return result;
 }
 static int show(void *self,unsigned kind,int active,int mode)
@@ -406,15 +455,35 @@ MENU_WRAPPERS(1)
 MENU_WRAPPERS(2)
 MENU_WRAPPERS(3)
 MENU_WRAPPERS(4)
-static uintptr_t replacement[5][3];
+MENU_WRAPPERS(5)
+MENU_WRAPPERS(6)
+static uintptr_t replacement[7][3];
+static BYTE saved_talk_picker[5];
+static bool picker_installed;
+static int __attribute__((fastcall)) talk_picker_hook(void *root,void *unused)
+{
+    (void)unused;
+    if (owns() && kind_of(root)==5) {
+        MenuButton list[64];unsigned n=buttons(root,5,list);
+        for (unsigned i=0;i<n;++i) if (state.root==root && list[i].id==state.id) return (int)(uintptr_t)list[i].object;
+        return 0;
+    }
+    return ((This0)g_profile->menu_talk_picker)(root);
+}
 void Menu_Shutdown(void)
 {
     Menu_Suspend();
-    for (unsigned i=0;i<5;++i) for (unsigned j=0;j<3;++j) {
+    for (unsigned i=0;i<7;++i) for (unsigned j=0;j<3;++j) {
         void *slot=(void *)(tables[i]+offsets[j]);
         /* 只恢复仍指向自己的槽；其它插件后来的改写不能被本模块覆盖。 */
         if (tables[i] && Read32(slot,0)==replacement[i][j])
             Memory_Patch(slot,&original[i][j],4);
+    }
+    if (picker_installed) {
+        BYTE bytes[5]={0xE8};int32_t rel=(int32_t)((uintptr_t)talk_picker_hook-g_profile->menu_talk_picker_call-5);
+        memcpy(bytes+1,&rel,4);
+        if (!memcmp((void *)g_profile->menu_talk_picker_call,bytes,5)) Memory_Patch((void *)g_profile->menu_talk_picker_call,saved_talk_picker,5);
+        picker_installed=false;
     }
     installed=false;frame_captured=false;memset(&state,0,sizeof state);
 }
@@ -423,20 +492,25 @@ bool Menu_Initialize(void)
     if (installed) return true;
     tables[0]=g_profile->menu_title_vtable;tables[1]=g_profile->menu_system_vtable;
     tables[2]=g_profile->menu_confirm_vtable;tables[3]=g_profile->menu_load_vtable;tables[4]=g_profile->menu_message_vtable;
-    uintptr_t expected[5][3]={
+    tables[5]=g_profile->menu_talk_vtable;tables[6]=g_profile->menu_text_vtable;
+    uintptr_t expected[7][3]={
         {g_profile->menu_title_tick,g_profile->menu_title_show,g_profile->menu_title_hover},
         {g_profile->menu_system_tick,g_profile->menu_system_show,g_profile->menu_system_hover},
         {g_profile->menu_confirm_tick,g_profile->menu_confirm_show,g_profile->menu_confirm_hover},
         {g_profile->menu_load_tick,g_profile->menu_load_show,g_profile->menu_load_hover},
-        {g_profile->menu_message_tick,g_profile->menu_message_show,g_profile->menu_message_hover}};
-    uintptr_t hooks[5][3]={{(uintptr_t)tick0,(uintptr_t)show0,(uintptr_t)hover0},
+        {g_profile->menu_message_tick,g_profile->menu_message_show,g_profile->menu_message_hover},
+        {g_profile->menu_talk_tick,g_profile->menu_talk_show,g_profile->menu_talk_hover},
+        {g_profile->menu_text_tick,g_profile->menu_text_show,g_profile->menu_text_hover}};
+    uintptr_t hooks[7][3]={{(uintptr_t)tick0,(uintptr_t)show0,(uintptr_t)hover0},
         {(uintptr_t)tick1,(uintptr_t)show1,(uintptr_t)hover1},
         {(uintptr_t)tick2,(uintptr_t)show2,(uintptr_t)hover2},
         {(uintptr_t)tick3,(uintptr_t)show3,(uintptr_t)hover3},
-        {(uintptr_t)tick4,(uintptr_t)show4,(uintptr_t)hover4}};
+        {(uintptr_t)tick4,(uintptr_t)show4,(uintptr_t)hover4},
+        {(uintptr_t)tick5,(uintptr_t)show5,(uintptr_t)hover5},
+        {(uintptr_t)tick6,(uintptr_t)show6,(uintptr_t)hover6}};
     memcpy(replacement,hooks,sizeof hooks);
     /* 全部槽先验证再写，拒绝被其它补丁替换的入口；不会占用DisplayFix的Draw/picker。 */
-    for (unsigned i=0;i<5;++i) for (unsigned j=0;j<3;++j) {
+    for (unsigned i=0;i<7;++i) for (unsigned j=0;j<3;++j) {
         if (!tables[i] || !expected[i][j] || Read32((void *)tables[i],offsets[j])!=expected[i][j]) return false;
         original[i][j]=expected[i][j];
     }
@@ -447,11 +521,18 @@ bool Menu_Initialize(void)
         !g_profile->menu_load_primary || Read32((void *)tables[3],0x24)!=g_profile->menu_load_primary ||
         !g_profile->menu_message_primary || Read32((void *)tables[4],0x24)!=g_profile->menu_message_primary) return false;
     if (!HookManager_Claim(SHARED_HOOK_CONTROLLER_MENU,RUNTIME_MODULE_CONTROLLER)) return false;
-    for (unsigned i=0;i<5;++i) for (unsigned j=0;j<3;++j) {
+    for (unsigned i=0;i<7;++i) for (unsigned j=0;j<3;++j) {
         if (!Memory_Patch((void *)(tables[i]+offsets[j]),&replacement[i][j],4)) {
             Menu_Shutdown();Log_Write("[菜单][停止] 焦点入口安装失败，已撤回本批菜单槽。");return false;
         }
     }
+    if (!Memory_Readable((void *)g_profile->menu_talk_picker_call,5)) {Menu_Shutdown();return false;}
+    memcpy(saved_talk_picker,(void *)g_profile->menu_talk_picker_call,5);int32_t displacement;
+    memcpy(&displacement,saved_talk_picker+1,4);
+    if (saved_talk_picker[0]!=0xE8 || g_profile->menu_talk_picker_call+5+displacement!=g_profile->menu_talk_picker) {Menu_Shutdown();return false;}
+    BYTE picker_bytes[5]={0xE8};displacement=(int32_t)((uintptr_t)talk_picker_hook-g_profile->menu_talk_picker_call-5);
+    memcpy(picker_bytes+1,&displacement,4);picker_installed=Memory_Patch((void *)g_profile->menu_talk_picker_call,picker_bytes,5);
+    if (!picker_installed) {Menu_Shutdown();return false;}
     installed=true;state.barrier=true;
     Log_Write("[菜单] 标题/读档/系统/资金确认取消原生入口已安装；十字键/左摇杆导航，A确认，B返回。");
     return true;

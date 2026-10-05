@@ -6,7 +6,7 @@
 static int64_t frequency,report_at,last_frame,interval_total,interval_max;
 static unsigned owner,frames,interval_count;
 static struct {int64_t total,maximum;unsigned count;} samples[PERF_COUNT];
-static const char *labels[PERF_COUNT]={"原版输入刷新","SDL采样","目标遍历","手柄业务","受击包装","原生受击","自动拾取"};
+static const char *labels[PERF_COUNT]={"原版输入刷新","SDL采样","目标遍历","手柄业务","受击包装","原生受击","自动拾取","调查探测"};
 void RuntimePerf_Initialize(void)
 {
     if (frequency) return;

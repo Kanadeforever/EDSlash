@@ -59,6 +59,12 @@ int wmain(void)
     CHECK(RuntimeConfig_SetInt(CONFIG_BASE_HEIGHT,720));
     RuntimeConfig_ApplyFrame(1);
     CHECK(RuntimeConfig_GetInt(CONFIG_BASE_HEIGHT)==480 && RuntimeConfig_NeedsRestart());
+    /* 新调查距离走同一真实TOML描述/保存/应用链：缺项默认160，边界必须验证。 */
+    CHECK(RuntimeConfig_GetInt(CONFIG_INSPECT_DISTANCE)==160);
+    CHECK(!RuntimeConfig_SetInt(CONFIG_INSPECT_DISTANCE,15));
+    CHECK(!RuntimeConfig_SetInt(CONFIG_INSPECT_DISTANCE,481));
+    CHECK(RuntimeConfig_SetInt(CONFIG_INSPECT_DISTANCE,480));
+    RuntimeConfig_ApplyFrame(0);CHECK(RuntimeConfig_GetInt(CONFIG_INSPECT_DISTANCE)==480);
     CHECK(RuntimeConfig_SetInt(CONFIG_GUARD_PERCENT,1250));
     CHECK(RuntimeConfig_SetInt(CONFIG_GUARD_MODE,1));
     RuntimeConfig_ApplyFrame(1);
@@ -76,7 +82,7 @@ int wmain(void)
     /* 重新读取模拟重启：重启项和技能绑定必须确实落盘。 */
     CHECK(RuntimeConfig_OpenPath(path));
     CHECK(RuntimeConfig_GetInt(CONFIG_BASE_HEIGHT)==720 && !strcmp(RuntimeConfig_Current()->aspect_ratio,"32:9"));
-    CHECK(RuntimeConfig_GetBinding(1,4,1).right);
+    CHECK(RuntimeConfig_GetBinding(1,4,1).right);CHECK(RuntimeConfig_GetInt(CONFIG_INSPECT_DISTANCE)==480);
     CHECK(RuntimeFile_Read(path,saved,sizeof saved,&size));
     CHECK(size>0 && !memcmp(saved,"# EDSlash",9));
     for (size_t i=0;i<size;++i) if(saved[i]=='\n') CHECK(i>0 && saved[i-1]=='\r');

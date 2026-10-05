@@ -8,6 +8,10 @@ static BYTE inspect_map[0x70],changed_map[0x70],inspect_cells[9*9*19];
 static BYTE static_objects[3][0xC0],extra_actor[0x500],hover_code[8];
 static unsigned packets,portal_packets,original_hover_calls;
 static bool block_inspect,allow_portal;
+static void *map_pointer;
+static unsigned static_checks;
+static int __attribute__((thiscall)) static_gate(void *o) { ++static_checks;return Read32(o,0xBC)==0 || Read32(o,0xBC)==2; }
+static int __attribute__((thiscall)) basic_get(void *role,int i) {CHECK(role==roles[0] && i==1);return 111;}
 static int __attribute__((thiscall)) portal_gate(void *object)
 { CHECK(object==static_objects[0] || object==static_objects[1] || object==static_objects[2]);return allow_portal; }
 static BYTE *grid_cell(unsigned x,unsigned y) { return inspect_cells+(y*9+x)*19; }
@@ -30,7 +34,7 @@ static void put_static(unsigned index,unsigned subtype,unsigned x,unsigned y)
 {
     memset(inspect_cells,0xFF,sizeof inspect_cells);
     for (unsigned i=0;i<3;++i) Write32(static_objects[i],0xBC,0);
-    Write32(static_objects[index],0x54,subtype);Write32(static_objects[index],0xBC,1);
+    Write32(static_objects[index],0x54,subtype);Write32(static_objects[index],0xBC,0);
     BYTE *c=grid_cell(x,y);Write32(c,0x0C,index+5);c[0x10]=0x88;
 }
 static void point_actor(unsigned index,int dx,int dy)
@@ -42,7 +46,8 @@ static void update(void)
 { g_input.now+=20;g_intent.pressed=0;g_intent.held=0;Inspect_Update(roles[0]); }
 static void fixture(Profile *profile,bool expansion)
 {
-    configure(profile,expansion);block_inspect=allow_portal=false;profile->inspect_portal_gate=(uintptr_t)portal_gate;packets=portal_packets=original_hover_calls=0;
+    configure(profile,expansion);block_inspect=allow_portal=false;profile->inspect_portal_gate=(uintptr_t)portal_gate;profile->inspect_static_gate=(uintptr_t)static_gate;profile->inspect_basic_get=(uintptr_t)basic_get;
+    map_pointer=inspect_map;profile->inspect_map_global=(uintptr_t)&map_pointer;packets=portal_packets=original_hover_calls=0;
     memset(inspect_map,0,sizeof inspect_map);memset(changed_map,0,sizeof changed_map);
     memset(static_objects,0,sizeof static_objects);memset(extra_actor,0,sizeof extra_actor);
     memset(inspect_cells,0xFF,sizeof inspect_cells);
@@ -79,39 +84,43 @@ static void regression(bool expansion)
     block_inspect=true;unsigned before=packets;Inspect_Activate();CHECK(packets==before);
     block_inspect=false;Inspect_Activate();CHECK(last_opcode==19 && arg1==3);
     Write32(roles[2],profile.inspect_ready_offset,0);
+    /* 半径边界独立于方形格范围，默认160，上限480；原NPC格差门继续有效。 */
+    Write32(roles[2],profile.inspect_ready_offset,1);point_actor(3,128,64);update();CHECK(Read32(manager_data,4)==3);
+    test_inspect_distance=64;update();CHECK(Read32(manager_data,4)==0);
+    test_inspect_distance=160;point_actor(3,64,0);Write32(roles[2],profile.inspect_ready_offset,0);
     /* 静态87/88来自地图格，原鼠标候选故意指向另一个对象也不影响结果。 */
-    put_static(0,0x87,5,4);ptr(mouse_data,0x40,static_objects[1]);update();CHECK(Read32(manager_data,4)==5);
+    put_static(0,0x87,5,4);Write32(grid_cell(6,3),0x0C,5);grid_cell(6,3)[0x10]=0x88;
+    ptr(mouse_data,0x40,static_objects[1]);static_checks=0;update();CHECK(static_checks==1);CHECK(Read32(manager_data,4)==5);
     Inspect_Activate();CHECK(last_opcode==23 && arg1==5);
     BYTE mouse_copy[sizeof mouse_data];memcpy(mouse_copy,mouse_data,sizeof mouse_data);
     CHECK(((This3)patched_callee((uintptr_t)hover_code))(mouse_data,11,22,(void *)33)==0);
     CHECK(original_hover_calls==0 && Read32(manager_data,4)==5 && !memcmp(mouse_copy,mouse_data,sizeof mouse_data));
-    Write32(static_objects[0],0xBC,2);update();CHECK(Read32(manager_data,4)==0);
-    Write32(static_objects[0],0xBC,0);update();CHECK(Read32(manager_data,4)==0);
+    Write32(static_objects[0],0xBC,2);update();CHECK(Read32(manager_data,4)==5);
+    Write32(static_objects[0],0xBC,1);update();CHECK(Read32(manager_data,4)==0);
     put_static(1,0x88,5,4);update();CHECK(Read32(manager_data,4)==6);Inspect_Activate();CHECK(last_opcode==23 && arg1==6);
-    put_static(0,0x87,6,4);update();CHECK(Read32(manager_data,4)==0); /* 原邻接门之外 */
+    put_static(0,0x87,6,4);update();CHECK(Read32(manager_data,4)==5); /* 原邻接门之外 */
     put_static(0,0x87,3,4);update();CHECK(Read32(manager_data,4)==0); /* 身后不选 */
     put_static(0,0x96,5,4);update();CHECK(Read32(manager_data,4)==0);
-    put_static(0,0x80,5,4);update();CHECK(Read32(manager_data,4)==0);
+    put_static(0,0x80,5,4);update();CHECK(Read32(manager_data,4)==5);Inspect_Activate();CHECK(last_opcode==10 && arg1==1001 && arg2==352 && arg3==288);Combat_Reset();
     put_static(0,0x87,5,4);grid_cell(5,4)[0x10]=0;update();CHECK(Read32(manager_data,4)==0);
+    /* 掉落句柄在E，不能套静态flags88；A沿原21，不受QOL过滤设置限制。 */
+    put_static(0,0x87,5,4);Write32(static_objects[0],0x67,0x17);Write32(grid_cell(5,4),0x0E,5);grid_cell(5,4)[0x10]=0;
+    update();CHECK(Read32(manager_data,4)==5);Inspect_Activate();CHECK(last_opcode==21 && arg1==5);
+    Write32(static_objects[0],0x67,0x0C);
     /* 89仍是手动24，不误当出口；96必须原TransGo资格通过才走换区20。 */
     put_static(2,0x89,5,4);update();Inspect_Activate();CHECK(last_opcode==24 && portal_packets==0);
     put_static(2,0x96,5,4);update();CHECK(Read32(manager_data,4)==0);
     allow_portal=true;update();CHECK(Read32(manager_data,4)==7 && portal_packets==0);
-    g_intent.lx=1;g_input.lx=1;g_input.now+=20;CHECK(Inspect_Update(roles[0]));CHECK(portal_packets==1 && last_opcode==20 && arg1==5 && arg2==4 && arg3==7);
-    for (unsigned i=0;i<20;++i) {g_input.now+=20;CHECK(Inspect_Update(roles[0]));}
-    CHECK(portal_packets==1);g_input.now+=700;CHECK(Inspect_Update(roles[0]));
-    Write32(roles[0],profile.pending_offset,(uint32_t)-1);Write32(roles[0],profile.pending_offset+12,0);
+    g_intent.lx=1;g_input.lx=1;
+    for (unsigned i=0;i<20;++i) {g_input.now+=20;CHECK(!Inspect_Update(roles[0]));}
+    CHECK(portal_packets==0); /* 走进原区域绝不自动读图 */
+    Inspect_Activate();CHECK(portal_packets==1 && last_opcode==20 && arg1==5 && arg2==4 && arg3==7);
+    CHECK(Inspect_Update(roles[0])); /* 只维护已经由A提交的原pending */
+    g_input.now+=700;Write32(roles[0],profile.pending_offset,(uint32_t)-1);Write32(roles[0],profile.pending_offset+12,0);
     CHECK(!Inspect_Update(roles[0]) && portal_packets==1);
-    g_intent.lx=-1;g_input.lx=-1;CHECK(!Inspect_Update(roles[0])); /* 可以转身走开 */
-    Write32(roles[0],0x2C,288+64*3);Inspect_Update(roles[0]);
-    Write32(roles[0],0x2C,288);g_intent.lx=1;g_input.lx=1;CHECK(Inspect_Update(roles[0]) && portal_packets==2);
-    ptr(roles[0],0x6F,changed_map);Inspect_Update(roles[0]);CHECK(portal_packets==2); /* 跨图旧推杆不能连进 */
-    g_intent.lx=g_input.lx=0;Inspect_Update(roles[0]);g_intent.lx=g_input.lx=1;
-    CHECK(Inspect_Update(roles[0]) && portal_packets==3);
-    Write32(world_data,0x58,0);Inspect_Reset();Write32(world_data,0x58,1);
-    Inspect_Update(roles[0]);CHECK(portal_packets==3); /* 地址复用也识别读图释放门 */
-    g_intent.lx=g_input.lx=0;Inspect_Update(roles[0]);g_intent.lx=g_input.lx=1;
-    CHECK(Inspect_Update(roles[0]) && portal_packets==4);
+    put_static(2,0x96,6,4);Inspect_Update(roles[0]);Inspect_Activate();CHECK(portal_packets==1); /* 远处聚焦不等于进入 */
+    put_static(2,0x96,5,4);map_pointer=changed_map;Inspect_Update(roles[0]);CHECK(portal_packets==1);
+    Write32(world_data,0x58,0);Inspect_Reset();Write32(world_data,0x58,1);Inspect_Update(roles[0]);CHECK(portal_packets==1);
     /* 物理来源恢复原WorldMouseMove，清理不得撤掉其它来源的新悬停。 */
     Inspect_Reset();g_intent.layer=LAYER_NATIVE;
     CHECK(((This3)patched_callee((uintptr_t)hover_code))(mouse_data,11,22,(void *)33)==9);

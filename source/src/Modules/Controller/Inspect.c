@@ -1,12 +1,13 @@
 #include "Inspect.h"
 #include "Combat.h"
+#include "../../Runtime/Perf.h"
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
 
 static uint32_t focus,focus_kind,owned_hover,actor,zone_request,requested_at;
 static void *focus_world,*hover_manager,*scene_world,*scene_map;
-static bool needs_neutral,installed;
+static bool installed;
 static BYTE saved_hover[5];
 static uint32_t cached_actor,cached_facing,cached_directions;
 static float cached_x,cached_y;
@@ -63,33 +64,42 @@ static bool cone(double dx,double dy,float fx,float fy)
 static bool static_valid(void *object)
 {
     unsigned type=Read32(object,0x67),subtype=Read32(object,0x54)&0xFFFFu,state=Read32(object,0xBC);
-    /* 原悬停支持的静态类范围，调查只纳入已核对的87/88/89。
-     * 不把可攻击80..86、特殊96、掉落或无效记录当成机关。 */
+    /* 按完整原返回链区分可破坏物、机关、特殊脚本；掉落另走E句柄和21。
+     * 不把所有静态类型都当成同一种机关，也不能把原允许态误当排除态。 */
     if (!Memory_Readable(object,0xC0)) return false;
     /* 变换区图标的96不是普通调查对象：原谓词检查A3状态和TransGo/go脚本。
      * 只有原谓词通过的C/D类才允许走20，不能放开全部96或套普通BC状态门。 */
     if (subtype==0x96) return (type==0x0C || type==0x0D) && g_profile->inspect_portal_gate &&
         ((This0)g_profile->inspect_portal_gate)(object)!=0;
-    return type>=0x0A && type<=0x14 && (subtype==0x87 || subtype==0x88 || subtype==0x89) && state!=0 && state!=2;
+    /* 完整原选择器在helper非零时返回对象，不能把它误读成排除门。
+     * 0/2是原允许态，1等其它态拒绝；可破坏80..86也是原左键可操作对象。 */
+    bool active=g_profile->inspect_static_gate ? ((This0)g_profile->inspect_static_gate)(object)!=0:state==0 || state==2;
+    return type>=0x0A && type<=0x14 && subtype>=0x80 && subtype<=0x100 && active;
 }
-static BYTE *cell(void *map,int x,int y)
+typedef struct {int min_x,min_y;unsigned width,height;BYTE *cells;bool ready;} MapView;
+static MapView map_view(void *map)
 {
-    if (!Memory_Readable(map,0x18)) return NULL;
-    unsigned width=Read32(map,8),height=Read32(map,12);
-    if (!width || width>65536 || !height || height>65536 || x<0 || y<0 ||
-        x<(int)Read32(map,0) || y<(int)Read32(map,4) ||
-        (int64_t)x>=(int64_t)(int)Read32(map,0)+width ||
-        (int64_t)y>=(int64_t)(int)Read32(map,4)+height) return NULL;
-    uint64_t index=(uint64_t)(unsigned)y*width+(unsigned)x;
-    BYTE *cells=ReadPtr(map,0x14);
-    if (!cells || index>0xFFFFFFFFu/19u) return NULL;
-    BYTE *record=cells+(size_t)index*19u;
+    MapView view={0};uint32_t header[6];
+    /* 在同一输入调用中只读一次地图头；不跨帧缓存地图/角色指针。 */
+    if (!Memory_Readable(map,sizeof header)) return view;
+    memcpy(header,map,sizeof header);view.min_x=(int)header[0];view.min_y=(int)header[1];
+    view.width=header[2];view.height=header[3];view.cells=(BYTE *)(uintptr_t)header[5];
+    view.ready=view.cells && view.width && view.width<=65536 && view.height && view.height<=65536;
+    return view;
+}
+static BYTE *cell(const MapView *view,int x,int y)
+{
+    if (!view->ready || x<0 || y<0 || x<view->min_x || y<view->min_y ||
+        (int64_t)x>=(int64_t)view->min_x+view->width || (int64_t)y>=(int64_t)view->min_y+view->height) return NULL;
+    uint64_t index=(uint64_t)(unsigned)y*view->width+(unsigned)x;
+    if (index>0xFFFFFFFFu/19u) return NULL;
+    BYTE *record=view->cells+(size_t)index*19u;
     return Memory_Readable(record,19) ? record:NULL;
 }
 static void submit(unsigned opcode,uint32_t handle)
 {
-    if (Memory_Readable(manager(),0x10)) ((This4)g_profile->submit)(manager(),(int)opcode,opcode==20 ? focus_grid_x:(int)handle,
-            opcode==20 ? focus_grid_y:0,opcode==20 ? (int)handle:0);
+    if (Memory_Readable(manager(),0x10)) ((This4)g_profile->submit)(manager(),(int)opcode,(opcode==20 || opcode==1) ? focus_grid_x:(int)handle,
+            (opcode==20 || opcode==1) ? focus_grid_y:0,opcode==20 ? (int)handle:0);
 }
 void Inspect_Project(void)
 {
@@ -105,22 +115,28 @@ void Inspect_Project(void)
     ((This1)g_profile->hover_set)(manager(),(int)handle);
     owned_hover=handle;hover_manager=manager();focus_world=world();
 }
-bool Inspect_Update(void *role)
+static bool inspect_update(void *role)
 {
     if (!pad_world()) { Inspect_Reset();return false; }
-    void *current_world=world(),*map=ReadPtr(role,0x6F);uint32_t current_actor=Read32(role,0x14);
+    void *current_world=world(),*map=ReadPtr((void *)g_profile->inspect_map_global,0);uint32_t current_actor=Read32(role,0x14);
     bool moving=g_intent.lx!=0 || g_intent.ly!=0;
     if (scene_world!=current_world || actor!=current_actor || scene_map!=map) {
-        if (zone_request && moving) needs_neutral=true;
+
         zone_request=0;Inspect_Reset();scene_world=current_world;actor=current_actor;scene_map=map;
     }
-    if (!moving) needs_neutral=false;
+
     uint32_t old_focus=focus;focus=focus_kind=0;dynamic_count=static_count=0;
     float fx,fy;facing(role,&fx,&fy);
     WorldPoint origin={(int)Read32(role,0x2C),(int)Read32(role,0x30)},grid;
     typedef WorldPoint *(__cdecl *Grid)(WorldPoint *,const WorldPoint *);
-    ((Grid)g_profile->world_to_grid)(&grid,&origin);
-    double best=1e30;
+    ((Grid)g_profile->world_to_grid)(&grid,&origin);focus_grid_x=grid.x;focus_grid_y=grid.y;
+    /* 候选探查真正按统一最大距离裁剪，而非把方形扫描边界当成圆半径。
+     * 扫描格数随半径扩大，最多17×17；参数读快照，不在角色帧读取文件。 */
+    int radius=RuntimeConfig_GetInt(CONFIG_INSPECT_DISTANCE);
+    if (radius<16 || radius>480) radius=160;
+    double best=(double)radius*radius;
+    int scan_radius=(radius+63)/64;
+    if (scan_radius>8) scan_radius=8;
     unsigned role_state=Read32(role,0x73);
     /* 松LT但仍在闪避/受击动作中时不自动提交区域事件，避免打断已认可的动作流程。 */
     bool interacting=(role_state==1 || role_state==0x0B) &&
@@ -137,7 +153,7 @@ bool Inspect_Update(void *role)
                 ((Grid)g_profile->world_to_grid)(&target_grid,&point);++dynamic_count;
                 double dx=(double)point.x-origin.x,dy=(double)point.y-origin.y,distance=dx*dx+dy*dy;
                 if (abs(target_grid.x-grid.x)<=2 && abs(target_grid.y-grid.y)<=2 &&
-                    cone(dx,dy,fx,fy) && distance<best) {
+                    cone(dx,dy,fx,fy) && distance<=best) {
                     best=distance;focus=Read32(candidate,0x14);focus_kind=19;
                 }
             }
@@ -145,23 +161,40 @@ bool Inspect_Update(void *role)
             candidate=next;
         }
     }
-    uint32_t nearby_zone=0;double zone_distance=1e30;
-    /* 静态物件不在角色链。只扫描玩家周围49个格的真实静态记录，不遍历全地图/句柄池。 */
-    for (int y=grid.y-3;y<=grid.y+3;++y) for (int x=grid.x-3;x<=grid.x+3;++x) {
-        BYTE *record=cell(map,x,y);
-        if (!record || (record[0x10]&0x88)!=0x88) continue;
+
+    /* 静态物件不在角色链。只扫描按最大距离对应的局部格范围取真实记录，不遍历全地图/句柄池。 */
+    MapView view=map_view(map);
+    /* 资格函数尤其TransGo会解析脚本文本。同一对象跨多个格时只判断一次，
+     * 但仍比较各格的距离，避免大物件近侧焦点丢失。缓存仅在本次扫描的栈上。 */
+    uint32_t handles[289];bool eligible[289];unsigned subtypes[289],cached=0;
+    if (interacting) for (int y=grid.y-scan_radius;y<=grid.y+scan_radius;++y) for (int x=grid.x-scan_radius;x<=grid.x+scan_radius;++x) {
+        BYTE *record=cell(&view,x,y);
+        if (!record || !interacting) continue;
+        double dx=(double)x*64+32-origin.x,dy=(double)y*64+32-origin.y,distance=dx*dx+dy*dy;
+        if (distance>best || !cone(dx,dy,fx,fy)) continue;
+        uint32_t item_handle=Read32(record,0x0E)&0xFFFFu;
+        void *item=item_handle==0xFFFFu ? NULL:Game_Resolve(item_handle);
+        if (interacting && Read32(item,0x67)==0x17) {
+            double ix=(double)x*64+32-origin.x,iy=(double)y*64+32-origin.y,score=ix*ix+iy*iy;
+            if (cone(ix,iy,fx,fy) && score<=best) {
+                best=score;focus=item_handle;focus_kind=21;focus_grid_x=x;focus_grid_y=y;
+            }
+        }
+        if ((record[0x10]&0x88)!=0x88) continue;
         uint32_t handle=Read32(record,0x0C)&0xFFFFu;
         if (handle==0xFFFFu || !handle) continue;
-        void *object=Game_Resolve(handle);
-        if (!static_valid(object)) continue;
-        ++static_count;unsigned subtype=Read32(object,0x54)&0xFFFFu;
-        int gx=x-grid.x,gy=y-grid.y;
-        double dx=(double)x*64+32-origin.x,dy=(double)y*64+32-origin.y,distance=dx*dx+dy*dy;
-        bool adjacent=abs(gx)<=1 && abs(gy)<=1;
-        if (subtype==0x96 && adjacent && distance<zone_distance) {nearby_zone=handle;zone_distance=distance;}
+        unsigned index=0;
+        for (;index<cached && handles[index]!=handle;++index) {}
+        if (index==cached) {
+            void *object=Game_Resolve(handle);
+            handles[index]=handle;eligible[index]=static_valid(object);subtypes[index]=Read32(object,0x54)&0xFFFFu;
+            ++cached;
+        }
+        if (!eligible[index]) continue;
+        ++static_count;unsigned subtype=subtypes[index];
         /* 使用物件占用的格而非猜对象Renderer偏移，大物件靠近的一侧也可以聚焦。 */
-        if (interacting && (subtype==0x89 || subtype==0x96 || adjacent) && cone(dx,dy,fx,fy) && distance<best) {
-            best=distance;focus=handle;focus_kind=subtype==0x96 ? 20:subtype==0x89 ? 24:23;
+        if (interacting && cone(dx,dy,fx,fy) && distance<=best) {
+            best=distance;focus=handle;focus_kind=subtype==0x96 ? 20:subtype==0x89 ? 24:subtype==0x87 || subtype==0x88 ? 23:subtype<=0x86 ? 100:1;
             focus_grid_x=x;focus_grid_y=y;
         }
     }
@@ -169,29 +202,53 @@ bool Inspect_Update(void *role)
     if (old_focus!=focus) Log_Write("[调查焦点] 句柄=%08lx 原事件=%lu 动态候选=%u 静态格=%u 正面90度。",
         (unsigned long)focus,(unsigned long)focus_kind,dynamic_count,static_count);
     Inspect_Project();
-    if (zone_request && zone_request!=nearby_zone) zone_request=0;
-    /* 原96的TransGo/go资格通过后，把近身进入意图交给原20事件：参数为格X/格Y/句柄。
-     * 不自己加载地图或改脚本；87/88/89仍需A，不能当成出口自动触发。 */
-    if (!needs_neutral && moving && interacting && focus_kind==20 && focus==nearby_zone &&
-        focus!=zone_request && !(g_intent.pressed & KEY(PAD_A))) {
-        zone_request=focus;requested_at=g_input.now;submit(20,focus);
-        Log_Write("[调查进入] 进入原TransGo换区邻域，句柄=%08lx，提交原业务一次。",(unsigned long)focus);
-        return true;
-    }
+    if (zone_request && (zone_request!=focus || focus_kind!=20)) zone_request=0;
+    /* 只保留A手动提交的请求维护；走进区域本身不得生成任何换图事件。 */
     /* 不让同帧/随后尚在处理的原事件被前探移动立即覆盖；转向离开则可正常走开。
      * 原脚本未响应时最多等600ms，不永久锁住角色，不在同一区域反复发请求。 */
     bool pending=Read32(role,g_profile->pending_offset)==20 && Read32(role,g_profile->pending_offset+12)==zone_request;
     return moving && focus==zone_request && zone_request && (pending || g_input.now-requested_at<600u);
 }
+bool Inspect_Update(void *role)
+{
+    /* 只在整个调查调用外计时，不在每格/每对象读时钟；这是手柄业务中的嵌套分项。 */
+    int64_t begin=RuntimePerf_Begin();bool result=inspect_update(role);
+    RuntimePerf_End(PERF_INSPECT,begin);return result;
+}
+static bool portal_near(void)
+{
+    void *role=Game_Player();if (!role) return false;
+    WorldPoint point={(int)Read32(role,0x2C),(int)Read32(role,0x30)},grid;
+    typedef WorldPoint *(__cdecl *Grid)(WorldPoint *,const WorldPoint *);
+    ((Grid)g_profile->world_to_grid)(&grid,&point);
+    void *map=ReadPtr((void *)g_profile->inspect_map_global,0);
+    MapView view=map_view(map);
+    /* 和原pending20一样，要求玩家邻接格确实属于该目标区域；不把远处聚焦当进入。 */
+    for (int y=grid.y-1;y<=grid.y+1;++y) for (int x=grid.x-1;x<=grid.x+1;++x) {
+        BYTE *record=cell(&view,x,y);
+        if (record && (record[0x10]&0x88)==0x88 && (Read32(record,0x0C)&0xFFFFu)==focus) return true;
+    }
+    return false;
+}
 void Inspect_Activate(void)
 {
     void *object=Game_Resolve(focus);
     if (!object || focus_world!=world()) {
-        Log_Write("[调查] 正面没有有效目标，动态=%u 静态格=%u。",dynamic_count,static_count);return;
+        Log_Write("[调查] 正面没有有效目标，动态=%u 静态格=%u 地图=%08lx 格=%d,%d。",
+            dynamic_count,static_count,(unsigned long)(uintptr_t)scene_map,focus_grid_x,focus_grid_y);return;
     }
     if (focus_kind==19) {
         if (!((This1)g_profile->inspect_gate)(manager(),(int)focus)) submit(19,focus);
-    } else if ((focus_kind==20 || focus_kind==23 || focus_kind==24) && static_valid(object)) {
+    } else if (focus_kind==21 && Read32(object,0x67)==0x17) submit(21,focus);
+    else if (focus_kind==100 && static_valid(object)) {
+        void *role=Game_Player();int group=((This1)g_profile->inspect_basic_get)(role,1);
+        WorldPoint point={focus_grid_x*64+32,focus_grid_y*64+32};
+        if (group<0) {Log_Write("[调查][拒绝] 原基础动作当前不可用。");return;}
+        Combat_RequestPoint(group,&point);Combat_Update(role,Combat_Target());
+        Log_Write("[调查操作] 静态原基础技能组=%d，目标点=%d,%d。",group,point.x,point.y);return;
+    } else if (focus_kind==1 && static_valid(object)) submit(1,focus);
+    else if ((focus_kind==20 || focus_kind==23 || focus_kind==24) && static_valid(object)) {
+        if (focus_kind==20 && !portal_near()) {Log_Write("[调查][拒绝] 尚未进入原换区区域，A不提交换区。");return;}
         submit(focus_kind,focus);
         if (focus_kind==20) {zone_request=focus;requested_at=g_input.now;}
     }
@@ -215,7 +272,7 @@ void Inspect_Shutdown(void)
         if (Memory_Readable((void *)g_profile->inspect_hover_call,5) && !memcmp((void *)g_profile->inspect_hover_call,replacement,5))
             Memory_Patch((void *)g_profile->inspect_hover_call,saved_hover,5);
     }
-    installed=false;zone_request=0;needs_neutral=false;scene_world=scene_map=NULL;actor=0;
+    installed=false;zone_request=0;scene_world=scene_map=NULL;actor=0;
 }
 bool Inspect_Initialize(void)
 {

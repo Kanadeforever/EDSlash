@@ -12,7 +12,8 @@ static struct {
     int selection;
     unsigned retries;
     ActionSource source,issued_source;
-    bool request_fresh,combo_ready;
+    bool request_fresh,combo_ready,point_request;
+    WorldPoint requested_point;
     unsigned combo_slot,combo_epoch,issued_epoch,issued_slot;
     int combo_cursor,request_index,issued_index;
     /* 输入请求和已经提交给原版的动作分开保存：新按 Y 不能把尚未执行的旧 X 标成右手。 */
@@ -38,10 +39,16 @@ void Combat_Request(int selection,ActionSource source,bool left_style)
     if (combat.actor!=Read32(role,0x14) || combat.world!=world()) {
         Combat_Reset();combat.actor=Read32(role,0x14);combat.world=world();combat.target=Read32(role,0x143);
     }
-    combat.selection=selection;combat.source=source;combat.right=!left_style;
+    combat.point_request=false;combat.selection=selection;combat.source=source;combat.right=!left_style;
     combat.pending=true;combat.request_fresh=true;combat.retries=5;
 }
 
+void Combat_RequestPoint(int selection,const WorldPoint *point)
+{
+    if (!point || selection<0) return;
+    /* 可破坏静态对象沿原基础技能解析，目标是独立世界点，不伪造鼠标或怪物身份。 */
+    Combat_Request(selection,ACTION_LEFT,true);combat.point_request=true;combat.requested_point=*point;
+}
 void Combat_SelectCombo(unsigned index)
 {
     if (index>=4) return;
@@ -179,6 +186,7 @@ void Combat_ImportHistory(void)
 
 static WorldPoint aim_point(void *role)
 {
+    if (combat.point_request) return combat.requested_point;
     void *target=Game_Resolve(combat.target);
     if (Game_Enemy(role,target)) {
         WorldPoint point={(int)Read32(target,0x2C),(int)Read32(target,0x30)};
@@ -251,6 +259,7 @@ void Combat_Update(void *role,uint32_t candidate)
     if (edge || (held && !combat.pending && !active && !fresh)) {
         void *hud=ReadPtr((void *)g_profile->skill_global,0);
         if (!Memory_Readable(hud,0xC20)) return;
+        combat.point_request=false;
         combat.selection=right ? combo_selection(hud):((This0)g_profile->left_get)(hud);
         combat.source=right ? ACTION_COMBO:ACTION_LEFT;
         combat.right=right;combat.pending=combat.selection>=0;combat.retries=5;fresh=true;
@@ -313,7 +322,7 @@ void Combat_Update(void *role,uint32_t candidate)
     combat.issued_epoch=combat.combo_epoch;combat.issued_index=combat.request_index;
     void *target_role=Game_Resolve(combat.target);
     int opcode,a2,a3;
-    if (Game_Enemy(role,target_role)) {
+    if (!combat.point_request && Game_Enemy(role,target_role)) {
         opcode=9;
         if (!combat.right && (!resolved.sequence || (resolved.method<10000 &&
             ((This1)g_profile->method_distance)(role,resolved.method)<=96))) opcode=11;

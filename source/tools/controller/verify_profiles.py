@@ -69,7 +69,7 @@ def verify_baselines(data):
         assert end_call.hex()==profile['end_call_bytes'] and end_call[0]==0xe8
         assert profile['addresses']['end_call']+5+struct.unpack_from('<i',end_call,1)[0]==profile['addresses']['end_record']
         # 新CALL包装也必须解码回真实目标；只验证函数头不能证明调用点选对。
-        for call_key,callee_key in [('right_icon_call','icon_draw'),('dodge_init_call','dodge_init'),('dodge_motion_call','dodge_motion'),('inspect_hover_call','inspect_hover'),('cursor_sprite_call1','cursor_sprite_draw'),('cursor_sprite_call2','cursor_sprite_draw')]:
+        for call_key,callee_key in [('right_icon_call','icon_draw'),('dodge_init_call','dodge_init'),('dodge_motion_call','dodge_motion'),('inspect_hover_call','inspect_hover'),('menu_talk_picker_call','menu_talk_picker'),('cursor_sprite_call1','cursor_sprite_draw'),('cursor_sprite_call2','cursor_sprite_draw')]:
             call=pe.read(profile['addresses'][call_key],5)
             assert call[0]==0xE8 and profile['addresses'][call_key]+5+struct.unpack_from('<i',call,1)[0]==profile['addresses'][callee_key]
         assert struct.unpack('<I',pe.read(profile['addresses']['menu_system_vtable']+0x24,4))[0]==profile['addresses']['menu_system_primary']
@@ -79,7 +79,7 @@ def verify_baselines(data):
         assert struct.unpack('<I',pe.read(profile['addresses']['menu_load_vtable']+0x24,4))[0]==profile['addresses']['menu_load_primary']
         assert struct.unpack('<I',pe.read(profile['addresses']['menu_message_vtable']+0x24,4))[0]==profile['addresses']['menu_message_primary']
         # 菜单只占Tick/Show/hover，Draw槽属于DisplayFix，不能以整张虚表签名拒绝合法绘制包装。
-        for kind in ('title','system','confirm','load','message'):
+        for kind in ('title','system','confirm','load','message','talk','text'):
             table=profile['addresses'][f'menu_{kind}_vtable']
             for operation,slot in (('tick',4),('show',0x1C),('hover',0x30)):
                 expected=profile['addresses'][f'menu_{kind}_{operation}']

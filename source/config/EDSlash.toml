@@ -75,6 +75,10 @@ recovery_mode = "guard"
 # 实伤恢复百分比：按最大体力百分比计算，0表示没有单次变化，最多两位小数。
 recovery_percent = 0.00
 
+[controller.interaction]
+# 正面调查最大距离：世界单位，64=1格；范围16～480，默认160，按距离裁剪90度扇区；不改变原互动资格。
+max_distance = 160
+
 [controller.bindings]
 # game跟随原游戏当前角色快捷绑定；自定义技能按游戏、角色、槽位分别保存。
 default = "game"

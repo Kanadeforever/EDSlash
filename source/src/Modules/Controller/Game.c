@@ -142,15 +142,17 @@ static void *choose_target_impl(void *me)
         if (!Memory_Readable(candidate, g_profile->invalid_offset + 4)) break;
         ++scan_count;
         void *next = ReadPtr(candidate, 8);
-        bool valid=enemy(me,candidate);
-        if (valid) {
-            ++eligible_count;
+        /* 距离/方向无资格的对象不应先调用模板和关系查询；选择结果与原规则相同。 */
+        bool nearby=Read32(candidate,0x67)==0x28;
+        if (nearby) {
             float dx = (float)(int)Read32(candidate,0x2C) - (int)Read32(me,0x2C);
             float dy = (float)(int)Read32(candidate,0x30) - (int)Read32(me,0x30);
             float distance = dx*dx + dy*dy;
             float dot = dx*fx + dy*fy;
             /* 有明确方向时排除身后目标；无方向按距离选，不把远处 NPC 当成最近的目标。 */
-            if ((!direction || dot >= 0) && distance < best_score) { best = candidate; best_score = distance; }
+            if ((!direction || dot >= 0) && distance < best_score && enemy(me,candidate)) {
+                ++eligible_count;best=candidate;best_score=distance;
+            }
         }
         if (next == candidate) break;
         candidate = next;

@@ -37,7 +37,9 @@ static const ConfigDescriptor fields[CONFIG_COUNT]={
     {CONFIG_GUARD_MODE,"gameplay.stamina","guard_mode","防御消耗模式","original原角色值，percent自定百分比。",CONFIG_CHOICE,0,0,1,1,NULL,"original|percent",CONFIG_APPLY_FRAME},
     P(CONFIG_GUARD_PERCENT,"guard_percent","防御扣费百分比"),
     {CONFIG_RECOVERY_MODE,"gameplay.stamina","recovery_mode","攻击恢复模式","guard跟随防御消耗，percent自定百分比。",CONFIG_CHOICE,0,0,1,1,NULL,"guard|percent",CONFIG_APPLY_FRAME},
-    P(CONFIG_RECOVERY_PERCENT,"recovery_percent","实伤恢复百分比")
+    P(CONFIG_RECOVERY_PERCENT,"recovery_percent","实伤恢复百分比"),
+    N(CONFIG_INSPECT_DISTANCE,"controller.interaction","max_distance","正面调查最大距离",
+      "世界单位，64=1格；范围16～480，默认160，按距离裁剪90度扇区；不改变原互动资格。",160,16,480,16,CONFIG_APPLY_FRAME)
 };
 #undef B
 #undef N

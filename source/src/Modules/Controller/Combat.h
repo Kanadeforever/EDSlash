@@ -20,6 +20,7 @@ typedef enum { ACTION_LEFT,ACTION_COMBO,ACTION_SKILL,ACTION_THROW,ACTION_ULTIMAT
 /* 快捷请求直接携带选择和来源，不修改右手装备或伪造 Y/鼠标按键。 */
 void Combat_Request(int selection,ActionSource source,bool left_style);
 void Combat_SelectCombo(unsigned index);
+void Combat_RequestPoint(int selection,const WorldPoint *point);
 
 bool Skill_Resolve(void *role,int selection,const WorldPoint *point,const ActionHistory *history,ResolvedSkill *out);
 void Combat_Reset(void);
