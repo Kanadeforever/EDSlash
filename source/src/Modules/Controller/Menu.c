@@ -11,10 +11,13 @@ typedef struct {
     int direction;
     uint32_t next_repeat;
     bool barrier,owned;
+    /* 0=下方可选技能，1=上方已编排连招；区域由业务类型识别，不按屏幕猜测。 */
+    unsigned skill_region;
 } MenuState;
 static MenuState state;
 static bool installed,frame_captured;
-static uintptr_t tables[7],original[7][3];
+enum { MENU_KINDS=9, QUEST_KIND=7, SKILL_KIND=8, COMBO_NODE_BASE=0x300 };
+static uintptr_t tables[MENU_KINDS],original[MENU_KINDS][3];
 static const unsigned offsets[3]={4,0x1C,0x30};
 
 static bool visible(void *object)
@@ -36,6 +39,8 @@ static int kind_of(void *root)
         Read32(owner,0x28)==0x94) return 4;
     if (table && table==g_profile->menu_talk_vtable) return 5;
     if (table && table==g_profile->menu_text_vtable) return 6;
+    if (table && table==g_profile->menu_quest_vtable && Read32(root,0x28)==0x63) return QUEST_KIND;
+    if (table && table==g_profile->menu_skill_vtable && Read32(root,0x28)==0x7D) return SKILL_KIND;
     return -1;
 }
 static bool page(void *object,void *hud)
@@ -88,6 +93,7 @@ static bool allowed(int kind,unsigned id)
 {
     if (kind==0) return (id>=0x1F && id<=0x23) || id==0xA7;
     if (kind==1) return id==0x2E || id==0x30 || id==0x31;
+    if (kind==SKILL_KIND) return (id>=0x7E && id<=0x93) || (id>=0xCF && id<=0xDA);
     return kind==2 && (id==0x9A || id==0x9B);
 }
 static unsigned buttons(void *root,int kind,MenuButton *out)
@@ -100,7 +106,10 @@ static unsigned buttons(void *root,int kind,MenuButton *out)
         if (kind==4 && id==0x2A && Read32(node,0xC4)<=1) id=0x200+Read32(node,0xC4);
         if (kind==5 && id==0x2A) id=Read32(node,0xC4);
         int width=(int)Read32(node,0x1C),height=(int)Read32(node,0x20);
-        if (count<64 && (kind==5 ? Read32(node,0x28)==0x2A && id!=0xFFFFFFFFu:kind==4 ? id==0x200 || id==0x201:allowed(kind,id)) && ReadPtr(node,0xA4)==root &&
+        bool skill_allowed=kind!=SKILL_KIND ||
+            (Read32(root,0xC0)==0x7F ? (id>=0x84 && id<=0x8F) || (id>=0xCF && id<=0xDA):
+             Read32(root,0xC0)==0x80 && !state.skill_region && id>=0x81 && id<=0x8F);
+        if (count<64 && skill_allowed && (kind==5 ? Read32(node,0x28)==0x2A && id!=0xFFFFFFFFu:kind==4 ? id==0x200 || id==0x201:allowed(kind,id)) && ReadPtr(node,0xA4)==root &&
             Read32(node,0x64) && width>0 && height>0) {
             out[count++]=(MenuButton){node,id,(int)Read32(node,0x14)+width/2.0,
                                            (int)Read32(node,0x18)+height/2.0};
@@ -109,7 +118,27 @@ static unsigned buttons(void *root,int kind,MenuButton *out)
         if (next==node) break;
         node=next;
     }
-    if (kind==5) {
+    if (kind==SKILL_KIND && state.skill_region && Read32(root,0xC0)==0x80 && Read32(root,0xC4)<4) {
+        /* 连招条没有独立GUI子对象。只读原列表，按原绘制的六列44×48间距生成导航点。
+         * 虚拟编号只存在插件里，绝不能把它当对象指针塞给游戏。 */
+        void *manager=ReadPtr((void *)g_profile->skill_global,0);
+        void *sequence=Memory_Readable(manager,0xC0) ?
+            (void *)(uintptr_t)((This1)g_profile->combo_get)(manager,(int)Read32(root,0xC4)):NULL;
+        unsigned total=Read32(sequence,0),capacity=Read32((void *)g_profile->menu_skill_combo_capacity,0);
+        void *resource=ReadPtr(root,0x50);
+        if (Memory_Readable(sequence,16) && capacity<=64 && total<=capacity && Memory_Readable(resource,12)) {
+            int x=(int)Read32(root,0x14)+((This2)g_profile->template_value)(resource,5,3);
+            int y=(int)Read32(root,0x18)+((This2)g_profile->template_value)(resource,6,3);
+            void *link=ReadPtr(sequence,4);
+            for (unsigned i=0;i<(total ? total:1) && count<64;++i) {
+                /* 空套组仍有可见的第一个位置作为区域提示，但不会当成可删除节点。 */
+                if (total && !Memory_Readable(link,12)) break;
+                out[count++]=(MenuButton){NULL,COMBO_NODE_BASE+i,x+(int)(i%6)*44+21.5,y+(int)(i/6)*48+23.5};
+                if (total) link=ReadPtr(link,0);
+            }
+        }
+    }
+    if (kind==5 || kind==SKILL_KIND) {
         /* 原子链从末尾倒走；按真实几何排序，默认最上方选项，不能误选最后一项。 */
         for (unsigned i=1;i<count;++i) {
             MenuButton value=out[i];unsigned j=i;
@@ -219,6 +248,59 @@ static void focus_sound(int kind)
     }
 }
 static void hide(void *root) { ((This2)(uintptr_t)Read32(ReadPtr(root,0),0x1C))(root,0,0); }
+static void *quest_list(void *root)
+{
+    void *list=(void *)(uintptr_t)((This1)g_profile->get_jm)((void *)g_profile->ui,0x66);
+    /* 原选择编排会遍历文本链。先核对原子对象、行高、条数及链节点，避免空表/损坏表。
+     * 此核对只在导航时进行，不把长列表扫描放入每帧悬停投影。 */
+    if (!Memory_Readable(list,0xFC) || ReadPtr(list,0xA4)!=root || !Read32(list,0x64) ||
+        !Read32(list,0xF0) || Read32(list,0xF0)>4096 || Read32(list,0xE0)>4096) return NULL;
+    unsigned total=Read32(list,0xE0);
+    if (!total) return NULL;
+    void *node=ReadPtr(list,0xE4);
+    for (unsigned i=0;i<total;++i) {
+        if (!Memory_Readable(node,12) || !Memory_Readable(ReadPtr(node,8),8)) return NULL;
+        void *next=ReadPtr(node,0);
+        if (next==node) return NULL;
+        node=next;
+    }
+    return list;
+}
+static void quest_update(void *root)
+{
+    if (state.barrier || !Read32(root,0x64)) return;
+    /* 返回先处理，A没有独立的“执行任务”业务，不制造一个确认动作。 */
+    if ((g_intent.pressed & KEY(PAD_B)) || g_intent.menu_toggle) {hide(root);state.barrier=true;return;}
+    bool left=(g_intent.pressed & KEY(PAD_LB))!=0,right=(g_intent.pressed & KEY(PAD_RB))!=0;
+    if (left!=right) {
+        unsigned current=Read32(root,0xC0);
+        if (current>=0x78 && current<=0x7B) {
+            unsigned target=0x78+((current-0x78+(left ? 3:1))%4);
+            /* 原分类helper会记住各分类位置、重建列表、更新文字和原选中外观。 */
+            ((This2)g_profile->menu_quest_switch)(root,(int)target,-1);
+            Log_Write("[日志菜单] 切换分类=%02X。",target);
+            state.direction=0;state.barrier=true;
+        }
+        return;
+    }
+    int dir=direction();
+    if (dir==1 || dir==2) {
+        if (dir!=state.direction || (int32_t)(g_input.now-state.next_repeat)>=0) {
+            void *list=quest_list(root);
+            if (list) {
+                int index=(int)Read32(list,0xF4),total=(int)Read32(list,0xE0);
+                index+=dir==1 ? -1:1;
+                if (index<0) index=0;
+                if (index>=total) index=total-1;
+                ((This1)g_profile->menu_quest_select)(root,index);
+                Log_Write("[日志菜单] 分类=%02lX 当前项=%lu。",(unsigned long)Read32(root,0xC0),
+                    (unsigned long)Read32(list,0xF4));
+            }
+            state.next_repeat=g_input.now+(dir==state.direction ? 110u:350u);
+        }
+        state.direction=dir;
+    } else state.direction=0;
+}
 static unsigned load_rows(void *root)
 {
     unsigned total=Read32(root,0xC0),start=Read32(root,0xD0);
@@ -290,6 +372,21 @@ bool Menu_CursorAnchor(POINT *point)
     if (!point || !owns() || !state.owned || !Read32(state.root,0x64)) return false;
     unsigned reason;if (Menu_Context(&reason)!=state.root) return false;
     int kind=kind_of(state.root);
+    if (kind==QUEST_KIND) {
+        /* 和原列表当前位置同源，坐标只用于画焦点标记，不会写真实鼠标。 */
+        void *list=(void *)(uintptr_t)((This1)g_profile->get_jm)((void *)g_profile->ui,0x66);
+        unsigned index=Read32(list,0xF4),total=Read32(list,0xE0),height=Read32(list,0xF0);
+        if (!Memory_Readable(list,0xFC) || ReadPtr(list,0xA4)!=state.root || !Read32(list,0x64) ||
+            !total || total>4096 || index>=total || !height || height>4096) return false;
+        /* 原position helper只是累加index次行高；用同样字段一次算出，避免每帧遍历长链。 */
+        int64_t bottom64=(int)Read32(list,0x18)+(int)Read32(list,0xDC)+(int64_t)(index+1)*height-6;
+        if (bottom64<INT32_MIN || bottom64>INT32_MAX) return false;
+        int bottom=(int)bottom64;
+        int limit=(int)Read32(list,0x18)+(int)Read32(list,0x20)-6;
+        point->x=(int)Read32(list,0x14)+(int)Read32(list,0x1C)-6;
+        point->y=bottom<limit ? bottom:limit;
+        return point->y>=(int)Read32(list,0x18);
+    }
     if (kind==6) {
         int w=(int)Read32(state.root,0xDC),h=(int)Read32(state.root,0xE0);
         if (w<=0 || h<=0) return false;
@@ -307,6 +404,9 @@ bool Menu_CursorAnchor(POINT *point)
     }
     MenuButton list[64];unsigned count=buttons(state.root,kind,list);
     for (unsigned i=0;i<count;++i) if (list[i].id==state.id) {
+        if (!list[i].object && kind==SKILL_KIND) {
+            point->x=(LONG)(list[i].x+21.5)-6;point->y=(LONG)(list[i].y+23.5)-6;return true;
+        }
         point->x=(LONG)Read32(list[i].object,0x14)+(LONG)Read32(list[i].object,0x1C)-6;
         point->y=(LONG)Read32(list[i].object,0x18)+(LONG)Read32(list[i].object,0x20)-6;
         return true;
@@ -350,14 +450,39 @@ void Menu_Update(void)
         return;
     }
     if (kind==3 && Read32(root,0x64)) { load_update(root);return; }
+    if (kind==QUEST_KIND) {quest_update(root);return;}
+    if (kind==SKILL_KIND && !state.barrier && !(g_intent.pressed & KEY(PAD_B)) && !g_intent.menu_toggle) {
+        bool left=(g_intent.pressed & KEY(PAD_LB))!=0,right=(g_intent.pressed & KEY(PAD_RB))!=0;
+        if (left!=right) {
+            ((This1)g_profile->menu_skill_switch)(root,left ? 0x7F:0x80);
+            Log_Write("[技能菜单] 切换到%s。",left ? "技能学习":"连招编辑");
+            state.skill_region=0;state.id=0;state.direction=0;state.barrier=true;return;
+        }
+        if (Read32(root,0xC0)==0x80) {
+            if (g_intent.pressed & KEY(PAD_X)) {
+                /* X只切换焦点区域，绝不调用原辅助删除。必须松开后才允许下一次确认。 */
+                state.skill_region^=1;state.id=0;state.direction=0;state.barrier=true;
+                Log_Write("[技能菜单] 焦点区域=%s。",state.skill_region ? "上方连招清单":"下方可选技能");
+                return;
+            }
+            if ((g_intent.pressed & KEY(PAD_Y)) && Read32(root,0xC4)<4) {
+                ((This1)g_profile->menu_skill_slot)(root,(int)((Read32(root,0xC4)+1)%4));
+                Log_Write("[技能菜单] 当前编辑套组=%lu。",(unsigned long)Read32(root,0xC4)+1);
+                state.id=0;state.direction=0;state.barrier=true;return;
+            }
+        }
+    }
     MenuButton list[64];unsigned count=kind>=0 ? buttons(root,kind,list):0;
     if (!count || !Read32(root,0x64)) return;
     unsigned selected=0;bool found=false;
     for (unsigned i=0;i<count;++i) if (list[i].id==state.id) {selected=i;found=true;break;}
     if (!found) {
         /* 默认项用业务ID而非鼠标位置，危险按钮不会因为光标停留而成为默认选择。 */
-        unsigned preferred=kind==0 ? 0x22:kind==1 ? 0x2E:kind==4 ? 0x200:0x9A;
+        unsigned preferred=kind==0 ? 0x22:kind==1 ? 0x2E:kind==4 ? 0x200:kind==SKILL_KIND ? 0x84:0x9A;
         for (unsigned i=0;i<count;++i) if (list[i].id==preferred) selected=i;
+        /* 上方连招编号代表位置：删除中间项后后继已经补到原位置；只有删末项才失效。
+         * 这时选新的末项，不走默认首项。空套组只有编号300的空位标记，仍可安全停留。 */
+        if (kind==SKILL_KIND && state.skill_region && state.id>=COMBO_NODE_BASE) selected=count-1;
         state.id=list[selected].id;focus_sound(kind);
     }
     project();
@@ -400,6 +525,19 @@ void Menu_Update(void)
         if (!recent && !delayed) {
             project();((This0)g_profile->menu_talk_select)(root);Menu_Suspend();
         } else Log_Write("[对话] 原显示保护期或外传输入冷却内，本次不提交。");
+    } else if (kind==SKILL_KIND) {
+        /* 原入口检查技能点/已学状态/连招容量；这里只提供独立焦点，不改技能或列表数据。 */
+        project();((This3)g_profile->menu_skill_primary)(root,0,0,NULL);
+        /* 原删除立即完成，所以本帧就校正焦点，不等下一帧重选而让图样短暂消失。
+         * 先复核该页还归手柄且未关闭；原回调若换页/取消拥有权，就不能再投影旧页。 */
+        if (state.root==root && owns() && Read32(root,0x64) && state.skill_region &&
+            Read32(root,0xC0)==0x80 && state.id>=COMBO_NODE_BASE) {
+            MenuButton remaining[64];unsigned total=buttons(root,SKILL_KIND,remaining);
+            bool retained=false;
+            for (unsigned i=0;i<total;++i) if (remaining[i].id==state.id) retained=true;
+            if (total && !retained) state.id=remaining[total-1].id;
+            project();
+        }
     } else if (kind==4) {
         project();((This3)g_profile->menu_message_primary)(root,0,0,NULL);
     } else if (kind==0) ((This1)g_profile->menu_title_activate)(root,(int)state.id);
@@ -457,9 +595,50 @@ MENU_WRAPPERS(3)
 MENU_WRAPPERS(4)
 MENU_WRAPPERS(5)
 MENU_WRAPPERS(6)
-static uintptr_t replacement[7][3];
+MENU_WRAPPERS(7)
+MENU_WRAPPERS(8)
+static uintptr_t replacement[MENU_KINDS][3];
 static BYTE saved_talk_picker[5];
 static bool picker_installed;
+static BYTE saved_skill_calls[3][5];
+static bool skill_calls_installed[3];
+static uintptr_t skill_call_address[3],skill_call_target[3],skill_call_hook[3];
+static int __attribute__((fastcall)) skill_base_hook(void *root,void *unused)
+{
+    (void)unused;
+    int result=((This0)g_profile->menu_message_base_tick)(root);
+    /* 原base更新可以清掉悬停；必须在原技能详情刷新之前重新投影手柄焦点。 */
+    if (owns() && state.root==root && kind_of(root)==SKILL_KIND) project();
+    return result;
+}
+static int __attribute__((fastcall)) combo_hit_hook(void *root,void *unused)
+{
+    (void)unused;
+    if (owns() && kind_of(root)==SKILL_KIND) {
+        MenuButton list[64];unsigned count=buttons(root,SKILL_KIND,list);
+        for (unsigned i=0;i<count;++i) if (state.root==root && list[i].id==state.id &&
+            list[i].id>=COMBO_NODE_BASE) {
+            void *manager=ReadPtr((void *)g_profile->skill_global,0);
+            void *sequence=Memory_Readable(manager,0xC0) ?
+                (void *)(uintptr_t)((This1)g_profile->combo_get)(manager,(int)Read32(root,0xC4)):NULL;
+            unsigned index=list[i].id-COMBO_NODE_BASE;
+            return index<Read32(sequence,0) ? (int)index:-1;
+        }
+        return -1;
+    }
+    /* 物理来源仍调用原GetCursorPos命中函数，不改变原鼠标编辑方式。 */
+    return ((This0)g_profile->menu_skill_combo_hit)(root);
+}
+static bool patch_menu_call(uintptr_t address,uintptr_t target,uintptr_t hook,BYTE *saved)
+{
+    if (!Memory_Readable((void *)address,5)) return false;
+    memcpy(saved,(void *)address,5);int32_t displacement;
+    memcpy(&displacement,saved+1,4);
+    if (saved[0]!=0xE8 || address+5+displacement!=target) return false;
+    BYTE bytes[5]={0xE8};displacement=(int32_t)(hook-address-5);
+    memcpy(bytes+1,&displacement,4);
+    return Memory_Patch((void *)address,bytes,5);
+}
 static int __attribute__((fastcall)) talk_picker_hook(void *root,void *unused)
 {
     (void)unused;
@@ -473,7 +652,7 @@ static int __attribute__((fastcall)) talk_picker_hook(void *root,void *unused)
 void Menu_Shutdown(void)
 {
     Menu_Suspend();
-    for (unsigned i=0;i<7;++i) for (unsigned j=0;j<3;++j) {
+    for (unsigned i=0;i<MENU_KINDS;++i) for (unsigned j=0;j<3;++j) {
         void *slot=(void *)(tables[i]+offsets[j]);
         /* 只恢复仍指向自己的槽；其它插件后来的改写不能被本模块覆盖。 */
         if (tables[i] && Read32(slot,0)==replacement[i][j])
@@ -485,6 +664,13 @@ void Menu_Shutdown(void)
         if (!memcmp((void *)g_profile->menu_talk_picker_call,bytes,5)) Memory_Patch((void *)g_profile->menu_talk_picker_call,saved_talk_picker,5);
         picker_installed=false;
     }
+    for (unsigned i=0;i<3;++i) if (skill_calls_installed[i]) {
+        BYTE bytes[5]={0xE8};int32_t rel=(int32_t)(skill_call_hook[i]-skill_call_address[i]-5);
+        memcpy(bytes+1,&rel,4);
+        if (Memory_Readable((void *)skill_call_address[i],5) && !memcmp((void *)skill_call_address[i],bytes,5))
+            Memory_Patch((void *)skill_call_address[i],saved_skill_calls[i],5);
+        skill_calls_installed[i]=false;
+    }
     installed=false;frame_captured=false;memset(&state,0,sizeof state);
 }
 bool Menu_Initialize(void)
@@ -493,24 +679,29 @@ bool Menu_Initialize(void)
     tables[0]=g_profile->menu_title_vtable;tables[1]=g_profile->menu_system_vtable;
     tables[2]=g_profile->menu_confirm_vtable;tables[3]=g_profile->menu_load_vtable;tables[4]=g_profile->menu_message_vtable;
     tables[5]=g_profile->menu_talk_vtable;tables[6]=g_profile->menu_text_vtable;
-    uintptr_t expected[7][3]={
+    tables[7]=g_profile->menu_quest_vtable;tables[8]=g_profile->menu_skill_vtable;
+    uintptr_t expected[MENU_KINDS][3]={
         {g_profile->menu_title_tick,g_profile->menu_title_show,g_profile->menu_title_hover},
         {g_profile->menu_system_tick,g_profile->menu_system_show,g_profile->menu_system_hover},
         {g_profile->menu_confirm_tick,g_profile->menu_confirm_show,g_profile->menu_confirm_hover},
         {g_profile->menu_load_tick,g_profile->menu_load_show,g_profile->menu_load_hover},
         {g_profile->menu_message_tick,g_profile->menu_message_show,g_profile->menu_message_hover},
         {g_profile->menu_talk_tick,g_profile->menu_talk_show,g_profile->menu_talk_hover},
-        {g_profile->menu_text_tick,g_profile->menu_text_show,g_profile->menu_text_hover}};
-    uintptr_t hooks[7][3]={{(uintptr_t)tick0,(uintptr_t)show0,(uintptr_t)hover0},
+        {g_profile->menu_text_tick,g_profile->menu_text_show,g_profile->menu_text_hover},
+        {g_profile->menu_quest_tick,g_profile->menu_quest_show,g_profile->menu_quest_hover},
+        {g_profile->menu_skill_tick,g_profile->menu_skill_show,g_profile->menu_skill_hover}};
+    uintptr_t hooks[MENU_KINDS][3]={{(uintptr_t)tick0,(uintptr_t)show0,(uintptr_t)hover0},
         {(uintptr_t)tick1,(uintptr_t)show1,(uintptr_t)hover1},
         {(uintptr_t)tick2,(uintptr_t)show2,(uintptr_t)hover2},
         {(uintptr_t)tick3,(uintptr_t)show3,(uintptr_t)hover3},
         {(uintptr_t)tick4,(uintptr_t)show4,(uintptr_t)hover4},
         {(uintptr_t)tick5,(uintptr_t)show5,(uintptr_t)hover5},
-        {(uintptr_t)tick6,(uintptr_t)show6,(uintptr_t)hover6}};
+        {(uintptr_t)tick6,(uintptr_t)show6,(uintptr_t)hover6},
+        {(uintptr_t)tick7,(uintptr_t)show7,(uintptr_t)hover7},
+        {(uintptr_t)tick8,(uintptr_t)show8,(uintptr_t)hover8}};
     memcpy(replacement,hooks,sizeof hooks);
     /* 全部槽先验证再写，拒绝被其它补丁替换的入口；不会占用DisplayFix的Draw/picker。 */
-    for (unsigned i=0;i<7;++i) for (unsigned j=0;j<3;++j) {
+    for (unsigned i=0;i<MENU_KINDS;++i) for (unsigned j=0;j<3;++j) {
         if (!tables[i] || !expected[i][j] || Read32((void *)tables[i],offsets[j])!=expected[i][j]) return false;
         original[i][j]=expected[i][j];
     }
@@ -519,9 +710,12 @@ bool Menu_Initialize(void)
         Read32((void *)tables[1],0x24)!=g_profile->menu_system_primary ||
         Read32((void *)tables[2],0x3C)!=g_profile->menu_confirm_submit ||
         !g_profile->menu_load_primary || Read32((void *)tables[3],0x24)!=g_profile->menu_load_primary ||
-        !g_profile->menu_message_primary || Read32((void *)tables[4],0x24)!=g_profile->menu_message_primary) return false;
+        !g_profile->menu_message_primary || Read32((void *)tables[4],0x24)!=g_profile->menu_message_primary ||
+        !g_profile->menu_quest_primary || Read32((void *)tables[7],0x24)!=g_profile->menu_quest_primary ||
+        !g_profile->menu_skill_primary || Read32((void *)tables[8],0x24)!=g_profile->menu_skill_primary ||
+        !g_profile->menu_skill_secondary || Read32((void *)tables[8],0x2C)!=g_profile->menu_skill_secondary) return false;
     if (!HookManager_Claim(SHARED_HOOK_CONTROLLER_MENU,RUNTIME_MODULE_CONTROLLER)) return false;
-    for (unsigned i=0;i<7;++i) for (unsigned j=0;j<3;++j) {
+    for (unsigned i=0;i<MENU_KINDS;++i) for (unsigned j=0;j<3;++j) {
         if (!Memory_Patch((void *)(tables[i]+offsets[j]),&replacement[i][j],4)) {
             Menu_Shutdown();Log_Write("[菜单][停止] 焦点入口安装失败，已撤回本批菜单槽。");return false;
         }
@@ -533,7 +727,17 @@ bool Menu_Initialize(void)
     BYTE picker_bytes[5]={0xE8};displacement=(int32_t)((uintptr_t)talk_picker_hook-g_profile->menu_talk_picker_call-5);
     memcpy(picker_bytes+1,&displacement,4);picker_installed=Memory_Patch((void *)g_profile->menu_talk_picker_call,picker_bytes,5);
     if (!picker_installed) {Menu_Shutdown();return false;}
+    skill_call_address[0]=g_profile->menu_skill_base_call;
+    skill_call_address[1]=g_profile->menu_skill_combo_call1;skill_call_address[2]=g_profile->menu_skill_combo_call2;
+    skill_call_target[0]=g_profile->menu_message_base_tick;
+    skill_call_target[1]=skill_call_target[2]=g_profile->menu_skill_combo_hit;
+    skill_call_hook[0]=(uintptr_t)skill_base_hook;
+    skill_call_hook[1]=skill_call_hook[2]=(uintptr_t)combo_hit_hook;
+    for (unsigned i=0;i<3;++i) {
+        skill_calls_installed[i]=patch_menu_call(skill_call_address[i],skill_call_target[i],skill_call_hook[i],saved_skill_calls[i]);
+        if (!skill_calls_installed[i]) {Menu_Shutdown();return false;}
+    }
     installed=true;state.barrier=true;
-    Log_Write("[菜单] 标题/读档/系统/资金确认取消原生入口已安装；十字键/左摇杆导航，A确认，B返回。");
+    Log_Write("[菜单] 标题/读档/系统/对话/日志/技能原生入口已安装；十字键/左摇杆导航，A操作，B返回，LB/RB切页。");
     return true;
 }

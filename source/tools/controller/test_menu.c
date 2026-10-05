@@ -8,9 +8,9 @@
 #include "Menu.h"
 #include "Cursor.h"
 
-static BYTE menu_roots[7][0x300],menu_children[7][6][0xE4],menu_sprites[7][6][4*32];
+static BYTE menu_roots[9][0x300],menu_children[9][6][0xE4],menu_sprites[9][6][4*32];
 static BYTE unknown_root[0xD0],menu_resource[16];
-static uintptr_t menu_tables[7][26];
+static uintptr_t menu_tables[9][26];
 static ControlState menu_control;
 static bool expansion_case,transition_after_action;
 static unsigned title_actions,system_actions,confirm_actions,native_hovers,tick_calls,animation_resets;
@@ -20,6 +20,14 @@ static unsigned focus_sounds,load_actions,cursor_draws,delete_requests,deleted_r
 static void *message_pointer;
 static BYTE talk_picker_code[8];
 static unsigned talk_selected,talk_cancelled,text_next_count,talk_delay;
+static BYTE skill_calls[3][8],quest_nodes[3][12],quest_records[3][8],quest_list_data[0x100];
+static BYTE combo_list_data[16],combo_nodes[18][12];
+static unsigned combo_methods[18];
+static bool reject_skill_learning;
+static bool reject_combo_delete;
+static unsigned combo_capacity=18,quest_switches,quest_selections,skill_actions,skill_details;
+static int combo_mouse_index=-1,skill_operation_index=-2;
+static int __attribute__((thiscall)) combo_mouse_hit(void *root) {CHECK(root==menu_roots[8]);return combo_mouse_index;}
 static int __attribute__((thiscall)) talk_picker(void *root) {CHECK(root==menu_roots[5]);return (int)(uintptr_t)menu_children[5][1];}
 static int __attribute__((thiscall)) talk_select(void *root) {CHECK(root==menu_roots[5]);talk_selected=Read32(ReadPtr(root,0xA8),0xC4);return 1;}
 static int __attribute__((thiscall)) talk_cancel(void *root,int e,int x,void *y) {CHECK(root==menu_roots[5] && !e && !x && !y);++talk_cancelled;Write32(root,0x64,0);ptr(ui_data,0x3C,NULL);return 1;}
@@ -36,7 +44,7 @@ bool Memory_Patch(void *target,const void *data,size_t bytes)
 
 static int root_kind(void *self)
 {
-    for (int i=0;i<7;++i) if (self==menu_roots[i]) return i;
+    for (int i=0;i<9;++i) if (self==menu_roots[i]) return i;
     CHECK(false);return -1;
 }
 static int __attribute__((thiscall)) menu_property(void *self,int field)
@@ -56,6 +64,11 @@ static int __attribute__((thiscall)) menu_show(void *self,int active,int mode)
 static int __attribute__((thiscall)) menu_tick(void *self)
 {
     int k=root_kind(self);++tick_calls;
+    if (k==8) {
+        ((This0)patched_callee((uintptr_t)skill_calls[0]))(self);
+        if (ReadPtr(self,0xA8)) ++skill_details;
+        return 7;
+    }
     /* 模拟原base Tick因鼠标离开根页而清悬停；生产wrapper必须重新投影自己的选择。 */
     ptr(self,0xA8,NULL);
     if (k==5) ptr(self,0xA8,(void *)(uintptr_t)((This0)patched_callee((uintptr_t)talk_picker_code))(self));
@@ -69,6 +82,55 @@ static int __attribute__((thiscall)) menu_tick(void *self)
         }
     }
     return 7;
+}
+static int __attribute__((thiscall)) skill_base_tick(void *self)
+{int k=root_kind(self);if (k==4) return menu_tick(self);CHECK(k==8);ptr(self,0xA8,NULL);return 7;}
+static int __attribute__((thiscall)) menu_get_jm(void *self,int id)
+{
+    CHECK(self==ui_data);
+    return id==0x66 ? (int)(uintptr_t)quest_list_data:0;
+}
+static int __attribute__((thiscall)) quest_switch(void *self,int id,int selection)
+{
+    CHECK(root_kind(self)==7 && id>=0x78 && id<=0x7B && selection==-1);
+    ++quest_switches;Write32(self,0xC0,id);Write32(quest_list_data,0xF4,0);return 1;
+}
+static int __attribute__((thiscall)) quest_select(void *self,int index)
+{
+    CHECK(root_kind(self)==7 && index>=0 && index<3);
+    ++quest_selections;Write32(quest_list_data,0xF4,index);
+    Write32(quest_list_data,0xDC,index>0 ? (unsigned)(-(index*20)):0);return 1;
+}
+static int __attribute__((thiscall)) skill_switch(void *self,int id)
+{CHECK(root_kind(self)==8 && (id==0x7F || id==0x80));Write32(self,0xC0,id);return 1;}
+static int __attribute__((thiscall)) skill_slot(void *self,int slot)
+{CHECK(root_kind(self)==8 && slot>=0 && slot<4);Write32(self,0xC4,slot);return 1;}
+static int __attribute__((thiscall)) skill_combo_get(void *self,int slot)
+{CHECK(self==hud_data && slot>=0 && slot<4);return (int)(uintptr_t)combo_list_data;}
+static int __attribute__((thiscall)) skill_primary(void *self,int e,int x,void *y)
+{
+    CHECK(root_kind(self)==8 && !e && !x && !y);
+    ++skill_actions;skill_operation_index=((This0)patched_callee((uintptr_t)skill_calls[1]))(self);
+    selected_action=Read32(ReadPtr(self,0xA8),0x28);
+    /* 此替身代表游戏业务：上方清单以位置删除（同招式也不混淆），下方技能点击则追加。
+     * 插件生产代码没有这些数组写入；用业务结果验证它送来的焦点与参数。 */
+    if (Read32(self,0xC0)==0x80) {
+        unsigned total=Read32(combo_list_data,0);
+        if (skill_operation_index>=0 && (unsigned)skill_operation_index<total) {
+            if (reject_combo_delete) return 0;
+            for (unsigned i=(unsigned)skill_operation_index;i+1<total;++i) combo_methods[i]=combo_methods[i+1];
+            Write32(combo_list_data,0,total-1);
+        } else if ((selected_action==0x84 || selected_action==0x85) && total<18) {
+            combo_methods[total]=selected_action==0x84 ? 1001:1002;
+            Write32(combo_list_data,0,total+1);
+        }
+    } else if (reject_skill_learning) return 0;
+    return 1;
+}
+static int __attribute__((thiscall)) skill_secondary(void *self,int e,int x,void *y)
+{
+    CHECK(root_kind(self)==8 && !e && !x && !y);
+    skill_operation_index=((This0)patched_callee((uintptr_t)skill_calls[2]))(self);return 1;
 }
 static int __attribute__((thiscall)) menu_hover(void *self,int e,int x,void *y)
 {
@@ -136,7 +198,7 @@ static int __attribute__((thiscall)) load_submit(void *self,int slot)
 static int __attribute__((thiscall)) menu_template(void *self,int index,int mode)
 {
     if (self!=menu_resource) return native_template(self,index,mode);
-    CHECK(mode==1 && index>=5 && index<=8);static const int rect[]={40,60,300,50};return rect[index-5];
+    CHECK((mode==1 || mode==3) && index>=5 && index<=8);static const int rect[]={40,60,300,50};return rect[index-5];
 }
 static int __attribute__((thiscall)) message_lookup(void *table,int id,int language)
 { CHECK(table==(void *)0x345 && id==0x13D && language==1);return (int)(uintptr_t)"原删除提示"; }
@@ -171,7 +233,7 @@ static void cursor_fixture(Profile *profile)
 }
 static void activate_page(unsigned kind)
 {
-    for (unsigned k=0;k<7;++k) if (k!=kind) Write32(menu_roots[k],0x64,0);
+    for (unsigned k=0;k<9;++k) if (k!=kind) Write32(menu_roots[k],0x64,0);
     Write32(unknown_root,0x64,0);
     ((This2)menu_tables[kind][0x1C/4])(menu_roots[kind],1,0);
 }
@@ -198,12 +260,13 @@ static void menu_fixture(Profile *profile,bool expansion)
     memset(&menu_control,0,sizeof menu_control);pending_ticks=0;
     title_actions=system_actions=confirm_actions=native_hovers=tick_calls=animation_resets=0;
     transition_after_action=false;selected_action=0;
-    static const unsigned ids[7][6]={{0x1F,0x20,0x21,0x22,0x23,0xA7},
-        {0x2E,0x30,0x31,0x2F,0,0},{0x9A,0x9B,0x99,0,0,0},{0x97,0x96,0xA2,0xA3,0,0},{0x2A,0x2A,0x2A,0,0,0},{0x2A,0x2A,0x2A,0,0,0},{0,0,0,0,0,0}};
-    for (unsigned k=0;k<7;++k) {
+    static const unsigned ids[9][6]={{0x1F,0x20,0x21,0x22,0x23,0xA7},
+        {0x2E,0x30,0x31,0x2F,0,0},{0x9A,0x9B,0x99,0,0,0},{0x97,0x96,0xA2,0xA3,0,0},{0x2A,0x2A,0x2A,0,0,0},{0x2A,0x2A,0x2A,0,0,0},{0,0,0,0,0,0},
+        {0x78,0x79,0x7A,0x7B,0x7C,0},{0x84,0x85,0x7E,0x7F,0x80,0x90}};
+    for (unsigned k=0;k<9;++k) {
         ptr(menu_roots[k],0,menu_tables[k]);ptr(menu_roots[k],0x50,menu_resource);
-        Write32(menu_roots[k],0x28,k==0 ? 0x19:k==1 ? 0x2D:k==2 ? 0x98:k==3 ? 0x94:k==4 ? 0x29:k==5 ? 0x28:0x2C);
-        ptr(menu_roots[k],0x0C,k<6 ? menu_roots[k+1]:NULL);
+        Write32(menu_roots[k],0x28,k==0 ? 0x19:k==1 ? 0x2D:k==2 ? 0x98:k==3 ? 0x94:k==4 ? 0x29:k==5 ? 0x28:k==6 ? 0x2C:k==7 ? 0x63:0x7D);
+        ptr(menu_roots[k],0x0C,k<8 ? menu_roots[k+1]:NULL);
         ptr(menu_roots[k],0x9C,menu_children[k][0]);
         menu_tables[k][1]=(uintptr_t)menu_tick;menu_tables[k][0x1C/4]=(uintptr_t)menu_show;
         menu_tables[k][0x30/4]=(uintptr_t)menu_hover;
@@ -213,6 +276,8 @@ static void menu_fixture(Profile *profile,bool expansion)
             ptr(c,8,j<5 ? menu_children[k][j+1]:NULL);
             Write32(c,0x28,ids[k][j]);Write32(c,0x64,ids[k][j]!=0);
             Write32(c,0x14,(k==2 || k==4) ? j*100:100);Write32(c,0x18,(k==2 || k==4) ? 200:j*50+50);
+            /* 技能页的可选技能位于下方；上方连招位置另按原六列几何生成。 */
+            if (k==8) Write32(c,0x18,200+j*50);
             Write32(c,0x1C,80);Write32(c,0x20,30);Write32(c,0x44,4);ptr(c,0x48,menu_sprites[k][j]);
             Write32(c,0xC8,42);
             if (k==4) Write32(c,0xC4,j<2 ? j:(unsigned)-1);
@@ -233,6 +298,34 @@ static void menu_fixture(Profile *profile,bool expansion)
     profile->menu_message_tick=(uintptr_t)menu_tick;profile->menu_message_show=(uintptr_t)menu_show;
     profile->menu_message_hover=(uintptr_t)menu_hover;profile->menu_message_primary=(uintptr_t)message_primary;
     profile->menu_message_base_tick=(uintptr_t)menu_tick;menu_tables[4][0x24/4]=(uintptr_t)message_primary;
+    /* 技能原Tick的base调用和两个连招鼠标查询在fixture中也真实经过CALL包装。 */
+    profile->menu_message_base_tick=(uintptr_t)skill_base_tick;
+    make_call(skill_calls[0],(uintptr_t)skill_base_tick);
+    make_call(skill_calls[1],(uintptr_t)combo_mouse_hit);make_call(skill_calls[2],(uintptr_t)combo_mouse_hit);
+    profile->menu_skill_base_call=(uintptr_t)skill_calls[0];profile->menu_skill_combo_hit=(uintptr_t)combo_mouse_hit;
+    profile->menu_skill_combo_call1=(uintptr_t)skill_calls[1];profile->menu_skill_combo_call2=(uintptr_t)skill_calls[2];
+    profile->menu_quest_vtable=(uintptr_t)menu_tables[7];profile->menu_skill_vtable=(uintptr_t)menu_tables[8];
+    profile->menu_quest_tick=profile->menu_skill_tick=(uintptr_t)menu_tick;
+    profile->menu_quest_show=profile->menu_skill_show=(uintptr_t)menu_show;
+    profile->menu_quest_hover=profile->menu_skill_hover=(uintptr_t)menu_hover;
+    profile->menu_quest_primary=(uintptr_t)menu_primary;
+    profile->menu_quest_switch=(uintptr_t)quest_switch;profile->menu_quest_select=(uintptr_t)quest_select;
+    profile->menu_skill_primary=(uintptr_t)skill_primary;profile->menu_skill_secondary=(uintptr_t)skill_secondary;
+    profile->menu_skill_switch=(uintptr_t)skill_switch;profile->menu_skill_slot=(uintptr_t)skill_slot;
+    menu_tables[8][0x24/4]=(uintptr_t)skill_primary;menu_tables[8][0x2C/4]=(uintptr_t)skill_secondary;
+    profile->get_jm=(uintptr_t)menu_get_jm;profile->combo_get=(uintptr_t)skill_combo_get;
+    profile->menu_skill_combo_capacity=(uintptr_t)&combo_capacity;
+    Write32(menu_roots[7],0xC0,0x78);Write32(menu_roots[8],0xC0,0x7F);
+    memset(quest_list_data,0,sizeof quest_list_data);ptr(quest_list_data,0xA4,menu_roots[7]);
+    Write32(quest_list_data,0x64,1);Write32(quest_list_data,0xE0,3);Write32(quest_list_data,0xF0,20);
+    Write32(quest_list_data,0x14,10);Write32(quest_list_data,0x18,20);Write32(quest_list_data,0x1C,200);Write32(quest_list_data,0x20,40);
+    ptr(quest_list_data,0xE4,quest_nodes[0]);Write32(combo_list_data,0,3);ptr(combo_list_data,4,combo_nodes[0]);
+    for (unsigned i=0;i<3;++i) {
+        ptr(quest_nodes[i],0,i<2 ? quest_nodes[i+1]:NULL);ptr(quest_nodes[i],8,quest_records[i]);
+    }
+    for (unsigned i=0;i<18;++i) ptr(combo_nodes[i],0,i<17 ? combo_nodes[i+1]:NULL);
+    combo_methods[0]=combo_methods[1]=1001;combo_methods[2]=1002;reject_skill_learning=false;reject_combo_delete=false;
+    quest_switches=quest_selections=skill_actions=skill_details=0;combo_mouse_index=-1;skill_operation_index=-2;
     delete_requests=deleted_records=0;
     profile->menu_talk_vtable=(uintptr_t)menu_tables[5];profile->menu_text_vtable=(uintptr_t)menu_tables[6];
     profile->menu_talk_tick=profile->menu_text_tick=(uintptr_t)menu_tick;
@@ -250,7 +343,7 @@ static void menu_fixture(Profile *profile,bool expansion)
     profile->template_value=(uintptr_t)menu_template;focus_sounds=load_actions=0;
     profile->menu_title_activate=(uintptr_t)menu_activate;profile->menu_texture=(uintptr_t)menu_texture;
     profile->menu_animation_reset=(uintptr_t)menu_animation_reset;profile->ui_property=(uintptr_t)menu_property;
-    ptr(ui_data,0x18,menu_roots[0]);ptr(ui_data,0x1C,menu_roots[6]);ptr(ui_data,0x20,(void *)0x12345678);
+    ptr(ui_data,0x18,menu_roots[0]);ptr(ui_data,0x1C,menu_roots[8]);ptr(ui_data,0x20,(void *)0x12345678);
     ptr(unknown_root,0x50,menu_resource);Write32(unknown_root,0x28,0xAA);
     Write32(menu_roots[3],0xC0,6);ptr(menu_roots[3],0xC4,load_nodes[0]);
     for (unsigned i=0;i<6;++i) {
@@ -371,8 +464,57 @@ static void menu_regression(bool expansion)
     menu_step(0,0,0);before_scroll=(int)Read32(menu_roots[6],0xF4);
     ((This0)menu_tables[6][1])(menu_roots[6]);CHECK((int)Read32(menu_roots[6],0xF4)==before_scroll-1);
     menu_step(KEY(PAD_B),0,0);CHECK(text_next_count==1);
+    /* 日志使用原列表编排而非伪造方向键，分类切换不泄漏世界药品/投掷快捷键。 */
+    activate_page(7);neutral_menu();CHECK(Menu_CursorAnchor(&anchor));CHECK(anchor.y==34);
+    menu_step(KEY(PAD_DOWN),0,0);CHECK(Read32(quest_list_data,0xF4)==1 && quest_selections==1);
+    CHECK(Menu_CursorAnchor(&anchor) && anchor.y==34);
+    for (unsigned i=0;i<5;++i) menu_step(KEY(PAD_DOWN),0,0);
+    CHECK(quest_selections==1);g_input.now+=400;menu_step(KEY(PAD_DOWN),0,0);
+    CHECK(Read32(quest_list_data,0xF4)==2 && quest_selections==2);
+    neutral_menu();menu_step(KEY(PAD_RB),0,0);CHECK(Read32(menu_roots[7],0xC0)==0x79 && quest_switches==1);
+    for (unsigned i=0;i<5;++i) menu_step(KEY(PAD_RB),0,0);
+    CHECK(quest_switches==1);game_isolated();
+    neutral_menu();menu_step(KEY(PAD_LB),0,0);CHECK(Read32(menu_roots[7],0xC0)==0x78);
+    neutral_menu();menu_step(KEY(PAD_LB),0,0);CHECK(Read32(menu_roots[7],0xC0)==0x7B);
+    neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(quest_switches==3 && quest_selections==2);
+    Write32(quest_list_data,0xE0,0);CHECK(!Menu_CursorAnchor(&anchor));
+    neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(quest_selections==2);
+    neutral_menu();menu_step(KEY(PAD_B),0,0);CHECK(!Read32(menu_roots[7],0x64));
+    /* 技能学习焦点经过原base Tick后仍在，详情不会受物理鼠标悬停清空。 */
+    activate_page(8);neutral_menu();CHECK(focus_id(8)==0x84);
+    CHECK(Menu_CursorAnchor(&anchor) && anchor.y==224);
+    ((This0)menu_tables[8][1])(menu_roots[8]);CHECK(focus_id(8)==0x84 && skill_details==1);
+    menu_step(KEY(PAD_DOWN),0,0);CHECK(focus_id(8)==0x85);
+    neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(skill_actions==1 && selected_action==0x85);
+    neutral_menu();menu_step(KEY(PAD_RB),0,0);CHECK(Read32(menu_roots[8],0xC0)==0x80);
+    neutral_menu();CHECK(focus_id(8)==0x84);
+    /* X只切上下区域，完全不发删除；连招条是原六列布局，A带自己的节点序号。 */
+    menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(ReadPtr(menu_roots[8],0xA8)==NULL);
+    CHECK(skill_actions==1 && skill_operation_index==-1);CHECK(Menu_CursorAnchor(&anchor));
+    CHECK(anchor.x==77 && anchor.y==101);
+    menu_step(KEY(PAD_RIGHT),0,0);CHECK(Menu_CursorAnchor(&anchor) && anchor.x==121);
+    Write32(combo_list_data,0,12);neutral_menu();menu_step(KEY(PAD_DOWN),0,0);
+    CHECK(Menu_CursorAnchor(&anchor) && anchor.x==121 && anchor.y==149);
+    neutral_menu();menu_step(KEY(PAD_UP),0,0);CHECK(Menu_CursorAnchor(&anchor) && anchor.y==101);
+    Write32(combo_list_data,0,3);
+    combo_mouse_index=2;neutral_menu();menu_step(KEY(PAD_A),0,0);
+    CHECK(skill_actions==2 && skill_operation_index==1);game_isolated();
+    CHECK(Read32(combo_list_data,0)==2 && combo_methods[0]==1001 && combo_methods[1]==1002);
+    for (unsigned i=0;i<5;++i) menu_step(KEY(PAD_A),0,0);
+    CHECK(skill_actions==2);
+    for (unsigned i=0;i<4;++i) {neutral_menu();menu_step(KEY(PAD_Y),0,0);CHECK(Read32(menu_roots[8],0xC4)==(i+1)%4);}
+    neutral_menu();menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(focus_id(8)==0x84);
+    menu_step(KEY(PAD_A),0,0);CHECK(skill_actions==3 && skill_operation_index==-1 && selected_action==0x84);
+    CHECK(Read32(combo_list_data,0)==3 && combo_methods[2]==1001);
+    neutral_menu();menu_step(KEY(PAD_X),0,0);neutral_menu();Write32(combo_list_data,0,0);
+    CHECK(Menu_CursorAnchor(&anchor));menu_step(KEY(PAD_A),0,0);CHECK(skill_operation_index==-1);
+    /* 真实鼠标接管后，原命中函数恢复自己的鼠标节点；手柄没有改写全局鼠标。 */
+    Menu_Suspend();g_intent.layer=LAYER_NATIVE;
+    CHECK(((This0)patched_callee((uintptr_t)skill_calls[1]))(menu_roots[8])==2);
+    neutral_menu();menu_step(KEY(PAD_LB),0,0);CHECK(Read32(menu_roots[8],0xC0)==0x7F);
+    neutral_menu();menu_step(KEY(PAD_B)|KEY(PAD_RB),0,0);CHECK(!Read32(menu_roots[8],0x64) && Read32(menu_roots[8],0xC0)==0x7F);
     /* 未实现页面保留B/方向旧键盘能力，仍绝不注入Enter或直接猜+3C。 */
-    for (unsigned k=0;k<7;++k) Write32(menu_roots[k],0x64,0);
+    for (unsigned k=0;k<9;++k) Write32(menu_roots[k],0x64,0);
     Write32(unknown_root,0x64,1);ptr(ui_data,0x18,unknown_root);ptr(ui_data,0x1C,unknown_root);
     neutral_menu();menu_step(KEY(PAD_B)|KEY(PAD_A),0,0);
     BYTE keys[256]={0};Game_Keyboard(keys);CHECK(keys[VK_ESCAPE]==0x80 && keys[VK_RETURN]==0);
@@ -383,13 +525,13 @@ static void menu_regression(bool expansion)
     CHECK(((Draw)patched_callee((uintptr_t)(cursor_code+8)))(menu_sprites[0][0],(void *)0x246,37,49,0,-1,0)==6);
     Cursor_Shutdown();CHECK(cursor_code[0]==0xFF && cursor_code[1]==0x15);
     Menu_Shutdown();
-    for (unsigned k=0;k<7;++k) CHECK(menu_tables[k][1]==(uintptr_t)menu_tick && menu_tables[k][0x30/4]==(uintptr_t)menu_hover);
+    for (unsigned k=0;k<9;++k) CHECK(menu_tables[k][1]==(uintptr_t)menu_tick && menu_tables[k][0x30/4]==(uintptr_t)menu_hover);
     HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
     CHECK(!Menu_BlocksGameplay());
     /* 每个入口写失败都回滚，不能留下半套Tick/Show/hover。所有原槽先核对再允许重试。 */
-    for (unsigned fail=1;fail<=22;++fail) {
+    for (unsigned fail=1;fail<=31;++fail) {
         patch_attempt=0;patch_fail_at=fail;CHECK(!Menu_Initialize());
-        for (unsigned k=0;k<7;++k) {
+        for (unsigned k=0;k<9;++k) {
             CHECK(menu_tables[k][1]==(uintptr_t)menu_tick);
             CHECK(menu_tables[k][0x1C/4]==(uintptr_t)menu_show);
             CHECK(menu_tables[k][0x30/4]==(uintptr_t)menu_hover);
@@ -406,9 +548,56 @@ static void menu_regression(bool expansion)
     CHECK(menu_tables[2][0x30/4]==(uintptr_t)0x23456789);
     HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
 }
+static void combo_select_position(unsigned index)
+{
+    /* 通过真实导航回到首格，再定位测试位置；不直接改插件内部焦点来绕过行为验证。 */
+    for (unsigned i=0;i<3;++i) {neutral_menu();menu_step(KEY(PAD_UP),0,0);}
+    for (unsigned i=0;i<6;++i) {neutral_menu();menu_step(KEY(PAD_LEFT),0,0);}
+    for (unsigned i=0;i<index%6;++i) {neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);}
+    for (unsigned i=0;i<index/6;++i) {neutral_menu();menu_step(KEY(PAD_DOWN),0,0);}
+    neutral_menu();
+}
+static void combo_check_anchor(unsigned index)
+{
+    POINT anchor;CHECK(Menu_CursorAnchor(&anchor));
+    CHECK(anchor.x==77+(LONG)(index%6)*44 && anchor.y==101+(LONG)(index/6)*48);
+}
+static void combo_delete_regression(bool expansion)
+{
+    Profile profile;menu_fixture(&profile,expansion);
+    activate_page(8);neutral_menu();menu_step(KEY(PAD_RB),0,0);neutral_menu();
+    menu_step(KEY(PAD_X),0,0);neutral_menu();Write32(combo_list_data,0,18);
+    for (unsigned i=0;i<18;++i) combo_methods[i]=1000+i;
+    combo_select_position(17);combo_check_anchor(17);
+    reject_combo_delete=true;menu_step(KEY(PAD_A),0,0);
+    CHECK(Read32(combo_list_data,0)==18);combo_check_anchor(17);
+    reject_combo_delete=false;neutral_menu();
+    menu_step(KEY(PAD_A),0,0);CHECK(Read32(combo_list_data,0)==17);
+    /* 原调用返回的同一帧就位于新末项；不能等下一帧才回退或跳首格。 */
+    combo_check_anchor(16);CHECK(combo_methods[16]==1016);
+    unsigned actions=skill_actions;
+    for (unsigned i=0;i<6;++i) menu_step(KEY(PAD_A),0,0);
+    CHECK(skill_actions==actions && Read32(combo_list_data,0)==17);
+    neutral_menu();menu_step(KEY(PAD_A),0,0);combo_check_anchor(15);
+    CHECK(Read32(combo_list_data,0)==16);
+    combo_select_position(7);menu_step(KEY(PAD_A),0,0);combo_check_anchor(7);
+    CHECK(Read32(combo_list_data,0)==15 && combo_methods[7]==1008);
+    combo_select_position(0);menu_step(KEY(PAD_A),0,0);combo_check_anchor(0);
+    CHECK(combo_methods[0]==1001 && Read32(combo_list_data,0)==14);
+    /* 六列换行边界：第二行首项被删后仍取补位项；删首行末项后停在新末项。 */
+    Write32(combo_list_data,0,7);combo_select_position(6);menu_step(KEY(PAD_A),0,0);
+    CHECK(Read32(combo_list_data,0)==6);combo_check_anchor(5);
+    neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(Read32(combo_list_data,0)==5);combo_check_anchor(4);
+    Write32(combo_list_data,0,1);combo_select_position(0);menu_step(KEY(PAD_A),0,0);
+    CHECK(Read32(combo_list_data,0)==0);combo_check_anchor(0);
+    actions=skill_actions;neutral_menu();menu_step(KEY(PAD_A),0,0);
+    CHECK(skill_operation_index==-1 && Read32(combo_list_data,0)==0 && skill_actions==actions+1);
+    game_isolated();Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
+}
 int main(void)
 {
     menu_regression(false);menu_regression(true);
+    combo_delete_regression(false);combo_delete_regression(true);
     printf("两作菜单原生虚表、焦点、动画与输入隔离回放通过：%u项\n",checks);
     return 0;
 }

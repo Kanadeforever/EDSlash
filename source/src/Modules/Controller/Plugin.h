@@ -54,6 +54,13 @@ typedef struct {
     uintptr_t menu_talk_vtable,menu_talk_tick,menu_talk_show,menu_talk_hover,menu_talk_select,menu_talk_cancel;
     uintptr_t menu_text_vtable,menu_text_tick,menu_text_show,menu_text_hover,menu_text_next;
     uintptr_t menu_talk_picker_call,menu_talk_picker,menu_talk_delay_global;
+    /* 日志分类和技能页分开调用原业务，不能以通用鼠标点击代替。 */
+    uintptr_t menu_quest_vtable,menu_quest_tick,menu_quest_show,menu_quest_hover;
+    uintptr_t menu_quest_primary,menu_quest_switch,menu_quest_select,menu_quest_position;
+    uintptr_t menu_skill_vtable,menu_skill_tick,menu_skill_show,menu_skill_hover;
+    uintptr_t menu_skill_primary,menu_skill_secondary,menu_skill_switch,menu_skill_slot;
+    uintptr_t menu_skill_base_call,menu_skill_combo_hit,menu_skill_combo_call1,menu_skill_combo_call2;
+    uintptr_t menu_skill_combo_capacity;
     unsigned inspect_ready_offset;
     unsigned dodge_counter_offset;
     unsigned stamina_offset;

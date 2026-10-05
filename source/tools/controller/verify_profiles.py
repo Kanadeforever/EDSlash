@@ -79,11 +79,18 @@ def verify_baselines(data):
         assert struct.unpack('<I',pe.read(profile['addresses']['menu_load_vtable']+0x24,4))[0]==profile['addresses']['menu_load_primary']
         assert struct.unpack('<I',pe.read(profile['addresses']['menu_message_vtable']+0x24,4))[0]==profile['addresses']['menu_message_primary']
         # 菜单只占Tick/Show/hover，Draw槽属于DisplayFix，不能以整张虚表签名拒绝合法绘制包装。
-        for kind in ('title','system','confirm','load','message','talk','text'):
+        for kind in ('title','system','confirm','load','message','talk','text','quest','skill'):
             table=profile['addresses'][f'menu_{kind}_vtable']
             for operation,slot in (('tick',4),('show',0x1C),('hover',0x30)):
                 expected=profile['addresses'][f'menu_{kind}_{operation}']
                 assert struct.unpack('<I',pe.read(table+slot,4))[0]==expected,(kind,operation)
+        for call_key, target_key in [('menu_skill_base_call','menu_message_base_tick'),
+                                     ('menu_skill_combo_call1','menu_skill_combo_hit'),
+                                     ('menu_skill_combo_call2','menu_skill_combo_hit')]:
+            call=pe.read(profile['addresses'][call_key],5)
+            assert call[0]==0xE8 and profile['addresses'][call_key]+5+struct.unpack_from('<i',call,1)[0]==profile['addresses'][target_key]
+        for kind, operation, slot in [('quest','primary',0x24),('skill','primary',0x24),('skill','secondary',0x2C)]:
+            assert struct.unpack('<I',pe.read(profile['addresses'][f'menu_{kind}_vtable']+slot,4))[0]==profile['addresses'][f'menu_{kind}_{operation}']
         assert pe.read(profile['addresses']['projection'],0x45).hex() == profile['projection_bytes']
         assert pe.read(profile['addresses']['world_to_grid'],0x35).hex() == profile['grid_bytes']
         print(f'{profile["name"]}：散列、函数签名、输入调用点和坐标转换通过')
