@@ -25,7 +25,7 @@ python source/tools/build.py --checks-only
 python source/tools/build.py --upx
 ~~~
 
-默认一次带-g的优化编译，保留完整链接件，副本strip --strip-unneeded后作为发行件。13组CTest、双基线复核、两件PE／入口／重定位／依赖、TOML解析、运行段一致及实际加载通过后才发布。checks-only不更新发布目录。upx使用PATH或UPX_BIN中的本机工具，只从剥离后的发行件生成压缩副本，执行upx -t及非游戏加载／重定位检查；不替换未压缩件，不自动安装UPX。
+默认一次带-g的优化编译，保留完整链接件，副本strip --strip-unneeded后作为发行件。先做4项配置同步回归，再运行13组CTest、双基线复核、两件PE／入口／重定位／依赖、TOML解析、运行段一致及实际加载检查，通过后同步配置并发布。checks-only不更新发布目录。upx使用PATH或UPX_BIN中的本机工具，只从剥离后的发行件生成压缩副本，执行upx -t及非游戏加载／重定位检查；不替换未压缩件，不自动安装UPX。
 
 两件运行代码和优化级别相同；Debug不等于-O0，完整信息仅留在_debug。运行时配置／日志仍叫EDSlash.toml／EDSlash.log，不能同时安装两件。
 
@@ -35,12 +35,12 @@ python source/tools/build.py --upx
 
 - release/EDSlash.asi：发行版，已剥离符号、未压缩。
 - release/debug/EDSlash_debug.asi：完整版，保留项目和SDL源码调试信息，不strip、不UPX；同目录有独立配置／许可。
-- release/EDSlash.toml：只有缺失时复制默认值，已有新TOML保留。
+- release/EDSlash.toml：缺失时复制默认值，已有配置只补模板新增段／键，保留原数值、绑定和注释。
 - release/统一构建验证.json：实际散列、体积、导入、SDL选项及验收边界。
 - release/第三方许可.txt：随发布保留的声明。
 - --upx时生成release/upx/EDSlash.asi及配套配置／许可。
 
-配置模板source/config/EDSlash.toml由同一生产描述表生成；构建不拿它覆盖玩家已有配置，不删除共享release内的历史产物。项目打包应带docs和thirdparty，不分发游戏EXE。
+配置模板source/config/EDSlash.toml由同一生产描述表生成。BAT和直接运行build.py都执行相同同步步骤：先验证发行／debug／本轮可选upx各目录的配置，再只补缺失键；完整旧配置保持原字节，新增键写UTF-8无BOM＋CRLF。损坏、重复键、无法安全补入的表或构建期间外部修改会停止同步，不覆盖原值。构建报告记录补入键。此步骤只处理项目release目录，不部署到游戏目录，不删除历史产物；checks-only不写发布配置。项目打包应带docs和thirdparty，不分发游戏EXE。
 
 ## 当前验证
 

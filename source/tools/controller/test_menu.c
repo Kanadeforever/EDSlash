@@ -8,9 +8,9 @@
 #include "Menu.h"
 #include "Cursor.h"
 
-static BYTE menu_roots[9][0x300],menu_children[9][6][0xE4],menu_sprites[9][6][4*32];
+static BYTE menu_roots[15][0x300],menu_children[15][16][0xE4],menu_sprites[15][16][4*32];
 static BYTE unknown_root[0xD0],menu_resource[16];
-static uintptr_t menu_tables[9][26];
+static uintptr_t menu_tables[15][26];
 static ControlState menu_control;
 static bool expansion_case,transition_after_action;
 static unsigned title_actions,system_actions,confirm_actions,native_hovers,tick_calls,animation_resets;
@@ -27,12 +27,29 @@ static bool reject_skill_learning;
 static bool reject_combo_delete;
 static unsigned combo_capacity=18,quest_switches,quest_selections,skill_actions,skill_details;
 static int combo_mouse_index=-1,skill_operation_index=-2;
+static BYTE grid_player[0x400];static void *bag_pointer,*storage_pointer;
+static BYTE shop_position_code[3][6],nonroot_resource[16];
+static unsigned grid_details,grid_swaps,grid_panel_actions;
+static unsigned shop_requests,shop_trades;
+static int __attribute__((thiscall)) grid_player_get(void *root) {(void)root;return (int)(uintptr_t)grid_player;}
+static int __attribute__((thiscall)) grid_item_get(void *container,int slot)
+{CHECK(container==grid_player && slot>=0 && slot<136);return Read32(container,0xA4+slot*4)==UINT32_MAX ? 0:1;}
+static int __attribute__((thiscall)) grid_empty(void *container)
+{CHECK(container==grid_player);for (int i=0;i<50;++i) if (Read32(container,0xA4+i*4)==UINT32_MAX) return i;return -1;}
+static int __attribute__((thiscall)) shop_switch(void *root,int mode)
+{CHECK(root==menu_roots[11] && (mode==0x57 || mode==0x58));Write32(root,0xD0,mode);return 1;}
+static int __attribute__((thiscall)) grid_swap(void *container,int slot)
+{
+    CHECK(container==grid_player && slot>=0 && slot<136);++grid_swaps;
+    unsigned item=Read32(container,0xA4+slot*4),held=Read32(container,0x2C4);
+    Write32(container,0xA4+slot*4,held);Write32(container,0x2C4,item);return 1;
+}
 static int __attribute__((thiscall)) combo_mouse_hit(void *root) {CHECK(root==menu_roots[8]);return combo_mouse_index;}
 static int __attribute__((thiscall)) talk_picker(void *root) {CHECK(root==menu_roots[5]);return (int)(uintptr_t)menu_children[5][1];}
 static int __attribute__((thiscall)) talk_select(void *root) {CHECK(root==menu_roots[5]);talk_selected=Read32(ReadPtr(root,0xA8),0xC4);return 1;}
 static int __attribute__((thiscall)) talk_cancel(void *root,int e,int x,void *y) {CHECK(root==menu_roots[5] && !e && !x && !y);++talk_cancelled;Write32(root,0x64,0);ptr(ui_data,0x3C,NULL);return 1;}
 static int __attribute__((thiscall)) text_next(void *root) {CHECK(root==menu_roots[6]);++text_next_count;Write32(root,0x64,0);ptr(ui_data,0x3C,NULL);return 1;}
-static BYTE load_nodes[6][12],load_data[6][0x40],cursor_code[24];
+static BYTE load_nodes[12][12],load_data[12][0x40],cursor_code[24];
 static uintptr_t cursor_position_pointer;
 static int cursor_x,cursor_y;
 /* 故障只注入自己的fixture写槽，验证安装中途失败可以逐槽退回原函数。 */
@@ -44,11 +61,12 @@ bool Memory_Patch(void *target,const void *data,size_t bytes)
 
 static int root_kind(void *self)
 {
-    for (int i=0;i<9;++i) if (self==menu_roots[i]) return i;
+    for (int i=0;i<15;++i) if (self==menu_roots[i]) return i;
     CHECK(false);return -1;
 }
 static int __attribute__((thiscall)) menu_property(void *self,int field)
 {
+    if (self==nonroot_resource) return field==13 ? 0:field==2 ? 3:0;
     if (self!=menu_resource) return native_property(self,field);
     return field==13 ? 1:field==2 ? 3:0;
 }
@@ -69,6 +87,11 @@ static int __attribute__((thiscall)) menu_tick(void *self)
         if (ReadPtr(self,0xA8)) ++skill_details;
         return 7;
     }
+    if (k>=9) {
+        if (Read32(self,0xBC) && (k>=12 ? ReadPtr(self,0xA8)!=NULL:Read32(self,k==9 ? 0xFC:0xC0)<50)) ++grid_details;
+        /* 原base Tick用物理路由清BC/A8；生产wrapper必须在结束后恢复独立焦点。 */
+        Write32(self,0xBC,0);ptr(self,0xA8,NULL);return 7;
+    }
     /* 模拟原base Tick因鼠标离开根页而清悬停；生产wrapper必须重新投影自己的选择。 */
     ptr(self,0xA8,NULL);
     if (k==5) ptr(self,0xA8,(void *)(uintptr_t)((This0)patched_callee((uintptr_t)talk_picker_code))(self));
@@ -88,7 +111,9 @@ static int __attribute__((thiscall)) skill_base_tick(void *self)
 static int __attribute__((thiscall)) menu_get_jm(void *self,int id)
 {
     CHECK(self==ui_data);
-    return id==0x66 ? (int)(uintptr_t)quest_list_data:0;
+    if (id==0x66) return (int)(uintptr_t)quest_list_data;
+    for (unsigned i=0;i<15;++i) if (Read32(menu_roots[i],0x28)==(unsigned)id) return (int)(uintptr_t)menu_roots[i];
+    return 0;
 }
 static int __attribute__((thiscall)) quest_switch(void *self,int id,int selection)
 {
@@ -131,6 +156,28 @@ static int __attribute__((thiscall)) skill_secondary(void *self,int e,int x,void
 {
     CHECK(root_kind(self)==8 && !e && !x && !y);
     skill_operation_index=((This0)patched_callee((uintptr_t)skill_calls[2]))(self);return 1;
+}
+static int __attribute__((thiscall)) grid_primary(void *self,int e,int x,void *y)
+{
+    int kind=root_kind(self);CHECK(kind>=9 && !e && !x && !y);
+    void *child=ReadPtr(self,0xA8);
+    if (kind==11) {
+        if (child) {Write32(self,0xD0,Read32(child,0x28));return 1;}
+        if (Read32(self,0xC0)<50) {
+            POINT point;CHECK(((BOOL (WINAPI *)(POINT *))patched_callee((uintptr_t)shop_position_code[0]))(&point));
+            ++shop_requests;ptr(menu_roots[4],0xCC,self);((This2)menu_tables[4][0x1C/4])(menu_roots[4],1,0);
+        }
+        return 1;
+    }
+    if (kind>=12 && child) {
+        unsigned id=Read32(child,0x28),first=kind==12 ? 0x41:kind==13 ? 0x49:0x5E;
+        unsigned count=kind==12 ? 7:kind==13 ? 12:5;
+        if (id>=first && id<first+count) return grid_swap(grid_player,(int)(id-first)+(kind==12 ? 62:kind==13 ? 69:81));
+    }
+    if (child) {++grid_panel_actions;selected_action=Read32(child,0x28);return 1;}
+    if (kind>=12) return 1;
+    unsigned local=Read32(self,kind==9 ? 0xFC:0xC0);
+    return local<50 ? grid_swap(grid_player,(int)local+(kind==10 ? 86:0)):0;
 }
 static int __attribute__((thiscall)) menu_hover(void *self,int e,int x,void *y)
 {
@@ -197,7 +244,7 @@ static int __attribute__((thiscall)) load_submit(void *self,int slot)
 }
 static int __attribute__((thiscall)) menu_template(void *self,int index,int mode)
 {
-    if (self!=menu_resource) return native_template(self,index,mode);
+    if (self!=menu_resource && self!=nonroot_resource) return native_template(self,index,mode);
     CHECK((mode==1 || mode==3) && index>=5 && index<=8);static const int rect[]={40,60,300,50};return rect[index-5];
 }
 static int __attribute__((thiscall)) message_lookup(void *table,int id,int language)
@@ -211,9 +258,10 @@ static int __attribute__((thiscall)) message_primary(void *self,int e,int x,void
 {
     CHECK(root_kind(self)==4 && e==0 && x==0 && y==NULL);
     void *child=ReadPtr(self,0xA8),*owner=ReadPtr(self,0xCC);
-    CHECK(owner==menu_roots[3] && Read32(child,0x28)==0x2A && Read32(child,0xC4)<=1);
+    CHECK((owner==menu_roots[3] || owner==menu_roots[11] || !owner) && Read32(child,0x28)==0x2A && Read32(child,0xC4)<=1);
     bool yes=Read32(child,0xC4)==1;((This2)menu_tables[4][0x1C/4])(self,0,0);ptr(self,0xCC,NULL);
-    if (yes) {++deleted_records;Write32(owner,0xC0,Read32(owner,0xC0)-1);}
+    if (yes && owner==menu_roots[3]) {++deleted_records;Write32(owner,0xC0,Read32(owner,0xC0)-1);}
+    if (yes && owner==menu_roots[11]) ++shop_trades;
     return 1;
 }
 static BOOL WINAPI cursor_position(POINT *point) { point->x=37;point->y=49;return TRUE; }
@@ -233,7 +281,7 @@ static void cursor_fixture(Profile *profile)
 }
 static void activate_page(unsigned kind)
 {
-    for (unsigned k=0;k<9;++k) if (k!=kind) Write32(menu_roots[k],0x64,0);
+    for (unsigned k=0;k<15;++k) if (k!=kind) Write32(menu_roots[k],0x64,0);
     Write32(unknown_root,0x64,0);
     ((This2)menu_tables[kind][0x1C/4])(menu_roots[kind],1,0);
 }
@@ -260,21 +308,28 @@ static void menu_fixture(Profile *profile,bool expansion)
     memset(&menu_control,0,sizeof menu_control);pending_ticks=0;
     title_actions=system_actions=confirm_actions=native_hovers=tick_calls=animation_resets=0;
     transition_after_action=false;selected_action=0;
-    static const unsigned ids[9][6]={{0x1F,0x20,0x21,0x22,0x23,0xA7},
+    static const unsigned ids[15][6]={{0x1F,0x20,0x21,0x22,0x23,0xA7},
         {0x2E,0x30,0x31,0x2F,0,0},{0x9A,0x9B,0x99,0,0,0},{0x97,0x96,0xA2,0xA3,0,0},{0x2A,0x2A,0x2A,0,0,0},{0x2A,0x2A,0x2A,0,0,0},{0,0,0,0,0,0},
-        {0x78,0x79,0x7A,0x7B,0x7C,0},{0x84,0x85,0x7E,0x7F,0x80,0x90}};
-    for (unsigned k=0;k<9;++k) {
+        {0x78,0x79,0x7A,0x7B,0x7C,0},{0x84,0x85,0x7E,0x7F,0x80,0x90},
+        {0x15,0x16,0x17,0x5A,0,0},{0xB5,0xB6,0,0,0,0},
+        {0x57,0x58,0x59,0,0,0},{0},{0},{0}};
+    for (unsigned k=0;k<15;++k) {
         ptr(menu_roots[k],0,menu_tables[k]);ptr(menu_roots[k],0x50,menu_resource);
-        Write32(menu_roots[k],0x28,k==0 ? 0x19:k==1 ? 0x2D:k==2 ? 0x98:k==3 ? 0x94:k==4 ? 0x29:k==5 ? 0x28:k==6 ? 0x2C:k==7 ? 0x63:0x7D);
-        ptr(menu_roots[k],0x0C,k<8 ? menu_roots[k+1]:NULL);
+        unsigned root_ids[15]={0x19,0x2D,0x98,0x94,0x29,0x28,0x2C,0x63,0x7D,0x14,0xB4,0x56,0x3D,0x3E,0x5B};
+        Write32(menu_roots[k],0x28,root_ids[k]);
+        ptr(menu_roots[k],0x0C,k<14 ? menu_roots[k+1]:NULL);
         ptr(menu_roots[k],0x9C,menu_children[k][0]);
         menu_tables[k][1]=(uintptr_t)menu_tick;menu_tables[k][0x1C/4]=(uintptr_t)menu_show;
         menu_tables[k][0x30/4]=(uintptr_t)menu_hover;
         menu_tables[k][0x24/4]=(uintptr_t)menu_primary;menu_tables[k][0x3C/4]=(uintptr_t)menu_confirm;
-        for (unsigned j=0;j<6;++j) {
+        for (unsigned j=0;j<16;++j) {
             BYTE *c=menu_children[k][j];ptr(c,0xA4,menu_roots[k]);
-            ptr(c,8,j<5 ? menu_children[k][j+1]:NULL);
-            Write32(c,0x28,ids[k][j]);Write32(c,0x64,ids[k][j]!=0);
+            ptr(c,8,j<15 ? menu_children[k][j+1]:NULL);
+            unsigned id=j<6 ? ids[k][j]:0;
+            if (k==12) id=j<7 ? 0x41+j:j==7 ? 0x3F:j==8 ? 0x40:0;
+            if (k==13) id=j<12 ? 0x49+j:j==12 ? 0x48:0;
+            if (k==14) id=j<5 ? 0x5E + j:0;
+            Write32(c,0x28,id);Write32(c,0x64,id!=0);
             Write32(c,0x14,(k==2 || k==4) ? j*100:100);Write32(c,0x18,(k==2 || k==4) ? 200:j*50+50);
             /* 技能页的可选技能位于下方；上方连招位置另按原六列几何生成。 */
             if (k==8) Write32(c,0x18,200+j*50);
@@ -315,6 +370,33 @@ static void menu_fixture(Profile *profile,bool expansion)
     menu_tables[8][0x24/4]=(uintptr_t)skill_primary;menu_tables[8][0x2C/4]=(uintptr_t)skill_secondary;
     profile->get_jm=(uintptr_t)menu_get_jm;profile->combo_get=(uintptr_t)skill_combo_get;
     profile->menu_skill_combo_capacity=(uintptr_t)&combo_capacity;
+    bag_pointer=menu_roots[9];storage_pointer=menu_roots[10];
+    profile->menu_bag_global=(uintptr_t)&bag_pointer;profile->menu_storage_global=(uintptr_t)&storage_pointer;
+    profile->menu_bag_vtable=(uintptr_t)menu_tables[9];profile->menu_storage_vtable=(uintptr_t)menu_tables[10];
+    profile->menu_bag_tick=profile->menu_storage_tick=(uintptr_t)menu_tick;
+    profile->menu_bag_show=profile->menu_storage_show=(uintptr_t)menu_show;
+    profile->menu_bag_hover=profile->menu_storage_hover=(uintptr_t)menu_hover;
+    profile->menu_bag_primary=profile->menu_storage_primary=(uintptr_t)grid_primary;
+    menu_tables[9][0x24/4]=menu_tables[10][0x24/4]=(uintptr_t)grid_primary;
+    profile->inventory_get=(uintptr_t)grid_player_get;profile->item_at=(uintptr_t)grid_item_get;
+    profile->menu_item_swap=(uintptr_t)grid_swap;profile->menu_bag_empty=(uintptr_t)grid_empty;
+    uintptr_t *extra_tables[4]={&profile->menu_shop_vtable,&profile->menu_craft_vtable,&profile->menu_inlay_vtable,&profile->menu_charm_vtable};
+    uintptr_t *extra_ticks[4]={&profile->menu_shop_tick,&profile->menu_craft_tick,&profile->menu_inlay_tick,&profile->menu_charm_tick};
+    uintptr_t *extra_shows[4]={&profile->menu_shop_show,&profile->menu_craft_show,&profile->menu_inlay_show,&profile->menu_charm_show};
+    uintptr_t *extra_hovers[4]={&profile->menu_shop_hover,&profile->menu_craft_hover,&profile->menu_inlay_hover,&profile->menu_charm_hover};
+    uintptr_t *extra_primary[4]={&profile->menu_shop_primary,&profile->menu_craft_primary,&profile->menu_inlay_primary,&profile->menu_charm_primary};
+    for (unsigned i=0;i<4;++i) {
+        *extra_tables[i]=(uintptr_t)menu_tables[i+11];*extra_ticks[i]=(uintptr_t)menu_tick;
+        *extra_shows[i]=(uintptr_t)menu_show;*extra_hovers[i]=(uintptr_t)menu_hover;*extra_primary[i]=(uintptr_t)grid_primary;
+        menu_tables[i+11][0x24/4]=(uintptr_t)grid_primary;
+    }
+    cursor_position_pointer=(uintptr_t)cursor_position;profile->cursor_position_iat=(uintptr_t)&cursor_position_pointer;
+    for (unsigned i=0;i<3;++i) {shop_position_code[i][0]=0xFF;shop_position_code[i][1]=0x15;memcpy(shop_position_code[i]+2,&profile->cursor_position_iat,4);}
+    profile->menu_shop_position_call1=(uintptr_t)shop_position_code[0];profile->menu_shop_position_call2=(uintptr_t)shop_position_code[1];
+    profile->menu_inlay_position_call=(uintptr_t)shop_position_code[2];profile->menu_shop_switch=(uintptr_t)shop_switch;
+    grid_details=grid_swaps=grid_panel_actions=shop_requests=shop_trades=0;memset(grid_player,0,sizeof grid_player);
+    for (unsigned i=0;i<136;++i) Write32(grid_player,0xA4+i*4,UINT32_MAX);
+    Write32(grid_player,0x2C4,UINT32_MAX);Write32(grid_player,0xA4,1);
     Write32(menu_roots[7],0xC0,0x78);Write32(menu_roots[8],0xC0,0x7F);
     memset(quest_list_data,0,sizeof quest_list_data);ptr(quest_list_data,0xA4,menu_roots[7]);
     Write32(quest_list_data,0x64,1);Write32(quest_list_data,0xE0,3);Write32(quest_list_data,0xF0,20);
@@ -343,7 +425,7 @@ static void menu_fixture(Profile *profile,bool expansion)
     profile->template_value=(uintptr_t)menu_template;focus_sounds=load_actions=0;
     profile->menu_title_activate=(uintptr_t)menu_activate;profile->menu_texture=(uintptr_t)menu_texture;
     profile->menu_animation_reset=(uintptr_t)menu_animation_reset;profile->ui_property=(uintptr_t)menu_property;
-    ptr(ui_data,0x18,menu_roots[0]);ptr(ui_data,0x1C,menu_roots[8]);ptr(ui_data,0x20,(void *)0x12345678);
+    ptr(ui_data,0x18,menu_roots[0]);ptr(ui_data,0x1C,menu_roots[14]);ptr(ui_data,0x20,(void *)0x12345678);
     ptr(unknown_root,0x50,menu_resource);Write32(unknown_root,0x28,0xAA);
     Write32(menu_roots[3],0xC0,6);ptr(menu_roots[3],0xC4,load_nodes[0]);
     for (unsigned i=0;i<6;++i) {
@@ -361,8 +443,9 @@ static void menu_regression(bool expansion)
     CHECK(anchor.x==174 && anchor.y==224);
     CHECK(((BOOL (WINAPI *)(POINT *))patched_callee((uintptr_t)cursor_code))(&anchor));CHECK(anchor.x==174 && anchor.y==224);
     typedef int (__attribute__((thiscall)) *Draw)(void *,void *,int,int,int,int,int);
-    CHECK(((Draw)patched_callee((uintptr_t)(cursor_code+16)))(menu_sprites[0][0],(void *)0x246,anchor.x,anchor.y,0,-1,0)==6);
-    CHECK(cursor_draws==1 && cursor_x==174 && cursor_y==224);
+    CHECK(((Draw)patched_callee((uintptr_t)(cursor_code+16)))(menu_sprites[0][0],(void *)0x246,anchor.x,anchor.y,0,-1,0)==(expansion ? 0:6));
+    CHECK(cursor_draws==(expansion ? 0u:1u));
+    if (!expansion) CHECK(cursor_x==174 && cursor_y==224);
     menu_step(KEY(PAD_UP),0,0);CHECK(focus_id(0)==0x21);CHECK(focus_sounds==2);
     for (unsigned i=0;i<10;++i) menu_step(KEY(PAD_UP),0,0);
     CHECK(focus_id(0)==0x21);g_input.now+=160;menu_step(KEY(PAD_UP),0,0);CHECK(focus_id(0)==0x20);
@@ -435,6 +518,25 @@ static void menu_regression(bool expansion)
     neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(menu_roots[3],0xD0)==4 && Read32(menu_roots[3],0xD4)==1);
     CHECK(Menu_CursorAnchor(&anchor));CHECK(anchor.x==334 && anchor.y==154);
     neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(Read32(menu_roots[3],0xD4)==1);
+    /* 第一页末项下接第二页首项，第二页首项上接第一页末项；不改变显式左右分页。 */
+    neutral_menu();menu_step(KEY(PAD_LEFT),0,0);CHECK(Read32(menu_roots[3],0xD0)==0 && Read32(menu_roots[3],0xD4)==1);
+    for (unsigned i=0;i<2;++i) {neutral_menu();menu_step(KEY(PAD_DOWN),0,0);}
+    CHECK(Read32(menu_roots[3],0xD4)==3);
+    neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(Read32(menu_roots[3],0xD0)==4 && Read32(menu_roots[3],0xD4)==0);
+    neutral_menu();menu_step(KEY(PAD_UP),0,0);CHECK(Read32(menu_roots[3],0xD0)==0 && Read32(menu_roots[3],0xD4)==3);
+    for (unsigned i=0;i<4;++i) {neutral_menu();menu_step(KEY(PAD_UP),0,0);}
+    CHECK(Read32(menu_roots[3],0xD0)==0 && Read32(menu_roots[3],0xD4)==0);
+    neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);neutral_menu();menu_step(KEY(PAD_DOWN),0,0);
+    CHECK(Read32(menu_roots[3],0xD0)==4 && Read32(menu_roots[3],0xD4)==1);
+    /* 第三页只有一项：连续下到8号，上回第二页末项；最后一页下不能回绕。 */
+    Write32(menu_roots[3],0xC0,9);
+    for (unsigned i=0;i<9;++i) {ptr(load_nodes[i],0,i<8 ? load_nodes[i+1]:NULL);ptr(load_nodes[i],8,load_data[i]);}
+    for (unsigned i=0;i<3;++i) {neutral_menu();menu_step(KEY(PAD_DOWN),0,0);}
+    CHECK(Read32(menu_roots[3],0xD0)==8 && Read32(menu_roots[3],0xD4)==0);
+    neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(Read32(menu_roots[3],0xD0)==8 && Read32(menu_roots[3],0xD4)==0);
+    neutral_menu();menu_step(KEY(PAD_UP),0,0);CHECK(Read32(menu_roots[3],0xD0)==4 && Read32(menu_roots[3],0xD4)==3);
+    Write32(menu_roots[3],0xC0,6);neutral_menu();menu_step(KEY(PAD_UP),0,0);
+    CHECK(Read32(menu_roots[3],0xD4)==1);
     neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(load_actions==1);game_isolated();
     activate_page(3);neutral_menu();menu_step(KEY(PAD_B),0,0);
     CHECK(!Read32(menu_roots[3],0x64) && Read32(menu_roots[0],0x64));
@@ -451,6 +553,12 @@ static void menu_regression(bool expansion)
     CHECK(Menu_CapturesInput());game_isolated();
     activate_page(3);Write32(menu_roots[3],0xC0,0);neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(load_actions==1);
     CHECK(!Menu_CursorAnchor(&anchor));
+    /* 原删除可以留下D0=8而总数只剩8的空尾页；新逻辑退到4并聚焦其末项。 */
+    Write32(menu_roots[3],0xC0,8);Write32(menu_roots[3],0xD0,8);
+    neutral_menu();CHECK(Read32(menu_roots[3],0xD0)==4 && Read32(menu_roots[3],0xD4)==3);
+    menu_step(KEY(PAD_LEFT),0,0);CHECK(Read32(menu_roots[3],0xD0)==0);
+    Write32(menu_roots[3],0xC0,0);Write32(menu_roots[3],0xD0,0);neutral_menu();
+    menu_step(KEY(PAD_LEFT),0,0);CHECK(Read32(menu_roots[3],0xD0)==0 && !Menu_CursorAnchor(&anchor));
     /* NPC选项按脚本记录，提示项不选；Tick原命中调用被独立焦点替代。 */
     activate_page(5);neutral_menu();CHECK(Read32(ReadPtr(menu_roots[5],0xA8),0xC4)==10);
     ((This0)menu_tables[5][1])(menu_roots[5]);CHECK(Read32(ReadPtr(menu_roots[5],0xA8),0xC4)==10);
@@ -477,8 +585,12 @@ static void menu_regression(bool expansion)
     neutral_menu();menu_step(KEY(PAD_LB),0,0);CHECK(Read32(menu_roots[7],0xC0)==0x78);
     neutral_menu();menu_step(KEY(PAD_LB),0,0);CHECK(Read32(menu_roots[7],0xC0)==0x7B);
     neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(quest_switches==3 && quest_selections==2);
+    /* 原fixture视口40像素、行高20，左右每次跨2项；LB/RB仍是分类切换。 */
+    neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(quest_list_data,0xF4)==2 && quest_selections==3);
+    neutral_menu();menu_step(KEY(PAD_LEFT),0,0);CHECK(Read32(quest_list_data,0xF4)==0 && quest_selections==4);
+    neutral_menu();menu_step(KEY(PAD_LEFT),0,0);CHECK(Read32(quest_list_data,0xF4)==0 && quest_selections==4 && quest_switches==3);
     Write32(quest_list_data,0xE0,0);CHECK(!Menu_CursorAnchor(&anchor));
-    neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(quest_selections==2);
+    neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(quest_selections==4);
     neutral_menu();menu_step(KEY(PAD_B),0,0);CHECK(!Read32(menu_roots[7],0x64));
     /* 技能学习焦点经过原base Tick后仍在，详情不会受物理鼠标悬停清空。 */
     activate_page(8);neutral_menu();CHECK(focus_id(8)==0x84);
@@ -514,7 +626,7 @@ static void menu_regression(bool expansion)
     neutral_menu();menu_step(KEY(PAD_LB),0,0);CHECK(Read32(menu_roots[8],0xC0)==0x7F);
     neutral_menu();menu_step(KEY(PAD_B)|KEY(PAD_RB),0,0);CHECK(!Read32(menu_roots[8],0x64) && Read32(menu_roots[8],0xC0)==0x7F);
     /* 未实现页面保留B/方向旧键盘能力，仍绝不注入Enter或直接猜+3C。 */
-    for (unsigned k=0;k<9;++k) Write32(menu_roots[k],0x64,0);
+    for (unsigned k=0;k<15;++k) Write32(menu_roots[k],0x64,0);
     Write32(unknown_root,0x64,1);ptr(ui_data,0x18,unknown_root);ptr(ui_data,0x1C,unknown_root);
     neutral_menu();menu_step(KEY(PAD_B)|KEY(PAD_A),0,0);
     BYTE keys[256]={0};Game_Keyboard(keys);CHECK(keys[VK_ESCAPE]==0x80 && keys[VK_RETURN]==0);
@@ -525,13 +637,13 @@ static void menu_regression(bool expansion)
     CHECK(((Draw)patched_callee((uintptr_t)(cursor_code+8)))(menu_sprites[0][0],(void *)0x246,37,49,0,-1,0)==6);
     Cursor_Shutdown();CHECK(cursor_code[0]==0xFF && cursor_code[1]==0x15);
     Menu_Shutdown();
-    for (unsigned k=0;k<9;++k) CHECK(menu_tables[k][1]==(uintptr_t)menu_tick && menu_tables[k][0x30/4]==(uintptr_t)menu_hover);
+    for (unsigned k=0;k<15;++k) CHECK(menu_tables[k][1]==(uintptr_t)menu_tick && menu_tables[k][0x30/4]==(uintptr_t)menu_hover);
     HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
     CHECK(!Menu_BlocksGameplay());
     /* 每个入口写失败都回滚，不能留下半套Tick/Show/hover。所有原槽先核对再允许重试。 */
-    for (unsigned fail=1;fail<=31;++fail) {
+    for (unsigned fail=1;fail<=52;++fail) {
         patch_attempt=0;patch_fail_at=fail;CHECK(!Menu_Initialize());
-        for (unsigned k=0;k<9;++k) {
+        for (unsigned k=0;k<15;++k) {
             CHECK(menu_tables[k][1]==(uintptr_t)menu_tick);
             CHECK(menu_tables[k][0x1C/4]==(uintptr_t)menu_show);
             CHECK(menu_tables[k][0x30/4]==(uintptr_t)menu_hover);
@@ -594,10 +706,104 @@ static void combo_delete_regression(bool expansion)
     CHECK(skill_operation_index==-1 && Read32(combo_list_data,0)==0 && skill_actions==actions+1);
     game_isolated();Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
 }
+/* 此大型宿主回放不内联、不按常量参数克隆，避免当前32位GCC生成跨函数调试标签。
+ * 只约束测试宿主的组织方式；生产代码的优化设置和实际回放步骤都不改变。 */
+static void __attribute__((noinline,noclone)) grid_regression(bool expansion)
+{
+    Profile profile;menu_fixture(&profile,expansion);activate_page(9);neutral_menu();
+    CHECK(Read32(menu_roots[9],0xFC)==0 && Read32(menu_roots[9],0xBC)==1);
+    POINT anchor;CHECK(Menu_CursorAnchor(&anchor) && anchor.x==58 && anchor.y==78);
+    ((This0)menu_tables[9][1])(menu_roots[9]);CHECK(grid_details==1 && Read32(menu_roots[9],0xBC)==1);
+    /* 左上边界不绕行；空格也可聚焦，保证手柄能放置物品。 */
+    menu_step(KEY(PAD_LEFT),0,0);CHECK(Read32(menu_roots[9],0xFC)==0);
+    neutral_menu();menu_step(KEY(PAD_UP),0,0);CHECK(Read32(menu_roots[9],0xFC)==0);
+    neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(Read32(grid_player,0x2C4)==1);
+    CHECK(Menu_CursorAnchor(&anchor) && anchor.x==52 && anchor.y==72);
+    CHECK(Read32(grid_player,0xA4)==UINT32_MAX);
+    neutral_menu();menu_step(KEY(PAD_B),0,0);
+    CHECK(Read32(grid_player,0x2C4)==UINT32_MAX && Read32(grid_player,0xA4)==1 && Read32(menu_roots[9],0x64));
+    CHECK(Menu_CursorAnchor(&anchor) && anchor.x==58 && anchor.y==78);
+    neutral_menu();menu_step(KEY(PAD_A),0,0);neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);
+    Write32(grid_player,0xA8,2);neutral_menu();menu_step(KEY(PAD_A),0,0);
+    CHECK(Read32(grid_player,0xA8)==1 && Read32(grid_player,0x2C4)==2);
+    /* 交换后原格被占据，B找空位而不是再拿出另一件；仍不关闭菜单。 */
+    neutral_menu();menu_step(KEY(PAD_B),0,0);
+    CHECK(Read32(grid_player,0xA4)==2 && Read32(grid_player,0x2C4)==UINT32_MAX);
+    unsigned before=grid_swaps;neutral_menu();menu_step(KEY(PAD_X),0,0);
+    CHECK(grid_swaps==before && !Read32(menu_roots[10],0x64));
+    ((This2)menu_tables[10][0x1C/4])(menu_roots[10],1,0);neutral_menu();
+    menu_step(KEY(PAD_X),0,0);neutral_menu();
+    CHECK(Read32(menu_roots[10],0xC0)==0 && Read32(menu_roots[9],0xFC)==UINT32_MAX);
+    CHECK(Menu_CursorAnchor(&anchor));unsigned reason;CHECK(Menu_Context(&reason)==menu_roots[10]);
+    CHECK(grid_swaps==before);game_isolated();
+    menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(menu_roots[10],0xC0)==1);
+    neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(Read32(menu_roots[10],0xC0)==11);
+    Write32(grid_player,0xA4+(86+11)*4,3);neutral_menu();menu_step(KEY(PAD_A),0,0);
+    CHECK(Read32(grid_player,0x2C4)==3);neutral_menu();menu_step(KEY(PAD_X),0,0);neutral_menu();
+    CHECK(Menu_Context(&reason)==menu_roots[9] && Read32(menu_roots[9],0xFC)==0);
+    /* 原来源记忆经过X切页仍有效，B可以把仓库拿起的物品放回原仓库逻辑槽。 */
+    menu_step(KEY(PAD_B),0,0);CHECK(Read32(grid_player,0x2C4)==UINT32_MAX && Read32(grid_player,0xA4+97*4)==3);
+    /* 10列5行的末格与上下左右边界真实导航，不将二维边缘误当线性下一格。 */
+    for (unsigned i=0;i<9;++i) {neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);}
+    for (unsigned i=0;i<4;++i) {neutral_menu();menu_step(KEY(PAD_DOWN),0,0);}
+    CHECK(Read32(menu_roots[9],0xFC)==49);
+    neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(menu_roots[9],0xFC)==49);
+    neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(Read32(menu_roots[9],0xFC)==49);
+    for (unsigned i=0;i<4;++i) {neutral_menu();menu_step(KEY(PAD_UP),0,0);}
+    for (unsigned i=0;i<9;++i) {neutral_menu();menu_step(KEY(PAD_LEFT),0,0);}
+    CHECK(Read32(menu_roots[9],0xFC)==0);
+    neutral_menu();menu_step(KEY(PAD_Y),0,0);neutral_menu();CHECK(Read32(menu_roots[9],0xFC)==UINT32_MAX);
+    CHECK(ReadPtr(menu_roots[9],0xA8));menu_step(KEY(PAD_DOWN),0,0);
+    neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(grid_panel_actions==1 && selected_action==0x16);
+    neutral_menu();menu_step(KEY(PAD_Y),0,0);neutral_menu();CHECK(Read32(menu_roots[9],0xFC)==0);
+    /* 已满背包又持有物品时，B不丢物品或关闭窗口；用户仍可手动选择放置目标。 */
+    for (unsigned i=0;i<50;++i) Write32(grid_player,0xA4+i*4,i+10);
+    Write32(grid_player,0x2C4,99);menu_step(KEY(PAD_B),0,0);
+    CHECK(Read32(menu_roots[9],0x64) && Read32(grid_player,0x2C4)==99);
+    Write32(grid_player,0x2C4,UINT32_MAX);neutral_menu();menu_step(KEY(PAD_B),0,0);
+    CHECK(!Read32(menu_roots[9],0x64) && Read32(menu_roots[10],0x64));
+    Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
+}
+static void __attribute__((noinline,noclone)) all_regions_regression(bool expansion)
+{
+    Profile profile;menu_fixture(&profile,expansion);activate_page(9);neutral_menu();
+    /* 辅助页不在普通根链，属性13也为0，但原登记对象和显示状态确实存在。 */
+    ptr(ui_data,0x1C,menu_roots[9]);ptr(menu_roots[9],0x0C,NULL);
+    for (unsigned k=10;k<15;++k) {Write32(menu_roots[k],0x64,1);ptr(menu_roots[k],0x50,nonroot_resource);}
+    unsigned reason;
+    for (unsigned k=10;k<15;++k) {
+        menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[k]);
+        ((This0)menu_tables[k][1])(menu_roots[k]);CHECK(Read32(menu_roots[k],0xBC)==1);
+    }
+    menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[9]);
+    /* 隐藏页不被X打开或选到；新根链也不影响登记页循环。 */
+    Write32(menu_roots[10],0x64,0);menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[11]);
+    menu_step(KEY(PAD_RB),0,0);neutral_menu();CHECK(Read32(menu_roots[11],0xD0)==0x58 && Menu_Context(&reason)==menu_roots[11]);
+    menu_step(KEY(PAD_LB),0,0);neutral_menu();CHECK(Read32(menu_roots[11],0xD0)==0x57);
+    menu_step(KEY(PAD_Y),0,0);neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(Read32(menu_roots[11],0xD0)==0x57);
+    neutral_menu();menu_step(KEY(PAD_Y),0,0);neutral_menu();menu_step(KEY(PAD_A),0,0);
+    CHECK(shop_requests==1 && shop_trades==0);neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);
+    neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(shop_trades==1);
+    /* 单独三种特殊页均按真实槽控件调用原业务；持有图样取槽中心，不破坏其它字段。 */
+    for (unsigned k=12;k<15;++k) {
+        activate_page(k);neutral_menu();unsigned logical=k==12 ? 62:k==13 ? 69:81;
+        Write32(menu_roots[k],0xC0,0x12345678);Write32(grid_player,0xA4+logical*4,7+k);
+        CHECK(ReadPtr(menu_roots[k],0xA8)==menu_children[k][0]);
+        menu_step(KEY(PAD_A),0,0);CHECK(Read32(grid_player,0x2C4)==7+k);
+        POINT anchor;CHECK(Menu_CursorAnchor(&anchor));CHECK(anchor.x==140 && anchor.y==65);
+        CHECK(Read32(menu_roots[k],0xC0)==0x12345678);
+        neutral_menu();menu_step(KEY(PAD_B),0,0);CHECK(Read32(grid_player,0x2C4)==UINT32_MAX && Read32(menu_roots[k],0x64));
+        if (k==12 || k==13) {neutral_menu();menu_step(KEY(PAD_Y),0,0);neutral_menu();CHECK(Read32(ReadPtr(menu_roots[k],0xA8),0x28)==(k==12 ? 0x3F:0x48));}
+        neutral_menu();menu_step(KEY(PAD_B),0,0);CHECK(!Read32(menu_roots[k],0x64));
+    }
+    Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
+}
 int main(void)
 {
     menu_regression(false);menu_regression(true);
     combo_delete_regression(false);combo_delete_regression(true);
+    grid_regression(false);grid_regression(true);
+    all_regions_regression(false);all_regions_regression(true);
     printf("两作菜单原生虚表、焦点、动画与输入隔离回放通过：%u项\n",checks);
     return 0;
 }

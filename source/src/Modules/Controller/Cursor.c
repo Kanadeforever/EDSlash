@@ -26,7 +26,7 @@ static int __attribute__((fastcall)) sprite_hook(void *self,void *unused,
     POINT anchor;
     /* 普通手柄只在有效菜单焦点画原图样；世界或未知页隐藏图样。
      * 物理来源和BACK+START救援模式完整保留原位置、精灵、动画、颜色与参数。 */
-    if (pad_visual() && !Menu_CursorAnchor(&anchor)) return 0;
+    if (pad_visual() && (Menu_HidesCursor() || !Menu_CursorAnchor(&anchor))) return 0;
     return ((SpriteDraw)g_profile->cursor_sprite_draw)(self,surface,x,y,frame,shade,flags);
 }
 static uintptr_t target(unsigned i)

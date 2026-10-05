@@ -79,7 +79,7 @@ def verify_baselines(data):
         assert struct.unpack('<I',pe.read(profile['addresses']['menu_load_vtable']+0x24,4))[0]==profile['addresses']['menu_load_primary']
         assert struct.unpack('<I',pe.read(profile['addresses']['menu_message_vtable']+0x24,4))[0]==profile['addresses']['menu_message_primary']
         # 菜单只占Tick/Show/hover，Draw槽属于DisplayFix，不能以整张虚表签名拒绝合法绘制包装。
-        for kind in ('title','system','confirm','load','message','talk','text','quest','skill'):
+        for kind in ('title','system','confirm','load','message','talk','text','quest','skill','bag','storage','shop','craft','inlay','charm'):
             table=profile['addresses'][f'menu_{kind}_vtable']
             for operation,slot in (('tick',4),('show',0x1C),('hover',0x30)):
                 expected=profile['addresses'][f'menu_{kind}_{operation}']
@@ -89,8 +89,14 @@ def verify_baselines(data):
                                      ('menu_skill_combo_call2','menu_skill_combo_hit')]:
             call=pe.read(profile['addresses'][call_key],5)
             assert call[0]==0xE8 and profile['addresses'][call_key]+5+struct.unpack_from('<i',call,1)[0]==profile['addresses'][target_key]
-        for kind, operation, slot in [('quest','primary',0x24),('skill','primary',0x24),('skill','secondary',0x2C)]:
+        for kind, operation, slot in [('quest','primary',0x24),('skill','primary',0x24),('skill','secondary',0x2C),
+                                      ('bag','primary',0x24),('storage','primary',0x24),('bag','secondary',0x2C),('storage','secondary',0x2C)]:
             assert struct.unpack('<I',pe.read(profile['addresses'][f'menu_{kind}_vtable']+slot,4))[0]==profile['addresses'][f'menu_{kind}_{operation}']
+        for kind in ('shop','craft','inlay','charm'):
+            assert struct.unpack('<I',pe.read(profile['addresses'][f'menu_{kind}_vtable']+0x24,4))[0]==profile['addresses'][f'menu_{kind}_primary']
+        for key in ('menu_shop_position_call1','menu_shop_position_call2','menu_inlay_position_call'):
+            call=pe.read(profile['addresses'][key],6)
+            assert call[:2]==b'\xff\x15' and struct.unpack('<I',call[2:])[0]==profile['addresses']['cursor_position_iat']
         assert pe.read(profile['addresses']['projection'],0x45).hex() == profile['projection_bytes']
         assert pe.read(profile['addresses']['world_to_grid'],0x35).hex() == profile['grid_bytes']
         print(f'{profile["name"]}：散列、函数签名、输入调用点和坐标转换通过')

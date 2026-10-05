@@ -61,6 +61,17 @@ typedef struct {
     uintptr_t menu_skill_primary,menu_skill_secondary,menu_skill_switch,menu_skill_slot;
     uintptr_t menu_skill_base_call,menu_skill_combo_hit,menu_skill_combo_call1,menu_skill_combo_call2;
     uintptr_t menu_skill_combo_capacity;
+    /* 两种50格界面：格号只提供焦点，实际物品操作仍交原入口。 */
+    uintptr_t menu_bag_vtable,menu_bag_tick,menu_bag_show,menu_bag_hover,menu_bag_primary,menu_bag_secondary,menu_bag_global;
+    uintptr_t menu_storage_vtable,menu_storage_tick,menu_storage_show,menu_storage_hover,menu_storage_primary,menu_storage_secondary,menu_storage_global;
+    uintptr_t menu_item_swap,menu_bag_empty;
+    /* 特殊物品区以真实子控件为焦点，商店仍有独立商品格号。 */
+    uintptr_t menu_shop_vtable,menu_shop_tick,menu_shop_show,menu_shop_hover,menu_shop_primary,menu_shop_switch,menu_shop_submit;
+    uintptr_t menu_craft_vtable,menu_craft_tick,menu_craft_show,menu_craft_hover,menu_craft_primary;
+    uintptr_t menu_inlay_vtable,menu_inlay_tick,menu_inlay_show,menu_inlay_hover,menu_inlay_primary;
+    uintptr_t menu_charm_vtable,menu_charm_tick,menu_charm_show,menu_charm_hover,menu_charm_primary;
+    uintptr_t menu_shop_position_call1,menu_shop_position_call2;
+    uintptr_t menu_inlay_position_call;
     unsigned inspect_ready_offset;
     unsigned dodge_counter_offset;
     unsigned stamina_offset;

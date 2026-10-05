@@ -41,9 +41,10 @@ if not defined PYTHON_EXE goto :python_missing
 set "PYTHON_ARGS=-3"
 
 :python_ready
+REM 统一构建器在验证通过后同步TOML新增选项，保留用户已有数值与绑定。  
 "%PYTHON_EXE%" %PYTHON_ARGS% tools\build.py %BUILD_ARGS%
 if errorlevel 1 goto :failed
-echo [成功] 发行件和_debug完整版已构建验证；输出状态详见上方信息。  
+echo [成功] 构建验证完成；正式发布已同步TOML新增选项，检查模式不写发布目录。  
 if not defined NO_PAUSE pause
 exit /b 0
 
