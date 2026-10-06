@@ -120,9 +120,23 @@ void Game_Diagnose(void)
 {
     static DWORD previous_time;
     static unsigned previous_reason=~0u,previous_id=~0u;
+    static bool waiting_world;
+    static DWORD waiting_since;
     unsigned reason=context_reason;
-    if (!world() || !Read32(world(),0x58)) reason=3;
-    else if (!role_valid(player())) reason=4;
+    bool world_wait=!world() || !Read32(world(),0x58);
+    bool actor_wait=!world_wait && !role_valid(player());
+    if (world_wait) reason=3;
+    else if (actor_wait) reason=4;
+    /* 菜单的物理路由reason=3与原世界未就绪编号重合，计时必须用真实状态布尔值。
+     * 此时间包含前端停留，不能当成读档计时，更不能把菜单停留累计为世界等待。 */
+    if (world_wait || actor_wait) {
+        if (!waiting_world) {waiting_world=true;waiting_since=g_input.now;}
+    } else if (waiting_world) {
+        /* 只记录实际观察到的世界/角色未就绪时间，不解除原加载门，也不凭时间推测脚本完成。 */
+        Log_Write("[控制就绪] 世界与玩家恢复有效；观察到世界/角色未就绪=%lu毫秒（可能含前端停留，不等同读档耗时），当前界面门=%u。",
+            (unsigned long)(g_input.now-waiting_since),reason);
+        waiting_world=false;
+    }
     bool requested=g_input.buttons || g_input.lx!=0 || g_input.ly!=0;
     if (reason==previous_reason && context_id==previous_id &&
         (!requested || g_input.now-previous_time<1000)) return;
@@ -233,11 +247,19 @@ static void shortcuts(void)
             Combat_Request(selection,ACTION_THROW,false);
             Log_Write("[投掷快捷] 槽 %d 直接请求选择=%d。",i+1,selection);
         }
-    } else if (g_intent.layer==LAYER_GUARD) {
+    } else if (g_intent.layer==LAYER_GUARD || g_intent.layer==LAYER_DUAL) {
         static const int faces[]={PAD_A,PAD_B,PAD_X,PAD_Y};
-        for (unsigned i=0;i<4;++i) if (g_intent.pressed&KEY(faces[i])) Feedback_Ultimate(i);
-        static const int directions[]={PAD_UP,PAD_RIGHT,PAD_DOWN,PAD_LEFT};
-        for (unsigned i=0;i<4;++i) if (g_intent.pressed&KEY(directions[i])) Combat_SelectCombo(i);
+        bool legacy=RuntimeConfig_GetInt(CONFIG_LEGACY_ULTIMATE)!=0;
+        if (g_intent.layer==LAYER_DUAL || legacy) {
+            for (unsigned i=0;i<4;++i) if (g_intent.pressed&KEY(faces[i])) Feedback_Ultimate(i);
+        }
+        /* 双扳机不切连招，不代办RT技能。旧模式固定十字；新模式按配置二选一。 */
+        if (g_intent.layer==LAYER_GUARD) {
+            static const int directions[]={PAD_UP,PAD_RIGHT,PAD_DOWN,PAD_LEFT};
+            static const int combo_faces[]={PAD_Y,PAD_B,PAD_A,PAD_X};
+            const int *keys=legacy || RuntimeConfig_GetInt(CONFIG_COMBO_SWITCH)==1 ? directions:combo_faces;
+            for (unsigned i=0;i<4;++i) if (g_intent.pressed&KEY(keys[i])) Combat_SelectCombo(i);
+        }
     }
     if (g_intent.layer != LAYER_SKILL) return;
     static const int buttons[] = {PAD_A,PAD_B,PAD_X,PAD_Y,PAD_UP,PAD_DOWN,PAD_LEFT,PAD_RIGHT,PAD_LB,PAD_RB,PAD_BACK,PAD_START,PAD_L3,PAD_R3};
@@ -282,16 +304,28 @@ void Game_Update(void)
         g_intent.layer==LAYER_MENU || Game_Menu()) { Game_Release();Combat_Suspend();return; }
     void *me=player();
     if (!role_valid(me)) { Game_Release();Combat_Reset();return; }
+    if (g_intent.layer==LAYER_ACTION_MENU) {
+        /* 菜单拥有ABXY/R3及摇杆，只保持仍按住LT的防御，不运行调查/技能/闪避。 */
+        Combat_Suspend();
+        if (g_input.lt) {guard_owned=true;Guard_Update(me);} else Game_Release();
+        return;
+    }
     if (owned_world && owned_world!=world()) Game_Release();
     if (g_intent.lx!=0 || g_intent.ly!=0) { facing_x=g_intent.lx; facing_y=g_intent.ly; }
     owned_world=world();
     shortcuts();
     bool entering=Inspect_Update(me);
-    if (g_intent.layer==LAYER_GAME && (g_intent.pressed & KEY(PAD_A))) { Inspect_Activate();return; }
+    if (g_intent.layer==LAYER_GAME && (g_intent.pressed & KEY(PAD_A))) {
+        /* 只有实际交给原交互才移交走近请求；空按A仍须保留松杆停止的拥有权。 */
+        if (Inspect_Activate()) {movement_owner=0;move_goal_valid=false;}
+        return;
+    }
     if (entering) return;
     void *candidate=choose_target(me);
     Combat_Update(me,candidate ? Read32(candidate,0x14):0);
-    if (g_intent.layer==LAYER_GUARD) { guard_owned=true;Guard_Update(me);return; }
+    if (g_intent.layer==LAYER_GUARD || g_intent.layer==LAYER_DUAL || g_intent.layer==LAYER_ACTION_MENU) {
+        guard_owned=true;Guard_Update(me);return;
+    }
     bool attacking=g_intent.layer==LAYER_GAME && (g_intent.held & (KEY(PAD_X)|KEY(PAD_Y)))!=0;
     bool direction=g_intent.lx!=0 || g_intent.ly!=0;
     if (attacking) {
@@ -342,6 +376,7 @@ void Game_Update(void)
 
 void Game_Keyboard(BYTE *keys)
 {
+    if (g_intent.layer==LAYER_ACTION_MENU) return;
     if (g_intent.layer==LAYER_NONE || g_intent.layer==LAYER_MOUSE || g_intent.layer==LAYER_NATIVE) return;
     /* 本批页面已消费A/B/方向/START，不再把同一操作桥成Esc或世界热键。
      * 未实现页面保留原有限键盘导航，A仍不写Enter。 */

@@ -24,11 +24,24 @@ class SyncConfigTests(unittest.TestCase):
         template = (Path(__file__).resolve().parents[1] / 'config/EDSlash.toml').read_bytes()
         # 移除整段后，其余真实模板保持原内容，模拟旧发布件少一个新配置段。
         old = template.decode()
-        start, end = old.index('[controller.interaction]'), old.index('[controller.bindings]')
+        start = old.index('[controller.interaction]')
+        end = old.index('\n[', start+1)
         old = (old[:start] + old[end:]).replace('free_run = true', 'free_run = false').encode()
         merged, keys = merged_text(old, template)
         self.assertEqual(keys, ['controller.interaction.max_distance'])
         self.assertFalse(tomllib.loads(merged.decode())['gameplay']['combat']['free_run'])
+
+    def test_actual_template_new_combat(self):
+        template = (Path(__file__).resolve().parents[1] / 'config/EDSlash.toml').read_bytes()
+        old = template.decode()
+        start=old.index('[controller.combat]');end=old.index('\n[',start+1)
+        old=(old[:start]+old[end:]).replace('max_distance = 160','max_distance = 80').encode()
+        merged,keys=merged_text(old,template)
+        self.assertEqual(keys,['controller.combat.single_trigger_ultimate','controller.combat.combo_switch_input'])
+        doc=tomllib.loads(merged.decode())
+        self.assertFalse(doc['controller']['combat']['single_trigger_ultimate'])
+        self.assertEqual(doc['controller']['combat']['combo_switch_input'],'face')
+        self.assertEqual(doc['controller']['interaction']['max_distance'],80)
 
     def test_files_and_concurrent_change(self):
         scratch = Path(__file__).resolve().parents[1] / '.build'

@@ -290,7 +290,8 @@ void Guard_Reset(void)
 
 void Guard_Update(void *role)
 {
-    if (!installed || !controlled(role) || g_intent.layer!=LAYER_GUARD) {Guard_Reset();return;}
+    if (!installed || !controlled(role) || (g_intent.layer!=LAYER_GUARD &&
+        g_intent.layer!=LAYER_DUAL && g_intent.layer!=LAYER_ACTION_MENU)) {Guard_Reset();return;}
     if (!*((BYTE *)role+0x219) && ((This0)g_profile->guard_check)(role)) {
         /* 读取权威状态，资格和延迟仍交给原生事件，不直接写防御字节。 */
         WorldPoint origin={(int)Read32(role,0x2C),(int)Read32(role,0x30)},point=origin;
@@ -309,6 +310,8 @@ void Guard_Update(void *role)
         if (*((BYTE *)role+0x219) && (point.x!=origin.x || point.y!=origin.y))
             ((This2)g_profile->facing_point)(role,(int)(uintptr_t)&point,(int)(uintptr_t)&origin);
     }
+    /* 双扳机独立组合和动作菜单只维护防御，左杆不得同时抢为单LT闪避。 */
+    if (g_intent.layer==LAYER_ACTION_MENU || g_intent.layer==LAYER_DUAL) {dodge_retries=0;return;}
     bool stick=g_intent.lx!=0 || g_intent.ly!=0;
     if (!stick) {dodge_latched=false;dodge_retries=0;return;}
     if (!dodge_latched) {dodge_latched=true;dodge_retries=5;}

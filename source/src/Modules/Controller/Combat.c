@@ -61,8 +61,8 @@ void Combat_SelectCombo(unsigned index)
 
 static int combo_selection(void *hud)
 {
-    if (!combat.combo_ready) {
-        int selected=(int)Read32(hud,0x12C);
+    int selected=(int)Read32(hud,0x12C);
+    if (!combat.combo_ready || (selected<=-1 && selected>=-4 && combat.combo_slot!=(unsigned)(-1-selected))) {
         combat.combo_slot=selected<=-1 && selected>=-4 ? (unsigned)(-1-selected):0;
         combat.combo_cursor=selected<=-1 && selected>=-4 ? (int)Read32(hud,0x120):-1;
         combat.combo_ready=true;
@@ -246,7 +246,7 @@ void Combat_Update(void *role,uint32_t candidate)
 
     /* RT/RB 的请求已经携带明确选择，可直接发动并有限重试；菜单/防御层不能泄漏攻击。 */
     if (g_intent.layer!=LAYER_GAME && g_intent.layer!=LAYER_SKILL && g_intent.layer!=LAYER_ITEM &&
-        !(g_intent.layer==LAYER_GUARD && combat.pending && combat.source==ACTION_ULTIMATE)) {
+        !((g_intent.layer==LAYER_GUARD || g_intent.layer==LAYER_DUAL) && combat.pending && combat.source==ACTION_ULTIMATE)) {
         combat.pending=false;combat.request_fresh=false;return;
     }
     bool edge=g_intent.layer==LAYER_GAME && (g_intent.pressed&(KEY(PAD_X)|KEY(PAD_Y)))!=0;
@@ -260,8 +260,16 @@ void Combat_Update(void *role,uint32_t candidate)
         void *hud=ReadPtr((void *)g_profile->skill_global,0);
         if (!Memory_Readable(hud,0xC20)) return;
         combat.point_request=false;
-        combat.selection=right ? combo_selection(hud):((This0)g_profile->left_get)(hud);
-        combat.source=right ? ACTION_COMBO:ACTION_LEFT;
+        int right_slot=(int)Read32(hud,0x12C);
+        if (right && right_slot<=-1 && right_slot>=-4) {
+            combat.selection=combo_selection(hud);combat.source=ACTION_COMBO;
+        } else if (right) {
+            /* Y只取长期右手技能；原right_get还会优先返回准备必杀/投掷选择，不能直接照搬。
+             * 原动作菜单只列type<2的组。投掷type2仍由RB直接施放，不进入Y规则。 */
+            void *group=right_slot>=0 ? (void *)(uintptr_t)((This1)g_profile->lookup)((void *)g_profile->skill_groups,right_slot):NULL;
+            combat.selection=Memory_Readable(group,0x36) && Read32(group,0x32)<2 ? right_slot:-1;
+            combat.source=ACTION_RIGHT;
+        } else {combat.selection=((This0)g_profile->left_get)(hud);combat.source=ACTION_LEFT;}
         combat.right=right;combat.pending=combat.selection>=0;combat.retries=5;fresh=true;
         if (edge) Log_Write("[战斗输入] 来源=%s 选择=%d 新按=1 忙碌=%d 历史=%u 已结束=%d。",
             right ? "右手":"左手",combat.selection,active,combat.history.count,combat.history.ended);

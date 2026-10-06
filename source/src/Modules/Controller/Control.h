@@ -10,11 +10,11 @@ enum { PAD_A, PAD_B, PAD_X, PAD_Y, PAD_BACK, PAD_GUIDE, PAD_START,
 #define KEY(b) (1u << (b))
 typedef enum { LAYER_NONE, LAYER_GAME, LAYER_MENU, LAYER_MOUSE,
                LAYER_SKILL, LAYER_MEDICINE, LAYER_ITEM, LAYER_GUARD,
-               LAYER_NATIVE } Layer;
+               LAYER_NATIVE, LAYER_DUAL, LAYER_ACTION_MENU } Layer;
 typedef struct {
     uint32_t buttons;
     float lx, ly, rx, ry;
-    bool lt, rt, connected, focused, menu;
+    bool lt, rt, connected, focused, menu, action_menu;
     uint32_t now;
 } PadInput;
 typedef struct {
@@ -27,11 +27,13 @@ typedef struct {
 typedef struct {
     uint32_t previous, blocked, start_at;
     Layer previous_layer;
-    bool mouse, running, ready, start_pending, chord;
+    bool mouse, running, ready, start_pending, chord, block_left_stick, block_right_stick;
 } ControlState;
 
 /* 纯规则层不读游戏内存。测试程序可以直接喂入按键，检查组合键是否误触发基础动作。 */
 Intent Control_Step(ControlState *state, const PadInput *input);
+/* 关闭动作选择菜单时屏蔽刚才持有的键和摇杆，LT本身不被屏蔽，防御可继续。 */
+void Control_BlockMenuInputs(ControlState *state, const PadInput *input);
 float Control_Axis(int value, int deadzone);
 void Control_Stick(int raw_x, int raw_y, int deadzone, float *x, float *y);
 void Control_WorldDirection(float screen_x, float screen_y, float *world_x, float *world_y);

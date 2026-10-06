@@ -45,6 +45,13 @@ int wmain(void)
     CHECK(RuntimeConfig_OpenPath(path));
     CHECK(!RuntimeConfig_HasPending());
     CHECK(RuntimeConfig_GetInt(CONFIG_PICKUP_MODE)==2 && RuntimeConfig_GetInt(CONFIG_DODGE_DISTANCE)==128);
+    /* 新模式缺项即false/face；真实配置保存服务校验二选一，并在输入边界应用。 */
+    CHECK(RuntimeConfig_GetInt(CONFIG_LEGACY_ULTIMATE)==0 && RuntimeConfig_GetInt(CONFIG_COMBO_SWITCH)==0);
+    CHECK(RuntimeConfig_SetText(CONFIG_COMBO_SWITCH,"dpad"));
+    CHECK(RuntimeConfig_SetInt(CONFIG_LEGACY_ULTIMATE,1));
+    CHECK(!RuntimeConfig_SetText(CONFIG_COMBO_SWITCH,"both"));
+    CHECK(RuntimeConfig_ApplyFrame(0));
+    CHECK(RuntimeConfig_GetInt(CONFIG_LEGACY_ULTIMATE)==1 && RuntimeConfig_GetInt(CONFIG_COMBO_SWITCH)==1);
     CHECK(RuntimeConfig_SetInt(CONFIG_DEADZONE,12000));
     CHECK(RuntimeConfig_HasPending());
     CHECK(RuntimeConfig_GetInt(CONFIG_DEADZONE)==8000);

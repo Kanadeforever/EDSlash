@@ -62,3 +62,5 @@ python source/tools/build.py --upx
 
 
 Guard设置应用测试使用真实TOML与双版本运动回放；test_menu链接生产Control/Menu/Game和真实虚表包装，检查标题无玩家、独立焦点、页面/来源中立门、业务ABI及逐槽失败回滚。游戏内MOD设置界面仍后置，真实高亮/动画/设备时序必须两作实机确认。
+
+编译器发生随机内部错误时，可用`python tools/build.py --jobs 1`串行复核；默认并行数6，不改变生产O2或发行/debug同一次链接的规则。

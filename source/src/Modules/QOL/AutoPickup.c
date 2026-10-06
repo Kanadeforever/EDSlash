@@ -43,6 +43,11 @@ static int g_native_pickup_scan_active;
  */
 static unsigned long g_bound_ground_manager;
 static unsigned long g_bound_pickup_action;
+/* 首次定位分帧推进，每帧最多1024槽；找到一个候选仍须扫描完以验证唯一性。 */
+static unsigned long search_table,search_next,search_limit,search_found,search_matches,search_found_slot;
+static unsigned long bound_slot;
+static unsigned char search_generation,bound_generation;
+static int search_active;
 
 static ActionEntryFn action_entry_from_address(unsigned long address)
 {
@@ -62,99 +67,70 @@ static int read_u32(unsigned long address, unsigned long* value)
 
 static int action_matches_manager(unsigned long action, unsigned long manager)
 {
-    unsigned long vtable;
-    unsigned long action_manager;
+    unsigned long header[2];
+    if (!g_profile || !action || !manager || !RuntimeWin32_Read(action,header,8ul)) return 0;
+    return header[0]==GAME_IMAGE_BASE+g_profile->qol.pickup_action_vtable_rva && header[1]==manager;
 
-    if (!g_profile || action == 0ul || manager == 0ul) {
-        return 0;
-    }
+}
 
-    if (!read_u32(action, &vtable) ||
-        !read_u32(action + ACTION_MANAGER_OFFSET, &action_manager)) {
-        return 0;
-    }
-
-    return vtable == GAME_IMAGE_BASE + g_profile->qol.pickup_action_vtable_rva &&
-           action_manager == manager;
+static int registered_action(unsigned long action,unsigned long manager,unsigned long table,
+                             unsigned long index,unsigned char generation)
+{
+    unsigned char slot[6];
+    if (!action || !RuntimeWin32_Read(table+index*ACTION_SLOT_SIZE,slot,6ul)) return 0;
+    unsigned long pointer=(unsigned long)slot[2]|((unsigned long)slot[3]<<8)|
+        ((unsigned long)slot[4]<<16)|((unsigned long)slot[5]<<24);
+    /* 仅vtable相同无法发现槽释放/复用；登记指针与代数也要匹配，才可调用原动作。 */
+    return pointer==action && slot[1]==generation && action_matches_manager(action,manager);
 }
 
 static unsigned long locate_pickup_action(void)
 {
-    unsigned long manager;
-    unsigned long table;
-    RuntimeMemoryRegion region;
-    unsigned long available;
-    unsigned long slot_count;
-    unsigned long index;
-    unsigned long found;
-    unsigned long found_count;
-
-    if (!g_profile) {
-        return 0ul;
+    unsigned long manager,table;
+    if (!g_profile) return 0ul;
+    if (!read_u32(GAME_IMAGE_BASE+g_profile->qol.ground_manager_global_rva,&manager) ||
+        !read_u32(GAME_IMAGE_BASE+g_profile->qol.action_slot_table_global_rva,&table) || !manager || !table) {
+        g_bound_ground_manager=g_bound_pickup_action=0ul;search_active=0;return 0ul;
     }
-
-    if (!read_u32(GAME_IMAGE_BASE + g_profile->qol.ground_manager_global_rva, &manager) ||
-        !read_u32(GAME_IMAGE_BASE + g_profile->qol.action_slot_table_global_rva, &table) ||
-        manager == 0ul ||
-        table == 0ul) {
-        g_bound_ground_manager = 0ul;
-        g_bound_pickup_action = 0ul;
-        return 0ul;
+    if (manager==g_bound_ground_manager && table==search_table && g_bound_pickup_action) {
+        if (registered_action(g_bound_pickup_action,manager,table,bound_slot,bound_generation)) return g_bound_pickup_action;
     }
-
-    if (manager == g_bound_ground_manager &&
-        action_matches_manager(g_bound_pickup_action, manager)) {
-        return g_bound_pickup_action;
-    }
-
-    g_bound_ground_manager = manager;
-    g_bound_pickup_action = 0ul;
-
-    if (!RuntimeWin32_Query(table, &region) ||
-        table < region.base ||
-        table >= region.base + region.size) {
-        return 0ul;
-    }
-
-    available = (region.base + region.size) - table;
-    slot_count = available / ACTION_SLOT_SIZE;
-    if (slot_count > ACTION_SLOT_SCAN_MAX) {
-        slot_count = ACTION_SLOT_SCAN_MAX;
-    }
-
-    found = 0ul;
-    found_count = 0ul;
-
-    for (index = 0ul; index < slot_count; ++index) {
-        unsigned long candidate_address;
-        unsigned long candidate;
-
-        candidate_address = table + index * ACTION_SLOT_SIZE + ACTION_SLOT_OBJECT_OFFSET;
-        if (!read_u32(candidate_address, &candidate)) {
-            continue;
+    if (manager!=g_bound_ground_manager || table!=search_table || !search_active) {
+        RuntimeMemoryRegion region;
+        g_bound_ground_manager=manager;g_bound_pickup_action=0ul;
+        if (!RuntimeWin32_Query(table,&region) || table<region.base || table>=region.base+region.size) {
+            search_active=0;return 0ul;
         }
-        if (!action_matches_manager(candidate, manager)) {
-            continue;
-        }
-
-        found = candidate;
-        ++found_count;
-
-        /*
-         * 正常场景只应存在一个匹配的拾取动作对象。
-         * 若出现多个候选，宁可本次扫描不自动拾取，也不猜哪个对象应该被调用。
-         */
-        if (found_count > 1ul) {
-            return 0ul;
+        search_table=table;search_next=search_found=search_matches=0ul;
+        search_limit=(region.base+region.size-table)/ACTION_SLOT_SIZE;
+        if(search_limit>ACTION_SLOT_SCAN_MAX)search_limit=ACTION_SLOT_SCAN_MAX;
+        search_active=1;
+    }
+    unsigned long amount=search_limit-search_next;
+    if(amount>1024ul)amount=1024ul;
+    unsigned char block[1024ul*ACTION_SLOT_SIZE];
+    /* 一次验证并读取本帧连续块，不对数万个空槽逐一VirtualQuery。
+     * 所有候选仍逐个检查实际vtable/manager，不直接缓存未知对象或提前调用。 */
+    if (!amount || !RuntimeWin32_Read(table+search_next*ACTION_SLOT_SIZE,block,amount*ACTION_SLOT_SIZE)) {
+        search_active=0;return 0ul;
+    }
+    for(unsigned long i=0;i<amount;++i) {
+        const unsigned char *p=block+i*ACTION_SLOT_SIZE+ACTION_SLOT_OBJECT_OFFSET;
+        unsigned long candidate=(unsigned long)p[0]|((unsigned long)p[1]<<8)|
+            ((unsigned long)p[2]<<16)|((unsigned long)p[3]<<24);
+        if(action_matches_manager(candidate,manager)) {
+            search_found=candidate;
+            search_found_slot=search_next+i;search_generation=block[i*ACTION_SLOT_SIZE+1];
+            if(++search_matches>1ul) {search_active=0;return 0ul;}
         }
     }
-
-    if (found_count == 1ul) {
-        g_bound_pickup_action = found;
-        return found;
+    search_next+=amount;
+    if(search_next<search_limit)return 0ul;
+    search_active=0;
+    if(search_matches==1ul && registered_action(search_found,manager,table,search_found_slot,search_generation)) {
+        bound_slot=search_found_slot;bound_generation=search_generation;g_bound_pickup_action=search_found;
     }
-
-    return 0ul;
+    return g_bound_pickup_action;
 }
 
 static int policy_accepts(PickupItemClass item_class)
@@ -223,7 +199,7 @@ int AutoPickup_Initialize(const RuntimeContext* runtime,
     g_last_scan_ms = 0ul;
     g_native_pickup_scan_active = 0;
     g_bound_ground_manager = 0ul;
-    g_bound_pickup_action = 0ul;
+    g_bound_pickup_action = 0ul;search_active=0;
 
     return g_action_entry ? 1 : 0;
 }
@@ -250,7 +226,7 @@ void AutoPickup_AfterInputFrame(void)
         }
     }
 
-    if (g_interval_ms != 0ul && (now - g_last_scan_ms) < g_interval_ms) {
+    if (!search_active && g_interval_ms != 0ul && (now - g_last_scan_ms) < g_interval_ms) {
         return;
     }
 

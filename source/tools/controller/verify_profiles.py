@@ -57,6 +57,45 @@ def verify_static_sources(pe, profile):
         assert call[0]==0xE8 and picker+offset+5+struct.unpack('<i',call[1:])[0]==profile['addresses']['inspect_static_gate']
 
 
+def verify_action_sources(pe, profile):
+    """从四份原程序的HUD点击链独立核对菜单、全局来源和提交入口。"""
+    a=profile['addresses']
+    for kind, operation, offset in [('hud','tick',4),('hud','show',0x1C),('hud','hover',0x30),
+                                    ('hud','primary',0x24),('action','tick',4),('action','hover',0x30)]:
+        actual=struct.unpack('<I',pe.read(a[f'menu_{kind}_vtable']+offset,4))[0]
+        assert actual==a[f'menu_{kind}_{operation}'], (profile['name'],kind,operation,hex(actual))
+    primary=a['menu_hud_primary']
+    load=pe.read(primary+0xE6,6)
+    assert load[:2]==b'\x8b\x0d' and struct.unpack('<I',load[2:])[0]==a['menu_action_global']
+    # 原HUD主操作交换后继续消费A8；不能把内嵌快捷格当成主按钮上下文。
+    assert pe.read(primary+0xD0,8)==b'\x8b\xbf\xa8\x00\x00\x00\x85\xff'
+    assert pe.read(primary+0x20F,5)==b'\x8b\x4f\x50\x6a\x02'
+    action_primary=struct.unpack('<I',pe.read(a['menu_action_vtable']+0x24,4))[0]
+    for source,offset,target in [(primary,0xEE,'menu_action_open'),(primary,0x3E,'menu_hud_hit'),
+                                 (a['menu_action_open'],8,'menu_action_rebuild'),(action_primary,0x25,'menu_action_commit')]:
+        call=pe.read(source+offset,5)
+        assert call[0]==0xE8 and source+offset+5+struct.unpack('<i',call[1:])[0]==a[target], (profile['name'],target)
+
+
+def verify_focus_sources(pe,profile):
+    """不依赖字段自身签名，核对原矩形裁取调用和世界持有物丢弃调用的真实来源。"""
+    a=profile['addresses'];main=profile['game_id']==1
+    for call_site,target in [(0x4A9647 if main else 0x4BC1A1,'focus_rect_draw'),
+                             ((0x473F10 if main else 0x482790)+0x70,'menu_item_drop')]:
+        call=pe.read(call_site,5)
+        assert call[0]==0xE8 and call_site+5+struct.unpack('<i',call[1:])[0]==a[target], (profile['name'],target)
+    # 矩形裁取有10个栈参数，丢弃有1个，不能把普通六参数精灵绘制混入。
+    assert pe.read(a['focus_rect_draw']+0x3E,3)==b'\xc2\x28\x00'
+    call=pe.read(a['focus_rect_draw']+0x32,5)
+    assert call[0]==0xE8 and a['focus_rect_draw']+0x37+struct.unpack('<i',call[1:])[0]==a['focus_frame_get']
+    call=pe.read(a['focus_rect_draw']+0x39,5)
+    frame_rect=a['focus_rect_draw']+0x3E+struct.unpack('<i',call[1:])[0]
+    call=pe.read(frame_rect+4,5)
+    assert call[0]==0xE8 and frame_rect+9+struct.unpack('<i',call[1:])[0]==a['focus_image_get']
+
+    assert pe.read(a['menu_item_drop']+0xC5,3)==b'\xc2\x04\x00'
+
+
 def verify_baselines(data):
     base = ROOT / '参考资料/刀剑封魔录系列反编译资料库_v0.31/基线程序'
     # 四份 EXE 必须同时存在才做本地证据检查。源码构建不携带游戏 EXE，也不下载游戏。
@@ -73,6 +112,8 @@ def verify_baselines(data):
         # 从原EXE指令独立取得地图/句柄表地址，不能只验证由同一元数据生成的C表。
         # 模拟对象能够提供正确地图，无法发现档案全局地址误写，因此这里必须核对原指令。
         verify_static_sources(pe,profile)
+        verify_action_sources(pe,profile)
+        verify_focus_sources(pe,profile)
         assert pe.read(profile['addresses']['resolver_call'], 5).hex() == profile['call_bytes']
         # 把调用点真正解码回目标，而不是只核对一串由同一数据源复制的字节。
         call = pe.read(profile['addresses']['resolver_call'], 5)

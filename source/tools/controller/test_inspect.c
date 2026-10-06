@@ -70,14 +70,18 @@ static void fixture(Profile *profile,bool expansion)
 static void regression(bool expansion)
 {
     Profile profile;fixture(&profile,expansion);
+    /* 同距前方优先、非常近的身后优于远前方，360度不会变成强制只选前面。 */
+    point_actor(3,-64,0);point_actor(4,64,0);update();CHECK(Read32(manager_data,4)==4);
+    point_actor(3,-16,0);update();CHECK(Read32(manager_data,4)==3);
+    point_actor(3,128,0);point_actor(4,64,0);Inspect_Reset();
     /* 动态调查按真实route/ready资格，0x3C类也可交互，不再只准0x28。 */
     update();CHECK(Read32(manager_data,4)==4);
     Write32(extra_actor,profile.inspect_ready_offset,0);update();CHECK(Read32(manager_data,4)==3);
-    point_actor(3,-64,0);update();CHECK(Read32(manager_data,4)==0);
+    point_actor(3,-64,0);update();CHECK(Read32(manager_data,4)==3); /* 身后近身仍可调查 */
     point_actor(3,64,64);update();CHECK(Read32(manager_data,4)==3); /* 正好45度边界 */
-    point_actor(3,32,64);update();CHECK(Read32(manager_data,4)==0); /* 扇区之外 */
+    point_actor(3,32,64);update();CHECK(Read32(manager_data,4)==3); /* 不再按角度排除 */
     Write32(roles[0],0x14B,2);update();CHECK(Read32(manager_data,4)==3); /* 松杆后按实际正面 */
-    point_actor(3,64,0);update();CHECK(Read32(manager_data,4)==0);
+    point_actor(3,64,0);update();CHECK(Read32(manager_data,4)==3);
     Write32(roles[0],0x14B,0);point_actor(3,64*3,0);update();CHECK(Read32(manager_data,4)==0);
     point_actor(3,64,0);Write32(roles[2],profile.invalid_offset,1);update();CHECK(Read32(manager_data,4)==0);
     Write32(roles[2],profile.invalid_offset,0);update();
@@ -99,7 +103,7 @@ static void regression(bool expansion)
     Write32(static_objects[0],0xBC,1);update();CHECK(Read32(manager_data,4)==0);
     put_static(1,0x88,5,4);update();CHECK(Read32(manager_data,4)==6);Inspect_Activate();CHECK(last_opcode==23 && arg1==6);
     put_static(0,0x87,6,4);update();CHECK(Read32(manager_data,4)==5); /* 原邻接门之外 */
-    put_static(0,0x87,3,4);update();CHECK(Read32(manager_data,4)==0); /* 身后不选 */
+    put_static(0,0x87,3,4);update();CHECK(Read32(manager_data,4)==5); /* 身后近身也可选 */
     put_static(0,0x96,5,4);update();CHECK(Read32(manager_data,4)==0);
     put_static(0,0x80,5,4);update();CHECK(Read32(manager_data,4)==5);Inspect_Activate();CHECK(last_opcode==10 && arg1==1001 && arg2==352 && arg3==288);Combat_Reset();
     put_static(0,0x87,5,4);grid_cell(5,4)[0x10]=0;update();CHECK(Read32(manager_data,4)==0);
@@ -116,11 +120,13 @@ static void regression(bool expansion)
     CHECK(portal_packets==0); /* 走进原区域绝不自动读图 */
     Inspect_Activate();CHECK(portal_packets==1 && last_opcode==20 && arg1==5 && arg2==4 && arg3==7);
     CHECK(Inspect_Update(roles[0])); /* 只维护已经由A提交的原pending */
+    g_intent.lx=-1;CHECK(!Inspect_Update(roles[0])); /* 新方向立即取消插件保护 */
+    g_intent.lx=1;Inspect_Activate();CHECK(portal_packets==2);
     g_input.now+=700;Write32(roles[0],profile.pending_offset,(uint32_t)-1);Write32(roles[0],profile.pending_offset+12,0);
-    CHECK(!Inspect_Update(roles[0]) && portal_packets==1);
-    put_static(2,0x96,6,4);Inspect_Update(roles[0]);Inspect_Activate();CHECK(portal_packets==1); /* 远处聚焦不等于进入 */
-    put_static(2,0x96,5,4);map_pointer=changed_map;Inspect_Update(roles[0]);CHECK(portal_packets==1);
-    Write32(world_data,0x58,0);Inspect_Reset();Write32(world_data,0x58,1);Inspect_Update(roles[0]);CHECK(portal_packets==1);
+    CHECK(!Inspect_Update(roles[0]) && portal_packets==2);
+    put_static(2,0x96,6,4);Inspect_Update(roles[0]);Inspect_Activate();CHECK(portal_packets==2); /* 远处聚焦不等于进入 */
+    put_static(2,0x96,5,4);map_pointer=changed_map;Inspect_Update(roles[0]);CHECK(portal_packets==2);
+    Write32(world_data,0x58,0);Inspect_Reset();Write32(world_data,0x58,1);Inspect_Update(roles[0]);CHECK(portal_packets==2);
     /* 物理来源恢复原WorldMouseMove，清理不得撤掉其它来源的新悬停。 */
     Inspect_Reset();g_intent.layer=LAYER_NATIVE;
     CHECK(((This3)patched_callee((uintptr_t)hover_code))(mouse_data,11,22,(void *)33)==9);

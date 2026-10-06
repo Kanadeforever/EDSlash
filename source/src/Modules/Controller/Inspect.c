@@ -6,6 +6,8 @@
 #include <stdlib.h>
 
 static uint32_t focus,focus_kind,owned_hover,actor,zone_request,requested_at;
+/* 原请求尚在走近/消费时，旧摇杆方向不能再提交远移动覆盖它；新方向可取消。 */
+static struct {uint32_t target,kind,actor,at;void *world;float x,y;} interaction;
 static void *focus_world,*hover_manager,*scene_world,*scene_map;
 static bool installed;
 static BYTE saved_hover[5];
@@ -21,6 +23,7 @@ static bool pad_world(void)
 }
 void Inspect_Reset(void)
 {
+    memset(&interaction,0,sizeof interaction);
     /* 不撤掉别的来源刚写入的悬停，也不把旧地图的管理器当成新地图使用。 */
     if (owned_hover && focus_world==world() && hover_manager==manager() &&
         Memory_Readable(hover_manager,0x10) && Read32(hover_manager,4)==owned_hover)
@@ -54,12 +57,13 @@ static void facing(void *role,float *x,float *y)
     }
     *x=cached_x;*y=cached_y;
 }
-static bool cone(double dx,double dy,float fx,float fy)
+static double proximity_score(double dx,double dy,float fx,float fy,uint32_t handle,uint32_t old_focus)
 {
-    double distance=dx*dx+dy*dy,dot=dx*fx+dy*fy;
-    /* 正面总角度90度。松杆继续使用角色真实朝向，不回退到全圆最近物体。
-     * 微小容差只消除float在恰好45度边界上的舍入误差。 */
-    return distance<1 || (dot>=0 && dot*dot+0.001>=distance*0.5);
+    /* 360度不以角度排除目标。前方加权只影响多个近身目标的排序，半径仍按真实距离。
+     * 原焦点有小幅保留优势，减少摇杆微调/角色轻微位移时来回跳选。 */
+    double distance=dx*dx+dy*dy;
+    double score=distance*(dx*fx+dy*fy>=0 ? 0.80:1.0);
+    return handle==old_focus ? score*0.92:score;
 }
 static bool static_valid(void *object)
 {
@@ -134,7 +138,7 @@ static bool inspect_update(void *role)
      * 扫描格数随半径扩大，最多17×17；参数读快照，不在角色帧读取文件。 */
     int radius=RuntimeConfig_GetInt(CONFIG_INSPECT_DISTANCE);
     if (radius<16 || radius>480) radius=160;
-    double best=(double)radius*radius;
+    double maximum=(double)radius*radius,best=maximum;
     int scan_radius=(radius+63)/64;
     if (scan_radius>8) scan_radius=8;
     unsigned role_state=Read32(role,0x73);
@@ -146,15 +150,16 @@ static bool inspect_update(void *role)
         for (unsigned n=0;candidate && n<4096;++n) {
             if (!Memory_Readable(candidate,0x6B)) break;
             void *next=ReadPtr(candidate,8);unsigned type=Read32(candidate,0x67);
-            if (candidate!=role && type>=0x1E && type<=0x64 && Game_Resolve(Read32(candidate,0x14))==candidate &&
+            if (candidate!=role && type>=0x1E && type<=0x64 &&
                 Memory_Readable(candidate,g_profile->invalid_offset+4) && !Read32(candidate,g_profile->invalid_offset) &&
                 Read32(candidate,g_profile->interact_offset) && Read32(candidate,g_profile->inspect_ready_offset)) {
                 WorldPoint point={(int)Read32(candidate,0x2C),(int)Read32(candidate,0x30)},target_grid;
                 ((Grid)g_profile->world_to_grid)(&target_grid,&point);++dynamic_count;
                 double dx=(double)point.x-origin.x,dy=(double)point.y-origin.y,distance=dx*dx+dy*dy;
                 if (abs(target_grid.x-grid.x)<=2 && abs(target_grid.y-grid.y)<=2 &&
-                    cone(dx,dy,fx,fy) && distance<=best) {
-                    best=distance;focus=Read32(candidate,0x14);focus_kind=19;
+                    distance<=maximum && proximity_score(dx,dy,fx,fy,Read32(candidate,0x14),old_focus)<=best &&
+                    Game_Resolve(Read32(candidate,0x14))==candidate) {
+                    focus=Read32(candidate,0x14);best=proximity_score(dx,dy,fx,fy,focus,old_focus);focus_kind=19;
                 }
             }
             if (next==candidate) break;
@@ -171,12 +176,12 @@ static bool inspect_update(void *role)
         BYTE *record=cell(&view,x,y);
         if (!record || !interacting) continue;
         double dx=(double)x*64+32-origin.x,dy=(double)y*64+32-origin.y,distance=dx*dx+dy*dy;
-        if (distance>best || !cone(dx,dy,fx,fy)) continue;
+        if (distance>maximum) continue;
         uint32_t item_handle=Read32(record,0x0E)&0xFFFFu;
         void *item=item_handle==0xFFFFu ? NULL:Game_Resolve(item_handle);
         if (interacting && Read32(item,0x67)==0x17) {
-            double ix=(double)x*64+32-origin.x,iy=(double)y*64+32-origin.y,score=ix*ix+iy*iy;
-            if (cone(ix,iy,fx,fy) && score<=best) {
+            double score=proximity_score(dx,dy,fx,fy,item_handle,old_focus);
+            if (score<=best) {
                 best=score;focus=item_handle;focus_kind=21;focus_grid_x=x;focus_grid_y=y;
             }
         }
@@ -193,21 +198,33 @@ static bool inspect_update(void *role)
         if (!eligible[index]) continue;
         ++static_count;unsigned subtype=subtypes[index];
         /* 使用物件占用的格而非猜对象Renderer偏移，大物件靠近的一侧也可以聚焦。 */
-        if (interacting && cone(dx,dy,fx,fy) && distance<=best) {
-            best=distance;focus=handle;focus_kind=subtype==0x96 ? 20:subtype==0x89 ? 24:subtype==0x87 || subtype==0x88 ? 23:subtype<=0x86 ? 100:1;
+        double score=proximity_score(dx,dy,fx,fy,handle,old_focus);
+        if (interacting && score<=best) {
+            best=score;focus=handle;focus_kind=subtype==0x96 ? 20:subtype==0x89 ? 24:subtype==0x87 || subtype==0x88 ? 23:subtype<=0x86 ? 100:1;
             focus_grid_x=x;focus_grid_y=y;
         }
     }
     focus_world=current_world;
-    if (old_focus!=focus) Log_Write("[调查焦点] 句柄=%08lx 原事件=%lu 动态候选=%u 静态格=%u 正面90度。",
+    if (old_focus!=focus) Log_Write("[调查焦点] 句柄=%08lx 原事件=%lu 动态候选=%u 静态格=%u 360度近身，前方优先。",
         (unsigned long)focus,(unsigned long)focus_kind,dynamic_count,static_count);
     Inspect_Project();
     if (zone_request && (zone_request!=focus || focus_kind!=20)) zone_request=0;
     /* 只保留A手动提交的请求维护；走进区域本身不得生成任何换图事件。 */
     /* 不让同帧/随后尚在处理的原事件被前探移动立即覆盖；转向离开则可正常走开。
-     * 原脚本未响应时最多等600ms，不永久锁住角色，不在同一区域反复发请求。 */
-    bool pending=Read32(role,g_profile->pending_offset)==20 && Read32(role,g_profile->pending_offset+12)==zone_request;
-    return moving && focus==zone_request && zone_request && (pending || g_input.now-requested_at<600u);
+     * 保护仍在原pending中的请求，新方向可取消；不在同一区域反复发请求。 */
+    if (interaction.target && interaction.world==current_world && interaction.actor==current_actor) {
+        bool pending=Read32(role,g_profile->pending_offset)==interaction.kind &&
+            Read32(role,g_profile->pending_offset+(interaction.kind==20 ? 12:4))==interaction.target;
+        float length=hypotf(interaction.x,interaction.y)*hypotf(g_intent.lx,g_intent.ly);
+        bool changed=moving && (length==0 ||
+            (interaction.x*g_intent.lx+interaction.y*g_intent.ly)/length<0.95f);
+        uint32_t elapsed=g_input.now-interaction.at;
+        /* 仅保护仍被原版保留的请求与提交到消费的短窗口；不人为固定等待600ms。
+         * 原拒绝/结束、超时或玩家新方向均释放控制。 */
+        if (!changed && elapsed<2000u && (pending || elapsed<80u)) return true;
+        memset(&interaction,0,sizeof interaction);
+    }
+    return false;
 }
 bool Inspect_Update(void *role)
 {
@@ -230,29 +247,36 @@ static bool portal_near(void)
     }
     return false;
 }
-void Inspect_Activate(void)
+bool Inspect_Activate(void)
 {
     void *object=Game_Resolve(focus);
     if (!object || focus_world!=world()) {
-        Log_Write("[调查] 正面没有有效目标，动态=%u 静态格=%u 地图=%08lx 格=%d,%d。",
-            dynamic_count,static_count,(unsigned long)(uintptr_t)scene_map,focus_grid_x,focus_grid_y);return;
+        Log_Write("[调查] 近身没有有效目标，动态=%u 静态格=%u 地图=%08lx 格=%d,%d。",
+            dynamic_count,static_count,(unsigned long)(uintptr_t)scene_map,focus_grid_x,focus_grid_y);return false;
     }
+    bool submitted=false;
     if (focus_kind==19) {
-        if (!((This1)g_profile->inspect_gate)(manager(),(int)focus)) submit(19,focus);
-    } else if (focus_kind==21 && Read32(object,0x67)==0x17) submit(21,focus);
+        if (!((This1)g_profile->inspect_gate)(manager(),(int)focus)) {submit(19,focus);submitted=true;}
+    } else if (focus_kind==21 && Read32(object,0x67)==0x17) {submit(21,focus);submitted=true;}
     else if (focus_kind==100 && static_valid(object)) {
         void *role=Game_Player();int group=((This1)g_profile->inspect_basic_get)(role,1);
         WorldPoint point={focus_grid_x*64+32,focus_grid_y*64+32};
-        if (group<0) {Log_Write("[调查][拒绝] 原基础动作当前不可用。");return;}
+        if (group<0) {Log_Write("[调查][拒绝] 原基础动作当前不可用。");return false;}
         Combat_RequestPoint(group,&point);Combat_Update(role,Combat_Target());
-        Log_Write("[调查操作] 静态原基础技能组=%d，目标点=%d,%d。",group,point.x,point.y);return;
-    } else if (focus_kind==1 && static_valid(object)) submit(1,focus);
+        Log_Write("[调查操作] 静态原基础技能组=%d，目标点=%d,%d。",group,point.x,point.y);return true;
+    } else if (focus_kind==1 && static_valid(object)) {submit(1,focus);return true;}
     else if ((focus_kind==20 || focus_kind==23 || focus_kind==24) && static_valid(object)) {
-        if (focus_kind==20 && !portal_near()) {Log_Write("[调查][拒绝] 尚未进入原换区区域，A不提交换区。");return;}
+        if (focus_kind==20 && !portal_near()) {Log_Write("[调查][拒绝] 尚未进入原换区区域，A不提交换区。");return false;}
         submit(focus_kind,focus);
+        submitted=true;
         if (focus_kind==20) {zone_request=focus;requested_at=g_input.now;}
     }
+    if (submitted) {
+        interaction.target=focus;interaction.kind=focus_kind;interaction.actor=Read32(Game_Player(),0x14);
+        interaction.world=world();interaction.at=g_input.now;interaction.x=g_intent.lx;interaction.y=g_intent.ly;
+    }
     Log_Write("[调查操作] 原事件=%lu 句柄=%08lx。",(unsigned long)focus_kind,(unsigned long)focus);
+    return submitted;
 }
 static int __attribute__((fastcall)) hover_hook(void *mouse,void *unused,int event,int x,void *y)
 {
@@ -284,6 +308,6 @@ bool Inspect_Initialize(void)
     if (!HookManager_Claim(SHARED_HOOK_CONTROLLER_INSPECT,RUNTIME_MODULE_CONTROLLER)) return false;
     BYTE replacement[5]={0xE8};relative=(int32_t)((uintptr_t)hover_hook-target-5);memcpy(replacement+1,&relative,4);
     installed=Memory_Patch((void *)target,replacement,5);
-    if (installed) Log_Write("[调查] 动态交互/静态87、88、89、原TransGo出口及正面90度焦点接通，原WorldHover事件已隔离。");
+    if (installed) Log_Write("[调查] 动态交互/静态87、88、89、原TransGo出口及360度近身焦点接通，原WorldHover事件已隔离。");
     return installed;
 }

@@ -45,7 +45,7 @@ static void use_physical_mouse(void)
     if (runtime_state!=1 || control.mouse || native_control) return;
     Combat_ExportHistory();
     native_pad_anchor=previous_pad;
-    Menu_Suspend();Game_Release();Combat_Suspend();
+    ActionMenu_Suspend();Menu_Suspend();Game_Release();Combat_Suspend();
     native_control=true;
     memset(&g_intent,0,sizeof g_intent);g_intent.layer=LAYER_NATIVE;
     Log_Write("[输入来源] 物理鼠标接管；恢复原版鼠标解析、重试和动作历史。");
@@ -68,7 +68,7 @@ static LRESULT CALLBACK window_hook(HWND window, UINT message, WPARAM wp, LPARAM
         control.previous_layer = LAYER_NONE;
         memset(&g_intent, 0, sizeof g_intent);
         Game_Release(); Input_ReleaseMouse(); Input_Rumble(0);
-        Combat_Reset();Menu_Suspend();
+        Combat_Reset();ActionMenu_Suspend();Menu_Suspend();
     }
     LRESULT result = CallWindowProcW(previous_window_proc, window, message, wp, lp);
     if (message == WM_NCDESTROY) {
@@ -161,6 +161,7 @@ static BOOL WINAPI keyboard_hook(PBYTE keys)
      * 新按键边沿仍用相邻帧判断，不能因基准中曾按住同键而漏掉重新按下。 */
     if (native_control && Control_FreshInput(&g_input,&native_pad_anchor)) fresh_pad=true;
     previous_pad=g_input;
+    g_input.action_menu=ActionMenu_Active();
     g_intent = Control_Step(&control, &g_input);
     if (native_control && fresh_pad && !control.mouse) {
         Combat_ImportHistory();native_control=false;
@@ -183,7 +184,10 @@ static BOOL WINAPI keyboard_hook(PBYTE keys)
     }
     Input_Mouse(g_intent.layer == LAYER_MOUSE && !g_intent.mode_changed);
     /* 菜单不能依赖世界/玩家就绪；在真实游戏键盘采样线程完成独立焦点与业务。 */
-    Menu_Update();
+    bool action_was_open=ActionMenu_Active();
+    bool action_closed=ActionMenu_Update();
+    if (action_closed) Control_BlockMenuInputs(&control,&g_input);
+    if (!action_was_open && !ActionMenu_Active() && !action_closed) Menu_Update();
     Game_Keyboard(keys);
     return result;
 }
@@ -305,8 +309,8 @@ static void initialize_runtime(void)
         patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
         patch((void *)g_profile->resolver_call,saved_call,5);Input_Shutdown();return;
     }
-    if (!Guard_Initialize() || !Feedback_Initialize() || !Menu_Initialize() || !Cursor_Initialize() || !Inspect_Initialize()) {
-        Inspect_Shutdown();Cursor_Shutdown();Menu_Shutdown();Guard_Shutdown();Feedback_Shutdown();
+    if (!Guard_Initialize() || !Feedback_Initialize() || !Menu_Initialize() || !ActionMenu_Initialize() || !Cursor_Initialize() || !Inspect_Initialize()) {
+        Inspect_Shutdown();Cursor_Shutdown();ActionMenu_Shutdown();Menu_Shutdown();Guard_Shutdown();Feedback_Shutdown();
         patch((void *)g_profile->end_call,saved_end_call,5);
         patch((void *)g_profile->retry_call,saved_retry_call,5);
         patch((void *)g_profile->history_call,saved_history_call,5);
@@ -348,7 +352,7 @@ void ControllerModule_Shutdown(void)
 {
     /* 仅在显式卸载时撤回仍归本模块的入口；进程终止不在Loader锁内关闭SDL线程。 */
     if (!g_profile || !original_keyboard) return;
-        Inspect_Shutdown();Cursor_Shutdown();Menu_Shutdown();Feedback_Shutdown();Guard_Shutdown();
+        Inspect_Shutdown();Cursor_Shutdown();ActionMenu_Shutdown();Menu_Shutdown();Feedback_Shutdown();Guard_Shutdown();
         if (hooked_window && (WNDPROC)GetWindowLongPtrW(hooked_window,GWLP_WNDPROC)==window_hook)
             SetWindowLongPtrW(hooked_window,GWLP_WNDPROC,(LONG_PTR)previous_window_proc);
         /* 不支持运行中反复热装卸；正常显式卸载时只撤销仍归本插件拥有的补丁。 */

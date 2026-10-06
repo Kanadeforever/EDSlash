@@ -4,7 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import unittest
-from verify_profiles import PE, verify_static_sources
+from verify_profiles import PE, verify_static_sources, verify_action_sources, verify_focus_sources
 
 
 class StaticSourceTests(unittest.TestCase):
@@ -29,6 +29,30 @@ class StaticSourceTests(unittest.TestCase):
         for profile,pe in self.samples:
             with self.subTest(profile=profile['name']):
                 verify_static_sources(pe,profile)
+
+    def test_four_action_sources(self):
+        for profile,pe in self.samples:
+            with self.subTest(profile=profile['name']):
+                verify_action_sources(pe,profile)
+
+    def test_reject_action_cross_fields(self):
+        # 保持原EXE和签名不变，只改一个菜单字段，原指令来源检查必须拒绝。
+        fields=('menu_hud_vtable','menu_hud_primary','menu_hud_hit','menu_action_vtable',
+                'menu_action_global','menu_action_open','menu_action_rebuild','menu_action_commit')
+        for profile,pe in self.samples:
+            for field in fields:
+                with self.subTest(profile=profile['name'],field=field):
+                    wrong=deepcopy(profile);wrong['addresses'][field]+=4
+                    with self.assertRaises(AssertionError):
+                        verify_action_sources(pe,wrong)
+
+    def test_focus_draw_and_drop_sources(self):
+        for profile,pe in self.samples:
+            verify_focus_sources(pe,profile)
+            for field in ('focus_rect_draw','focus_frame_get','focus_image_get','menu_item_drop'):
+                with self.subTest(profile=profile['name'],field=field):
+                    wrong=deepcopy(profile);wrong['addresses'][field]+=4
+                    with self.assertRaises(AssertionError):verify_focus_sources(pe,wrong)
 
     def test_reject_old_waizhuan_map(self):
         # 原宿主回放给了正确模拟指针，所以无法发现这项真实档案错误。

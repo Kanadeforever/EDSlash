@@ -71,7 +71,9 @@ Intent Control_Step(ControlState *s, const PadInput *in)
     }
     uint32_t edge = in->buttons & ~s->previous;
     uint32_t combo = KEY(PAD_BACK) | KEY(PAD_START);
-    if ((in->buttons & combo) == combo && !s->chord) {
+    /* RT的BACK/START是技能槽，双扳机是独立层；修饰层不能误进入救援鼠标模式。 */
+    bool rescue_layer=!in->lt && !in->rt && !in->action_menu;
+    if (rescue_layer && (in->buttons & combo) == combo && (edge&combo) && !(s->blocked&combo) && !s->chord) {
         s->mouse = !s->mouse; s->running = false; s->chord = true;
         s->start_pending = false; out.mode_changed = true; out.reset = true;
         out.rumble_ms = s->mouse ? 200 : 1500;
@@ -82,6 +84,7 @@ Intent Control_Step(ControlState *s, const PadInput *in)
         if (!(in->buttons & combo)) s->chord = false;
     }
     Layer next = s->mouse ? LAYER_MOUSE : in->menu ? LAYER_MENU :
+        in->action_menu ? LAYER_ACTION_MENU : in->lt && in->rt ? LAYER_DUAL :
         in->rt ? LAYER_SKILL : in->lt ? LAYER_GUARD :
         (in->buttons & KEY(PAD_LB)) ? LAYER_MEDICINE :
         (in->buttons & KEY(PAD_RB)) ? LAYER_ITEM : LAYER_GAME;
@@ -90,7 +93,10 @@ Intent Control_Step(ControlState *s, const PadInput *in)
         /* 只屏蔽进入新层前就一直按着的键。同帧新按的 X 可以属于 RT 层；
            松开 RT 但继续按 X 时，则不能突然变成左手攻击。 */
         s->blocked |= in->buttons & s->previous;
-        out.reset = true;
+        bool old_guard=s->previous_layer==LAYER_GUARD || s->previous_layer==LAYER_DUAL || s->previous_layer==LAYER_ACTION_MENU;
+        bool new_guard=next==LAYER_GUARD || next==LAYER_DUAL || next==LAYER_ACTION_MENU;
+        /* 双扳机和动作菜单切换仍保持LT，不能为了隔离按键先解除防御。 */
+        out.reset = !(in->lt && old_guard && new_guard);
     }
     out.layer = next;
     out.held = in->buttons & ~s->blocked;
@@ -99,6 +105,14 @@ Intent Control_Step(ControlState *s, const PadInput *in)
         out.held &= ~combo; out.pressed &= ~combo;
     }
     out.lx = in->lx; out.ly = in->ly; out.rx = in->rx; out.ry = in->ry;
+    if (s->block_left_stick) {
+        if (!in->lx && !in->ly) s->block_left_stick=false;
+        else out.lx=out.ly=0;
+    }
+    if (s->block_right_stick) {
+        if (!in->rx && !in->ry) s->block_right_stick=false;
+        else out.rx=out.ry=0;
+    }
     bool can_move = next == LAYER_GAME || next == LAYER_SKILL || next == LAYER_MEDICINE || next == LAYER_ITEM;
     if (can_move && (in->lx != 0 || in->ly != 0)) {
         if (next == LAYER_GAME && (out.pressed & KEY(PAD_L3))) s->running = true;
@@ -118,6 +132,15 @@ Intent Control_Step(ControlState *s, const PadInput *in)
     }
     s->previous = in->buttons; s->previous_layer = next;
     return out;
+}
+
+void Control_BlockMenuInputs(ControlState *s,const PadInput *in)
+{
+    /* 每个按钮独立等释放，摇杆分别等回中；不要求把还用于防御的LT松开。 */
+    s->blocked|=in->buttons;
+    s->block_left_stick=in->lx!=0 || in->ly!=0;
+    s->block_right_stick=in->rx!=0 || in->ry!=0;
+    s->start_pending=false;
 }
 
 bool Control_FreshInput(const PadInput *in, const PadInput *old)

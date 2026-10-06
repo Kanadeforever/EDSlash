@@ -39,7 +39,13 @@ static const ConfigDescriptor fields[CONFIG_COUNT]={
     {CONFIG_RECOVERY_MODE,"gameplay.stamina","recovery_mode","攻击恢复模式","guard跟随防御消耗，percent自定百分比。",CONFIG_CHOICE,0,0,1,1,NULL,"guard|percent",CONFIG_APPLY_FRAME},
     P(CONFIG_RECOVERY_PERCENT,"recovery_percent","实伤恢复百分比"),
     N(CONFIG_INSPECT_DISTANCE,"controller.interaction","max_distance","正面调查最大距离",
-      "世界单位，64=1格；范围16～480，默认160，按距离裁剪90度扇区；不改变原互动资格。",160,16,480,16,CONFIG_APPLY_FRAME)
+      "世界单位，64=1格；范围16～480，默认160；360度近身搜索，优先近处及前方，不改变原互动资格。",160,16,480,16,CONFIG_APPLY_FRAME),
+    {CONFIG_LEGACY_ULTIMATE,"controller.combat","single_trigger_ultimate","旧必杀输入模式",
+     "false使用LT+RT+ABXY准备/再次新按释放；true恢复LT+ABXY，连招只能LT十字切换。动作菜单仍使用双扳机。",
+     CONFIG_BOOL,0,0,1,1,NULL,NULL,CONFIG_APPLY_FRAME},
+    {CONFIG_COMBO_SWITCH,"controller.combat","combo_switch_input","新模式连招切换输入",
+     "仅single_trigger_ultimate=false时生效：face为LT+Y/B/A/X切1/2/3/4，dpad为LT+上/右/下/左；旧模式固定dpad。",
+     CONFIG_CHOICE,0,0,1,1,NULL,"face|dpad",CONFIG_APPLY_FRAME}
 };
 #undef B
 #undef N
@@ -262,7 +268,19 @@ int RuntimeConfig_SetInt(ConfigId id,int value)
 }
 int RuntimeConfig_SetText(ConfigId id,const char *value)
 {
-    const ConfigDescriptor *f=RuntimeConfig_Descriptor(id);char value_text[80];size_t size;
+    const ConfigDescriptor *f=RuntimeConfig_Descriptor(id);
+    if (f && f->type==CONFIG_CHOICE && value) {
+        /* 枚举在TOML里是名字，在内存里是编号。先比对描述表允许的名字，
+         * 再复用整数保存链；未知名字不写磁盘，也不改变待应用快照。 */
+        const ConfigDescriptor *field=f;
+        for (int index=field->minimum;index<=field->maximum;++index) {
+            char item[40];
+            if (choice_text(field,index,item,sizeof item) && !strcmp(item,value))
+                return RuntimeConfig_SetInt(id,index);
+        }
+        return error("选项名称不在允许列表内");
+    }
+    char value_text[80];size_t size;
     if (!f || id!=CONFIG_ASPECT_RATIO || !value || !valid_ratio(value) ||
         strlen(value)>=sizeof active.aspect_ratio || !literal(f,0,value,value_text,sizeof value_text))
         return error("画面比例必须为auto或有效宽:高");

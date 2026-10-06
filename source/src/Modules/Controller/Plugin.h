@@ -74,6 +74,11 @@ typedef struct {
     uintptr_t menu_charm_vtable,menu_charm_tick,menu_charm_show,menu_charm_hover,menu_charm_primary;
     uintptr_t menu_shop_position_call1,menu_shop_position_call2;
     uintptr_t menu_inlay_position_call;
+    /* HUD快捷栏与原左右手动作选择器；来源必须从各自虚表/原调用解码核对。 */
+    uintptr_t focus_rect_draw,focus_frame_get,focus_image_get,menu_item_drop;
+    uintptr_t menu_hud_vtable,menu_hud_tick,menu_hud_show,menu_hud_hover,menu_hud_primary,menu_hud_hit;
+    uintptr_t menu_action_vtable,menu_action_global,menu_action_open,menu_action_rebuild;
+    uintptr_t menu_action_commit,menu_action_tick,menu_action_hover;
     unsigned inspect_ready_offset;
     unsigned dodge_counter_offset;
     unsigned stamina_offset;

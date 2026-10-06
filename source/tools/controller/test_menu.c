@@ -10,7 +10,7 @@
 
 static BYTE menu_roots[15][0x300],menu_children[15][16][0xE4],menu_sprites[15][16][4*32];
 static BYTE unknown_root[0xD0],menu_resource[16];
-static uintptr_t menu_tables[15][26];
+static uintptr_t menu_tables[16][26];
 static ControlState menu_control;
 static bool expansion_case,transition_after_action;
 static unsigned title_actions,system_actions,confirm_actions,native_hovers,tick_calls,animation_resets;
@@ -61,6 +61,7 @@ bool Memory_Patch(void *target,const void *data,size_t bytes)
 
 static int root_kind(void *self)
 {
+    if (self==hud_data) return 15;
     for (int i=0;i<15;++i) if (self==menu_roots[i]) return i;
     CHECK(false);return -1;
 }
@@ -265,11 +266,57 @@ static int __attribute__((thiscall)) message_primary(void *self,int e,int x,void
     return 1;
 }
 static BOOL WINAPI cursor_position(POINT *point) { point->x=37;point->y=49;return TRUE; }
+static BYTE focus_sprites[6*32],focus_surface[0x20];
+static void record_focus(int x,int y,int width,int height);
 static int __attribute__((thiscall)) cursor_sprite(void *self,void *surface,int x,int y,int frame,int shade,int flags)
 {
+    if(self==focus_sprites+5*32) {CHECK(surface==focus_surface && !frame && !shade && !flags);record_focus(x,y,26,26);return 6;}
     CHECK(self==menu_sprites[0][0] && surface==(void *)0x246 && frame==0 && shade==-1 && flags==0);
     ++cursor_draws;cursor_x=x;cursor_y=y;return 6;
 }
+static BYTE focus_description[22],focus_image[0x20],focus_bank[8],focus_entry[0x28];
+static void *focus_entries[1]={focus_entry};
+static unsigned focus_draws,drop_requests;static RECT focus_rectangle;
+static void record_focus(int x,int y,int width,int height)
+{
+    RECT r={x,y,x+width,y+height};
+    if(!focus_draws)focus_rectangle=r;
+    else {
+        if(r.left<focus_rectangle.left)focus_rectangle.left=r.left;
+        if(r.top<focus_rectangle.top)focus_rectangle.top=r.top;
+        if(r.right>focus_rectangle.right)focus_rectangle.right=r.right;
+        if(r.bottom>focus_rectangle.bottom)focus_rectangle.bottom=r.bottom;
+    }
+    ++focus_draws;
+}
+static int __attribute__((thiscall)) focus_frame_get(void *sprite)
+{CHECK(sprite==focus_sprites+5*32);return (int)(uintptr_t)focus_description;}
+static int __attribute__((thiscall)) focus_image_get(void *description)
+{CHECK(description==focus_description);return (int)(uintptr_t)focus_image;}
+
+static int __attribute__((thiscall)) scaled_focus(void *sprite,void *surface,int x,int y,int width,int height,
+                                                 int sx,int sy,int mode,int shade,void *clip)
+{
+    CHECK(sprite==focus_sprites+5*32 && surface==focus_surface && !mode && !shade && !clip);
+    /* 原入口裁取源图，不会缩放：每片都必须在真实26×26源帧里。旧32×32直接调用会失败。 */
+    CHECK(sx>=0 && sy>=0 && width>0 && height>0 && sx+width<=26 && sy+height<=26);
+    record_focus(x,y,width,height);return 1;
+}
+static int __attribute__((thiscall)) native_drop(void *container,int item)
+{
+    CHECK(container==grid_player);++drop_requests;
+    if (item==-1) Write32(container,0x2C4,UINT32_MAX);
+    else {
+        /* 原丢弃参数为物品编号。若生产误传格号，这里不会凭巧合丢掉正确物品。 */
+        for (unsigned i=0;i<50;++i) if ((int)Read32(container,0xA4+i*4)==item) {
+            Write32(container,0xA4+i*4,UINT32_MAX);return 1;
+        }
+        CHECK(false);
+    }
+    return 1;
+}
+static void emit_focus(void)
+{CHECK(cursor_draw_callback);cursor_draw_callback(RUNTIME_EVENT_UI_DRAW_END,ui_data,(unsigned long)(uintptr_t)focus_surface,0,NULL);}
 static void cursor_fixture(Profile *profile)
 {
     memset(cursor_code,0x90,sizeof cursor_code);cursor_position_pointer=(uintptr_t)cursor_position;
@@ -277,7 +324,13 @@ static void cursor_fixture(Profile *profile)
     memcpy(cursor_code+2,&iat,4);make_call(cursor_code+8,(uintptr_t)cursor_sprite);make_call(cursor_code+16,(uintptr_t)cursor_sprite);
     profile->cursor_position_call=(uintptr_t)cursor_code;profile->cursor_position_iat=iat;
     profile->cursor_sprite_call1=(uintptr_t)(cursor_code+8);profile->cursor_sprite_call2=(uintptr_t)(cursor_code+16);
-    profile->cursor_sprite_draw=(uintptr_t)cursor_sprite;CHECK(Cursor_Initialize());cursor_draws=0;
+    profile->cursor_sprite_draw=(uintptr_t)cursor_sprite;profile->focus_rect_draw=(uintptr_t)scaled_focus;
+    profile->menu_item_drop=(uintptr_t)native_drop;profile->focus_frame_get=(uintptr_t)focus_frame_get;
+    profile->focus_image_get=(uintptr_t)focus_image_get;CHECK(Cursor_Initialize());cursor_draws=focus_draws=drop_requests=0;
+    ptr(hud_data,0x48,focus_sprites);Write32(hud_data,0x44,6);
+    ptr(focus_description,8,focus_bank);Write32(focus_description,4,0);ptr(focus_bank,4,focus_entries);
+    ptr(focus_sprites+5*32,0,focus_description);Write32(focus_sprites+5*32,4,0);Write32(focus_sprites+5*32,8,1);
+    Write32(focus_image,0xC,26);Write32(focus_image,0x10,26);Write32(focus_surface,0xC,856);Write32(focus_surface,0x10,480);
 }
 static void activate_page(unsigned kind)
 {
@@ -432,6 +485,16 @@ static void menu_fixture(Profile *profile,bool expansion)
     Write32(menu_roots[3],0xC0,6);ptr(menu_roots[3],0xC4,load_nodes[0]);
     for (unsigned i=0;i<6;++i) {
         ptr(load_nodes[i],0,i<5 ? load_nodes[i+1]:NULL);ptr(load_nodes[i],8,load_data[i]);
+    }
+    memset(hud_data,0,sizeof hud_data);ptr(hud_data,0,menu_tables[15]);Write32(hud_data,0x64,1);
+    menu_tables[15][1]=(uintptr_t)menu_tick;menu_tables[15][0x1C/4]=(uintptr_t)menu_show;
+    menu_tables[15][0x30/4]=(uintptr_t)menu_hover;
+    profile->menu_hud_vtable=(uintptr_t)menu_tables[15];profile->menu_hud_tick=(uintptr_t)menu_tick;
+    profile->menu_hud_show=(uintptr_t)menu_show;profile->menu_hud_hover=(uintptr_t)menu_hover;
+    for(unsigned i=0;i<12;++i) {
+        BYTE *slot=hud_data+0x13C+i*0xE4;ptr(slot,0xA4,hud_data);Write32(slot,0x64,1);
+        Write32(slot,0x14,10+(i<6 ? i:i+2)*24);Write32(slot,0x18,350);
+        Write32(slot,0x1C,24);Write32(slot,0x20,24);Write32(slot,0xCC,50+i);
     }
     patch_attempt=patch_fail_at=0;CHECK(Menu_Initialize());cursor_fixture(profile);
 }
@@ -643,7 +706,7 @@ static void menu_regression(bool expansion)
     HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
     CHECK(!Menu_BlocksGameplay());
     /* 每个入口写失败都回滚，不能留下半套Tick/Show/hover。所有原槽先核对再允许重试。 */
-    for (unsigned fail=1;fail<=52;++fail) {
+    for (unsigned fail=1;fail<=55;++fail) {
         patch_attempt=0;patch_fail_at=fail;CHECK(!Menu_Initialize());
         for (unsigned k=0;k<15;++k) {
             CHECK(menu_tables[k][1]==(uintptr_t)menu_tick);
@@ -733,6 +796,7 @@ static void __attribute__((noinline,noclone)) grid_regression(bool expansion)
     CHECK(Read32(grid_player,0xA4)==2 && Read32(grid_player,0x2C4)==UINT32_MAX);
     unsigned before=grid_swaps;neutral_menu();menu_step(KEY(PAD_X),0,0);
     CHECK(grid_swaps==before && !Read32(menu_roots[10],0x64));
+    CHECK(Menu_Context(&(unsigned){0})==hud_data);neutral_menu();menu_step(KEY(PAD_X),0,0);neutral_menu();
     ((This2)menu_tables[10][0x1C/4])(menu_roots[10],1,0);neutral_menu();
     menu_step(KEY(PAD_X),0,0);neutral_menu();
     CHECK(Read32(menu_roots[10],0xC0)==0 && Read32(menu_roots[9],0xFC)==UINT32_MAX);
@@ -742,6 +806,7 @@ static void __attribute__((noinline,noclone)) grid_regression(bool expansion)
     neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(Read32(menu_roots[10],0xC0)==11);
     Write32(grid_player,0xA4+(86+11)*4,3);neutral_menu();menu_step(KEY(PAD_A),0,0);
     CHECK(Read32(grid_player,0x2C4)==3);neutral_menu();menu_step(KEY(PAD_X),0,0);neutral_menu();
+    CHECK(Menu_Context(&reason)==hud_data);menu_step(KEY(PAD_X),0,0);neutral_menu();
     CHECK(Menu_Context(&reason)==menu_roots[9] && Read32(menu_roots[9],0xFC)==1);
     /* 原来源记忆经过X切页仍有效，B可以把仓库拿起的物品放回原仓库逻辑槽。 */
     menu_step(KEY(PAD_B),0,0);CHECK(Read32(grid_player,0x2C4)==UINT32_MAX && Read32(grid_player,0xA4+97*4)==3);
@@ -778,11 +843,13 @@ static void __attribute__((noinline,noclone)) all_regions_regression(bool expans
         menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[k]);
         ((This0)menu_tables[k][1])(menu_roots[k]);CHECK(Read32(menu_roots[k],0xBC)==1);
     }
+    menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==hud_data);
     menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[9]);
     /* 隐藏页不被X打开或选到；新根链也不影响登记页循环。 */
     Write32(menu_roots[10],0x64,0);menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[11]);
-    menu_step(KEY(PAD_RB),0,0);neutral_menu();CHECK(Read32(menu_roots[11],0xD0)==0x58 && Menu_Context(&reason)==menu_roots[11]);
-    menu_step(KEY(PAD_LB),0,0);neutral_menu();CHECK(Read32(menu_roots[11],0xD0)==0x57);
+    unsigned shop_mode=Read32(menu_roots[11],0xD0);
+    menu_step(KEY(PAD_RB),0,0);neutral_menu();CHECK(Read32(menu_roots[11],0xD0)==shop_mode && Menu_Context(&reason)==menu_roots[11]);
+    menu_step(KEY(PAD_LB),0,0);neutral_menu();CHECK(Read32(menu_roots[11],0xD0)==shop_mode);
     menu_step(KEY(PAD_Y),0,0);neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(Read32(menu_roots[11],0xD0)==0x57);
     neutral_menu();menu_step(KEY(PAD_Y),0,0);neutral_menu();menu_step(KEY(PAD_A),0,0);
     CHECK(shop_requests==1 && shop_trades==0);neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);
@@ -817,6 +884,7 @@ static void __attribute__((noinline,noclone)) modal_region_regression(bool expan
     activate_page(9);Write32(menu_roots[13],0x64,1);Write32(menu_roots[14],0x64,1);
     Write32(unknown_root,0x64,1);ptr(unknown_root,0x0C,menu_roots[9]);ptr(ui_data,0x18,unknown_root);
     neutral_menu();menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[13]);
+    menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==hud_data);
     menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[9]);
     BYTE keys[256]={0};g_intent.pressed=KEY(PAD_R3);Game_Keyboard(keys);CHECK(keys[VK_TAB]==0x80);
     /* 依附已关闭页的过期辅助窗口不能继续截住世界输入。 */
@@ -827,8 +895,175 @@ static void __attribute__((noinline,noclone)) modal_region_regression(bool expan
     menu_step(KEY(PAD_A),0,0);last_opcode=0;Game_Update();CHECK(last_opcode==19);
     Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
 }
+/* 原动作菜单替身保留真实节点布局；生产导航和Control/Game仍直接链接。 */
+static BYTE action_root[0xF0],action_nodes[2][3][0x40];
+static uintptr_t action_table[16];static void *action_pointer=action_root;
+static unsigned action_commits,action_builds;
+static int __attribute__((thiscall)) action_rebuild(void *root,int side)
+{
+    CHECK(root==action_root && (side==0 || side==1));++action_builds;
+    Write32(root,0xC8,side);ptr(root,0xE8,action_nodes[side][0]);
+    return 1;
+}
+static int __attribute__((thiscall)) action_open(void *root,int side)
+{action_rebuild(root,side);Write32(root,0x64,1);ptr(ui_data,0x3C,root);return 1;}
+static int __attribute__((thiscall)) action_commit(void *root)
+{
+    CHECK(root==action_root);void *candidate=ReadPtr(root,0xC0);
+    if (candidate) {Write32(hud_data,Read32(root,0xC8) ? 0x128:0x12C,Read32(candidate,0x28));++action_commits;}
+    Write32(root,0x64,0);ptr(ui_data,0x3C,NULL);return 1;
+}
+static int __attribute__((thiscall)) action_base(void *root) {CHECK(root==action_root);ptr(root,0xC0,NULL);return 7;}
+static void action_step(unsigned buttons,float rx,float ry)
+{
+    g_input.now+=20;g_input.buttons=buttons;g_input.rx=rx;g_input.ry=ry;
+    g_input.menu=Game_Menu();g_input.action_menu=ActionMenu_Active();
+    g_intent=Control_Step(&menu_control,&g_input);
+    bool was_open=g_input.action_menu,closed=ActionMenu_Update();
+    if (closed) Control_BlockMenuInputs(&menu_control,&g_input);
+    if (!was_open && !closed && !ActionMenu_Active()) Menu_Update();
+}
+static void action_regression(bool expansion)
+{
+    Profile profile;menu_fixture(&profile,expansion);
+    for (unsigned k=0;k<15;++k) Write32(menu_roots[k],0x64,0);
+    ptr(ui_data,0x18,NULL);ptr(ui_data,0x1C,NULL);ptr(ui_data,0x3C,NULL);
+    memset(action_root,0,sizeof action_root);memset(action_nodes,0,sizeof action_nodes);
+    action_table[1]=(uintptr_t)action_base;action_table[0x30/4]=(uintptr_t)menu_hover;
+    ptr(action_root,0,action_table);
+    for (unsigned side=0;side<2;++side) for (unsigned i=0;i<3;++i) {
+        BYTE *node=action_nodes[side][i];ptr(node,8,i<2 ? action_nodes[side][i+1]:NULL);
+        Write32(node,0x14,100+i*32);Write32(node,0x18,100);Write32(node,0x1C,30);Write32(node,0x20,30);
+        Write32(node,0x28,i==0 ? 111:i==1 ? 222:(uint32_t)-1);
+    }
+    profile.menu_action_vtable=(uintptr_t)action_table;profile.menu_action_global=(uintptr_t)&action_pointer;
+    profile.menu_action_open=(uintptr_t)action_open;profile.menu_action_rebuild=(uintptr_t)action_rebuild;
+    profile.menu_action_commit=(uintptr_t)action_commit;profile.menu_action_tick=(uintptr_t)action_base;
+    profile.menu_action_hover=(uintptr_t)menu_hover;profile.menu_message_base_tick=(uintptr_t)action_base;
+    /* 两个写槽失败各自回滚，不留下半装菜单。 */
+    for (unsigned fail=1;fail<=2;++fail) {
+        patch_attempt=0;patch_fail_at=fail;CHECK(!ActionMenu_Initialize());
+        CHECK(action_table[1]==(uintptr_t)action_base && action_table[12]==(uintptr_t)menu_hover);
+    }
+    patch_attempt=patch_fail_at=0;CHECK(ActionMenu_Initialize());action_commits=action_builds=0;
+    Write32(hud_data,0x128,111);Write32(hud_data,0x12C,111);
+    action_step(0,0,0);action_step(0,0,0);g_input.lt=g_input.rt=true;
+    action_step(0,0,0);CHECK(!ActionMenu_Active() && g_intent.layer==LAYER_DUAL);
+    action_step(0,1,0);CHECK(ActionMenu_Active() && action_builds==1 && Read32(action_root,0xC8)==0);
+    CHECK(((This0)action_table[1])(action_root)==7 && ReadPtr(action_root,0xC0)==action_nodes[0][0]);
+    action_step(0,0,0);action_step(0,1,0);CHECK(ReadPtr(action_root,0xC0)==action_nodes[0][1]);
+    CHECK(Menu_HidesCursor());emit_focus();CHECK(focus_draws>1 && focus_rectangle.left==131 && focus_rectangle.top==99 && focus_rectangle.right==161 && focus_rectangle.bottom==129);
+    CHECK(Read32(hud_data,0x12C)==111); /* 预览不能直接改右手 */
+    action_step(KEY(PAD_R3),0,0);CHECK(Read32(action_root,0xC8)==1 && action_commits==0);
+    action_step(0,0,0);action_step(0,1,0);CHECK(ReadPtr(action_root,0xC0)==action_nodes[1][1]);
+    BYTE keys[256]={0};g_intent.pressed=KEY(PAD_R3)|KEY(PAD_A)|KEY(PAD_START);Game_Keyboard(keys);
+    for (unsigned i=0;i<256;++i) CHECK(keys[i]==0);
+    unsigned old_releases=releases;Game_Update();CHECK((unsigned)releases==old_releases);
+    g_input.rt=false;action_step(KEY(PAD_A),1,0);
+    CHECK(!ActionMenu_Active() && action_commits==1 && Read32(hud_data,0x128)==222 && Read32(hud_data,0x12C)==111);
+    action_step(KEY(PAD_A),1,0);CHECK(g_intent.layer==LAYER_GUARD && !g_intent.held && !g_intent.rx);
+    action_step(0,0,0);g_input.rt=true;action_step(0,1,0);CHECK(ActionMenu_Active());
+    g_input.lt=false;action_step(0,0,0);CHECK(!ActionMenu_Active() && action_commits==2);
+    /* 换图、角色变化只关闭，绝不提交尚未确认的候选。 */
+    action_step(0,0,0);g_input.lt=true;action_step(0,1,0);CHECK(ActionMenu_Active());
+    Write32(manager_data,0x0C,2);action_step(0,0,0);CHECK(!ActionMenu_Active() && action_commits==2);
+    Write32(manager_data,0x0C,1);action_step(0,0,0);action_step(0,1,0);CHECK(ActionMenu_Active());
+    Write32(world_data,0x58,0);action_step(0,0,0);CHECK(!ActionMenu_Active() && action_commits==2);
+    Write32(world_data,0x58,1);action_step(0,0,0);action_step(0,1,0);CHECK(ActionMenu_Active());
+    g_intent.layer=LAYER_NATIVE;CHECK(!ActionMenu_Update() && !ActionMenu_Active() && Read32(action_root,0x64));
+    ActionMenu_Shutdown();CHECK(action_table[1]==(uintptr_t)action_base && action_table[12]==(uintptr_t)menu_hover);
+    Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
+}
+/* HUD原点击替身：确认生产代码传来格中心和50..61原槽编号，再由原业务交换。 */
+static unsigned quick_button_dispatches;static bool quick_reject_type;
+static int __attribute__((thiscall)) quick_primary(void *root,int event,int x,void *y)
+{
+    CHECK(root==hud_data && event==0);
+    /* 原HUD主操作先调用自己的hover，再用两个坐标取快捷格；旧替身直接
+     * 从A8取槽，漏掉原函数后半段，恰好接受了生产代码的错误对象。
+     * 此处按原控制流重放：hover重新投影也不能把快捷格写回主按钮A8。 */
+    ((This3)menu_tables[15][0x30/4])(root,event,x,y);
+    unsigned slot=12;
+    for(unsigned i=0;i<12;++i) {
+        BYTE *node=hud_data+0x13C+i*0xE4;
+        int left=(int)Read32(node,0x14),top=(int)Read32(node,0x18);
+        if(x>=left && x<left+24 && (int)(intptr_t)y>=top && (int)(intptr_t)y<top+24) {slot=i;break;}
+    }
+    CHECK(slot<12);
+    unsigned held=Read32(grid_player,0x2C4);
+    if(held==UINT32_MAX || !quick_reject_type) grid_swap(grid_player,50+(int)slot);
+    /* 原函数不在交换后提前返回：A8非空还会读+50按钮模板与执行其它HUD业务。
+     * 让旧实现确定失败，不把真实快捷格伪装成有合法按钮模板的CJm子按钮。 */
+    void *button=ReadPtr(root,0xA8);
+    if(button) {++quick_button_dispatches;CHECK(Memory_Readable(ReadPtr(button,0x50),12));}
+    CHECK(button==NULL);return 1;
+}
+static void quickbar_regression(bool expansion)
+{
+    Profile profile;menu_fixture(&profile,expansion);profile.menu_hud_primary=(uintptr_t)quick_primary;
+    quick_button_dispatches=0;quick_reject_type=false;
+    for(unsigned i=0;i<12;++i) Write32(hud_data+0x13C+i*0xE4,0x64,0);
+    activate_page(9);neutral_menu();Write32(grid_player,0xA4,101);
+    menu_step(KEY(PAD_A),0,0);CHECK(Read32(grid_player,0x2C4)==101);
+    neutral_menu();menu_step(KEY(PAD_X),0,0);neutral_menu();unsigned reason;
+    CHECK(Menu_Context(&reason)==hud_data && ReadPtr(hud_data,0xA8)==NULL);
+    emit_focus();CHECK(focus_draws==1 && focus_rectangle.left==9 && focus_rectangle.top==349 && focus_rectangle.right==35);
+    unsigned valid_draws=focus_draws;
+    Write32(focus_sprites+5*32,8,0);emit_focus();CHECK(focus_draws==valid_draws);
+    Write32(focus_sprites+5*32,8,1);Write32(focus_sprites+5*32,4,1);emit_focus();CHECK(focus_draws==valid_draws);
+    Write32(focus_sprites+5*32,4,0);Write32(focus_image,0xC,0);emit_focus();CHECK(focus_draws==valid_draws);
+    Write32(focus_image,0xC,26);ptr(focus_bank,4,NULL);emit_focus();CHECK(focus_draws==valid_draws);
+    ptr(focus_bank,4,focus_entries);focus_entries[0]=NULL;emit_focus();CHECK(focus_draws==valid_draws);
+    focus_entries[0]=focus_entry;emit_focus();CHECK(focus_draws>valid_draws);
+    CHECK(!Menu_HidesCursor()); /* 持有时原图标保留，位置在动态框正中 */
+    unsigned before_draw=focus_draws;g_intent.layer=LAYER_NATIVE;emit_focus();CHECK(focus_draws==before_draw);g_intent.layer=LAYER_MENU;
+    menu_step(KEY(PAD_A),0,0);CHECK(Read32(grid_player,0x2C4)==UINT32_MAX && Read32(grid_player,0xA4+50*4)==101);
+    CHECK(Menu_HidesCursor());
+    /* 手柄不按物品类别跳区：十二格都使用同一个原点击入口。 */
+    for (unsigned i=1;i<12;++i) {
+        neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);Write32(grid_player,0x2C4,101+i);
+        neutral_menu();menu_step(KEY(PAD_A),0,0);
+        CHECK(Read32(grid_player,0xA4+(50+i)*4)==101+i && Read32(grid_player,0x2C4)==UINT32_MAX);
+    }
+    CHECK(quick_button_dispatches==0 && ReadPtr(hud_data,0xA8)==NULL);
+    /* 向有物品的快捷格放置：原业务把旧物品变为持有物，不能进入主HUD按钮。 */
+    Write32(grid_player,0x2C4,999);neutral_menu();menu_step(KEY(PAD_A),0,0);
+    CHECK(Read32(grid_player,0xA4+61*4)==999 && Read32(grid_player,0x2C4)==112 && quick_button_dispatches==0);
+    neutral_menu();menu_step(KEY(PAD_A),0,0);
+    CHECK(Read32(grid_player,0xA4+61*4)==112 && Read32(grid_player,0x2C4)==999);
+    /* 类型资格拒绝仍不丢弃、不交换，也不得触发后续主按钮业务。 */
+    quick_reject_type=true;neutral_menu();unsigned swaps=grid_swaps;menu_step(KEY(PAD_A),0,0);
+    CHECK(grid_swaps==swaps && Read32(grid_player,0x2C4)==999 && quick_button_dispatches==0);
+    quick_reject_type=false;Write32(grid_player,0x2C4,UINT32_MAX);
+    neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(Read32(grid_player,0x2C4)==112);
+    neutral_menu();menu_step(KEY(PAD_B),0,0);CHECK(Read32(grid_player,0x2C4)==UINT32_MAX && Read32(hud_data,0x64));
+    neutral_menu();menu_step(KEY(PAD_B),0,0);CHECK(Read32(hud_data,0x64) && Read32(menu_roots[9],0x64));
+    Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
+}
+static void discard_regression(bool expansion)
+{
+    Profile profile;menu_fixture(&profile,expansion);activate_page(9);neutral_menu();
+    Write32(grid_player,0xA4,777);menu_step(KEY(PAD_BACK),0,0);
+    CHECK(drop_requests==1 && Read32(grid_player,0xA4)==UINT32_MAX && Read32(menu_roots[9],0x64));
+    menu_step(KEY(PAD_BACK),0,0);CHECK(drop_requests==1); /* 持键不连续丢 */
+    neutral_menu();menu_step(KEY(PAD_BACK),0,0);CHECK(drop_requests==1); /* 空格无动作 */
+    neutral_menu();Write32(grid_player,0x2C4,888);menu_step(KEY(PAD_BACK),0,0);
+    CHECK(drop_requests==2 && Read32(grid_player,0x2C4)==UINT32_MAX);
+    for(unsigned kind=9;kind<15;++kind) {
+        activate_page(kind);neutral_menu();unsigned reason;
+        void *before=Menu_Context(&reason);
+        menu_step(KEY(PAD_LB),0,0);CHECK(Menu_Context(&reason)==before);
+        neutral_menu();menu_step(KEY(PAD_RB),0,0);CHECK(Menu_Context(&reason)==before);
+        neutral_menu();
+        if(kind!=9) {menu_step(KEY(PAD_BACK),0,0);CHECK(drop_requests==2);}
+    }
+    Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
+}
 int main(void)
 {
+    discard_regression(false);discard_regression(true);
+    action_regression(false);action_regression(true);
+    quickbar_regression(false);quickbar_regression(true);
     menu_regression(false);menu_regression(true);
     combo_delete_regression(false);combo_delete_regression(true);
     grid_regression(false);grid_regression(true);

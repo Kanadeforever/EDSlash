@@ -81,6 +81,24 @@ int main(void)
     CHECK(!(step(KEY(PAD_A)).pressed&KEY(PAD_A)));
     step(0); CHECK(step(KEY(PAD_A)).pressed&KEY(PAD_A));
 
+    /* 对所有业务按钮重放单LT、单RT和双扳机，双扳机必须先选层且不触发救援。 */
+    for (unsigned key=0;key<=PAD_RIGHT;++key) {
+        reset();in.lt=true;out=step(KEY(key));CHECK(out.layer==LAYER_GUARD && !out.mode_changed);
+        reset();in.rt=true;out=step(KEY(key));CHECK(out.layer==LAYER_SKILL && !out.mode_changed);
+        reset();in.lt=in.rt=true;out=step(KEY(key));CHECK(out.layer==LAYER_DUAL && !out.mode_changed);
+        in.rt=false;out=step(KEY(key));CHECK(out.layer==LAYER_GUARD && !out.pressed && !out.held && !out.reset);
+        in.lt=false;out=step(KEY(key));CHECK(out.layer==(key==PAD_LB ? LAYER_MEDICINE:key==PAD_RB ? LAYER_ITEM:LAYER_GAME) && !out.pressed && !out.held);
+    }
+    reset();in.lt=in.rt=true;out=step(KEY(PAD_BACK)|KEY(PAD_START));
+    CHECK(out.layer==LAYER_DUAL && !out.mode_changed && !out.menu_toggle);
+    in.lt=in.rt=false;out=step(KEY(PAD_BACK)|KEY(PAD_START));CHECK(!out.mode_changed);
+    reset();in.lt=true;step(0);in.rt=true;out=step(KEY(PAD_X));CHECK(out.layer==LAYER_DUAL && !out.reset);
+    in.action_menu=true;out=step(KEY(PAD_X));CHECK(out.layer==LAYER_ACTION_MENU && !out.reset && !out.pressed);
+    in.lx=1;in.ry=1;Control_BlockMenuInputs(&state,&in);in.action_menu=false;in.rt=false;
+    out=step(KEY(PAD_X));CHECK(out.layer==LAYER_GUARD && !out.reset && !out.lx && !out.ry && !out.held);
+    in.lx=0;out=step(0);CHECK(!out.ry);in.lx=1;in.ry=0;out=step(0);CHECK(out.lx==1);
+    in.ry=1;out=step(KEY(PAD_X));CHECK(out.ry==1 && out.pressed==KEY(PAD_X));
+
     /* 检查等距投影的八个屏幕方向，反向投影应仍落在原来的屏幕方向上。 */
     const int vectors[8][2]={{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1},{0,-1},{1,-1}};
     for (unsigned i=0;i<8;++i) {

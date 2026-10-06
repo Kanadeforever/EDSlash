@@ -11,7 +11,7 @@ typedef enum {
     CONFIG_RUMBLE, CONFIG_CHARGE_GUARD, CONFIG_FREE_RUN, CONFIG_OMNI_GUARD,
     CONFIG_DIRECTIONAL_DODGE, CONFIG_DODGE_DISTANCE, CONFIG_GUARD_MODE,
     CONFIG_GUARD_PERCENT, CONFIG_RECOVERY_MODE, CONFIG_RECOVERY_PERCENT,
-    CONFIG_INSPECT_DISTANCE,
+    CONFIG_INSPECT_DISTANCE, CONFIG_LEGACY_ULTIMATE, CONFIG_COMBO_SWITCH,
     CONFIG_COUNT
 } ConfigId;
 typedef enum { CONFIG_BOOL, CONFIG_INT, CONFIG_PERCENT, CONFIG_CHOICE, CONFIG_TEXT } ConfigType;
@@ -35,6 +35,7 @@ int RuntimeConfig_GetInt(ConfigId id);
 const ConfigDescriptor *RuntimeConfig_Descriptor(ConfigId id);
 /* 修改先验证并原子保存，成功后更新候选快照；在帧边界显式提交生效。 */
 int RuntimeConfig_SetInt(ConfigId id, int value);
+/* 画面比例或描述表枚举名；枚举名保存后与SetInt编号使用同一快照链。 */
 int RuntimeConfig_SetText(ConfigId id, const char *value);
 int RuntimeConfig_SetBinding(unsigned game, unsigned role, unsigned slot, ConfigBinding binding);
 ConfigBinding RuntimeConfig_GetBinding(unsigned game, unsigned role, unsigned slot);

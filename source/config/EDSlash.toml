@@ -76,8 +76,14 @@ recovery_mode = "guard"
 recovery_percent = 0.00
 
 [controller.interaction]
-# 正面调查最大距离：世界单位，64=1格；范围16～480，默认160，按距离裁剪90度扇区；不改变原互动资格。
+# 正面调查最大距离：世界单位，64=1格；范围16～480，默认160；360度近身搜索，优先近处及前方，不改变原互动资格。
 max_distance = 160
+
+[controller.combat]
+# 旧必杀输入模式：false使用LT+RT+ABXY准备/再次新按释放；true恢复LT+ABXY，连招只能LT十字切换。动作菜单仍使用双扳机。
+single_trigger_ultimate = false
+# 新模式连招切换输入：仅single_trigger_ultimate=false时生效：face为LT+Y/B/A/X切1/2/3/4，dpad为LT+上/右/下/左；旧模式固定dpad。
+combo_switch_input = "face"
 
 [controller.bindings]
 # game跟随原游戏当前角色快捷绑定；自定义技能按游戏、角色、槽位分别保存。

@@ -29,10 +29,11 @@ static bool page_visible, physical_mouse, busy_gate;
 static int test_omni_setting=1;
 #ifndef EDSLASH_REAL_CONFIG
 static int test_inspect_distance=160;
+static int test_single_trigger=1,test_combo_switch=0;
 #endif
 static int test_dodge_setting=1,test_dodge_distance=128;
 static int test_guard_setting=1,test_run_setting=1,test_cost=-1,test_recovery=-1;
-static unsigned checks;
+static unsigned checks,readiness_logs;
 static unsigned move_requests;
 static bool reject_move;
 static BYTE choices_data[32],groups_data[2][0x40],methods_data[3][0x90];
@@ -47,8 +48,16 @@ static WorldPoint last_aim;
 static BYTE runtime_data[0x100];
 #define CHECK(e) do { ++checks; if (!(e)) { fprintf(stderr,"适配检查失败，行 %d：%s\n",__LINE__,#e); exit(1); } } while(0)
 
+/* 自有宿主记录共享UI绘制订阅，菜单回归可主动发出同一事件。 */
+static RuntimeEventCallback cursor_draw_callback;
+int Runtime_Subscribe(RuntimeEventId event,RuntimeEventCallback callback,void *user)
+{
+    if (event!=RUNTIME_EVENT_UI_DRAW_END || !callback || user) return 0;
+    cursor_draw_callback=callback;return 1;
+}
 void Log_Write(const char *format, ...)
 {
+    if (!strncmp(format,"[控制就绪]",strlen("[控制就绪]"))) ++readiness_logs;
     if (!strncmp(format,"[战斗提交]",strlen("[战斗提交]"))) {
         va_list args;va_start(args,format);const char *style=va_arg(args,const char *);
         last_right_style=!strcmp(style,"右手");va_end(args);
@@ -64,6 +73,8 @@ int RuntimeConfig_GetInt(ConfigId id)
 {
     switch (id) {
     case CONFIG_INSPECT_DISTANCE:return test_inspect_distance;
+    case CONFIG_LEGACY_ULTIMATE:return test_single_trigger;
+    case CONFIG_COMBO_SWITCH:return test_combo_switch;
     case CONFIG_OMNI_GUARD:return test_omni_setting;
     case CONFIG_DODGE_DISTANCE:return test_dodge_distance;
     case CONFIG_DIRECTIONAL_DODGE:return test_dodge_setting;
@@ -95,7 +106,8 @@ bool Memory_Readable(const void *p,size_t bytes)
     if (!p || !VirtualQuery(p,&info,sizeof info) || info.State!=MEM_COMMIT || (info.Protect&(PAGE_NOACCESS|PAGE_GUARD))) return false;
     return (uintptr_t)p+bytes <= (uintptr_t)info.BaseAddress+info.RegionSize;
 }
-uint32_t Read32(const void *p,unsigned offset)
+/* 保持宿主读内存替身为独立函数，避免GCC16在被多个fixture包含时丢失常量传播克隆符号。 */
+uint32_t __attribute__((noinline,noclone)) Read32(const void *p,unsigned offset)
 { uint32_t v=0;if(p && Memory_Readable((BYTE *)p+offset,4))memcpy(&v,(BYTE *)p+offset,4);return v; }
 void *ReadPtr(const void *p,unsigned offset) { return (void *)(uintptr_t)Read32(p,offset); }
 void Write32(void *p,unsigned offset,uint32_t value) { memcpy((BYTE *)p+offset,&value,4); }
@@ -268,6 +280,7 @@ static void configure(Profile *profile, bool expansion)
     Write32(roles[0],0x67,0x3C);
     Write32(roles[0],0x73,1);ptr(roles[0],0x193,choices_data);
     Write32(hud_data,0xBF4,(uint32_t)-1);
+    Write32(hud_data,0x12C,(uint32_t)-1);
     memset(groups_data,0,sizeof groups_data);memset(methods_data,0,sizeof methods_data);
     for (int i=0;i<2;++i) {
         Write32(groups_data[i],0x24,i==0 ? 111:222);
@@ -515,7 +528,8 @@ static int __attribute__((thiscall)) native_inventory(void *self)
 static int __attribute__((thiscall)) native_item_at(void *self,int slot)
 { CHECK(self==throw_items);return slot>=56 && slot<62 ? (int)(uintptr_t)throw_items[slot-56]:0; }
 
-static void transfer_regression(bool expansion)
+/* GCC16对这段长回放的跳转清理发生内部错误；仅宿主时间线用O1，生产业务仍是O2。 */
+static void __attribute__((noinline,noclone,optimize("O1"))) transfer_regression(bool expansion)
 {
     Profile profile;configure(&profile,expansion);
     profile.history_clear=(uintptr_t)native_clear_history;profile.history_record=(uintptr_t)native_append_history;
@@ -701,7 +715,9 @@ static void guard_regression(bool expansion)
     *((BYTE*)roles[0]+0x219)=1;g_intent.layer=LAYER_GUARD;CHECK(input_hook(roles[0],0x6A)==0);
     g_intent.layer=LAYER_NATIVE;CHECK(input_hook(roles[0],0x6A)==1);
     *((BYTE*)roles[0]+0x219)=1;g_intent.layer=LAYER_GUARD;g_intent.lx=1;g_intent.ly=0;
-    dodge_installs=0;Guard_Update(roles[0]);CHECK(dodge_installs==1);
+    dodge_installs=0;g_intent.layer=LAYER_ACTION_MENU;Guard_Update(roles[0]);CHECK(dodge_installs==0 && roles[0][0x219]);
+    g_intent.layer=LAYER_DUAL;Guard_Update(roles[0]);CHECK(dodge_installs==0 && roles[0][0x219]);
+    g_intent.layer=LAYER_GUARD;Guard_Update(roles[0]);CHECK(dodge_installs==1);
     Guard_Update(roles[0]);CHECK(dodge_installs==1);
     g_intent.lx=0;Guard_Update(roles[0]);g_intent.lx=-1;Guard_Update(roles[0]);CHECK(dodge_installs==2);
     CHECK(((This0)profile.dodge_start)(roles[1])==0);CHECK(dodge_installs==2);
@@ -912,8 +928,68 @@ static void move_obstacle_regression(bool expansion)
     CHECK(Read32(mouse_data,0x90)==99 && Read32(mouse_data,0x94)==98);
     Game_Release();
 }
+#ifndef EDSLASH_REAL_CONFIG
+/* 长期左右手选择和组合优先级使用真实生产Game/Combat；原执行器只由宿主替身记录。 */
+static int __attribute__((thiscall)) selected_left(void *hud) {CHECK(hud==hud_data);return (int)Read32(hud,0x128);}
+static void new_combat_regression(bool expansion)
+{
+    Profile profile;configure(&profile,expansion);Combat_Reset();Game_Release();
+    test_single_trigger=0;test_combo_switch=0;
+    static const int face_order[]={PAD_Y,PAD_B,PAD_A,PAD_X};
+    static const int dpad_order[]={PAD_UP,PAD_RIGHT,PAD_DOWN,PAD_LEFT};
+    for (unsigned mode=0;mode<3;++mode) {
+        test_single_trigger=mode==2;test_combo_switch=mode==1 ? 1:0;
+        for(unsigned slot=0;slot<4;++slot) {
+            selected=0;g_intent.layer=LAYER_GUARD;
+            g_intent.held=g_intent.pressed=KEY(mode==0 ? face_order[slot]:dpad_order[slot]);Game_Update();
+            CHECK(selected==-(int)(slot+1));
+        }
+        if (mode<2) {
+            selected=0;g_intent.pressed=KEY(mode==0 ? PAD_UP:PAD_Y);Game_Update();CHECK(selected==0);
+        }
+    }
+    test_single_trigger=0;test_combo_switch=0;
+    Write32(groups_data[0],0x32,1000);Write32(groups_data[1],0x32,1001);
+    Write32(hud_data,0xBF4,UINT32_MAX);selected=77;releases=0;g_intent.layer=LAYER_DUAL;
+    g_intent.held=g_intent.pressed=KEY(PAD_A);Game_Update();
+    CHECK(Read32(hud_data,0xBF4)==111 && releases==0 && selected==77);
+    g_intent.held=g_intent.pressed=KEY(PAD_B);Game_Update();CHECK(Read32(hud_data,0xBF4)==222 && releases==0);
+    g_intent.held=g_intent.pressed=KEY(PAD_B);Game_Update();CHECK(releases==1 && arg1==1002);
+    /* 双扳机的十字、肩键、BACK/START不能兼办单LT套组或RT技能。 */
+    unsigned before=releases;selected=77;
+    g_intent.held=g_intent.pressed=KEY(PAD_UP)|KEY(PAD_RIGHT)|KEY(PAD_DOWN)|KEY(PAD_LEFT)|KEY(PAD_LB)|KEY(PAD_RB)|KEY(PAD_BACK)|KEY(PAD_START);
+    Game_Update();CHECK((unsigned)releases==before && selected==77);
+    Game_Release();Combat_Reset();configure(&profile,expansion);profile.left_get=(uintptr_t)selected_left;
+    Write32(hud_data,0x128,222);Write32(hud_data,0x12C,111);Write32(groups_data[0],0x32,0);
+    g_intent.layer=LAYER_GAME;g_intent.held=g_intent.pressed=KEY(PAD_X);Game_Update();CHECK(releases==1 && arg1==1002);
+    Game_Release();Combat_Reset();g_intent.held=g_intent.pressed=KEY(PAD_Y);Game_Update();CHECK(releases==2 && arg1==1001);
+    CHECK(Read32(hud_data,0x128)==222 && Read32(hud_data,0x12C)==111);
+    /* 投掷类选择不进入Y规则；原BF4准备态也不能劫持Y的普通技能。 */
+    Game_Release();Combat_Reset();Write32(groups_data[0],0x32,2);Game_Update();CHECK(releases==2);
+    Write32(groups_data[0],0x32,0);Write32(hud_data,0xBF4,222);Game_Update();CHECK(releases==3 && arg1==1001);
+    Game_Release();Combat_Reset();Write32(roles[2],profile.interact_offset,0);
+    g_intent.pressed=g_intent.held=0;g_intent.lx=1;Game_Update();CHECK(Read32(roles[0],0x73)==0x0B);
+    g_intent.pressed=KEY(PAD_A);Game_Update();g_intent.pressed=0;g_intent.lx=0;Game_Update();
+    CHECK(Read32(roles[0],0x73)==1); /* 无目标空按A不能遗失松杆停止的拥有权 */
+    Game_Release();Combat_Reset();test_single_trigger=1;test_combo_switch=0;
+}
+#endif
+/* 菜单路由3和世界等待3不能混同；原诊断误把物理菜单停留计为加载等待。 */
+static void readiness_regression(bool expansion)
+{
+    Profile profile;configure(&profile,expansion);readiness_logs=0;g_intent.layer=LAYER_NATIVE;
+    page_visible=true;ptr(ui_data,0x40,page_data);CHECK(Game_Menu());Game_Diagnose();
+    page_visible=false;ptr(ui_data,0x40,NULL);CHECK(!Game_Menu());g_input.now+=1000;Game_Diagnose();
+    CHECK(readiness_logs==0);
+    Write32(world_data,0x58,0);Game_Diagnose();g_input.now+=200;
+    Write32(world_data,0x58,1);Game_Diagnose();CHECK(readiness_logs==1);
+}
 int main(void)
 {
+#ifndef EDSLASH_REAL_CONFIG
+    new_combat_regression(false);new_combat_regression(true);
+#endif
+    readiness_regression(false);readiness_regression(true);
     exercise(false);exercise(true);
     move_obstacle_regression(false);move_obstacle_regression(true);
     combat_regression(false);combat_regression(true);
