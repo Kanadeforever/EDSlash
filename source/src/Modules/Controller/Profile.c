@@ -69,6 +69,18 @@ bool Profile_Verify(void)
             return false;
         }
     }
+    /* 原静态选择器第一条指令是mov edx,[地图全局地址]。
+     * 局部签名正确不等于业务所用的全局字段正确：从实际指令取出地址再比较，
+     * 外传曾因档案把589E30误写为589F28而扫描不到任何机关/出口。 */
+    const BYTE *picker=(const BYTE *)g_profile->inspect_static_picker;
+    uint32_t map_address;
+    if (!Memory_Readable(picker,6) || picker[0]!=0x8B || picker[1]!=0x15) return false;
+    memcpy(&map_address,picker+2,4);
+    if (map_address!=g_profile->inspect_map_global) {
+        Log_Write("[签名失败] 静态选择器地图地址=%08lx，档案地址=%08lx，保持原游戏输入。",
+            (unsigned long)map_address,(unsigned long)g_profile->inspect_map_global);
+        return false;
+    }
     const BYTE *call = (const BYTE *)g_profile->resolver_call;
     int32_t offset;
     if (!Memory_Readable(call, 5) || call[0] != 0xE8) return false;

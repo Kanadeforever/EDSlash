@@ -19,7 +19,7 @@ def main():
     profiles=json.loads(Path(__file__).with_name('profiles.json').read_text(encoding='utf-8'))['profiles']
     lines=['静态资格与NPC对话原始证据','局部指令不等于真实游戏验收；参考资料只读。','']
     for profile in profiles:
-        picker=[0x44E860,0x45A160][profile["game_id"]-1]
+        picker=profile['addresses']['inspect_static_picker']
         path=root/'参考资料/刀剑封魔录系列反编译资料库_v0.31/基线程序'/f'ComeOn-{profile["tag"]}-{profile["edition"]}.exe'
         pe=PE(path)
         if hashlib.sha256(pe.data).hexdigest()!=profile['sha256']:

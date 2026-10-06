@@ -40,6 +40,23 @@ class PE:
             result += c
 
 
+def verify_static_sources(pe, profile):
+    """从原指令交叉核对静态地图、句柄表及资格回调的来源。"""
+    # 地址表可以语法正确但指向错误全局。原选择器两次读取同一地图，必须分别相符。
+    picker=profile['addresses']['inspect_static_picker']
+    for offset,opcode,field in [(0,b'\x8b\x15','inspect_map_global'),
+                                (0xE4,b'\x8b\x35','inspect_map_global'),
+                                (0x77,b'\x8b\x0d','handles_global')]:
+        instruction=pe.read(picker+offset,6)
+        assert instruction[:2]==opcode, (profile['name'],field,'原读取指令改变')
+        actual=struct.unpack('<I',instruction[2:])[0]
+        assert actual==profile['addresses'][field], (profile['name'],field,hex(actual),hex(profile['addresses'][field]))
+    # 原完整返回链前后都会询问资格，不能只验证某个函数头存在。
+    for offset in (0xB7,0x229):
+        call=pe.read(picker+offset,5)
+        assert call[0]==0xE8 and picker+offset+5+struct.unpack('<i',call[1:])[0]==profile['addresses']['inspect_static_gate']
+
+
 def verify_baselines(data):
     base = ROOT / '参考资料/刀剑封魔录系列反编译资料库_v0.31/基线程序'
     # 四份 EXE 必须同时存在才做本地证据检查。源码构建不携带游戏 EXE，也不下载游戏。
@@ -53,6 +70,9 @@ def verify_baselines(data):
         assert pe.machine == 0x14c
         for key, expected in profile['signatures'].items():
             assert pe.read(profile['addresses'][key], 12).hex() == expected, key
+        # 从原EXE指令独立取得地图/句柄表地址，不能只验证由同一元数据生成的C表。
+        # 模拟对象能够提供正确地图，无法发现档案全局地址误写，因此这里必须核对原指令。
+        verify_static_sources(pe,profile)
         assert pe.read(profile['addresses']['resolver_call'], 5).hex() == profile['call_bytes']
         # 把调用点真正解码回目标，而不是只核对一串由同一数据源复制的字节。
         call = pe.read(profile['addresses']['resolver_call'], 5)
@@ -99,7 +119,7 @@ def verify_baselines(data):
             assert call[:2]==b'\xff\x15' and struct.unpack('<I',call[2:])[0]==profile['addresses']['cursor_position_iat']
         assert pe.read(profile['addresses']['projection'],0x45).hex() == profile['projection_bytes']
         assert pe.read(profile['addresses']['world_to_grid'],0x35).hex() == profile['grid_bytes']
-        print(f'{profile["name"]}：散列、函数签名、输入调用点和坐标转换通过')
+        print(f'{profile["name"]}：散列、函数签名、静态地图来源、输入调用点和坐标转换通过')
     assert all(p['projection_bytes']==data['profiles'][0]['projection_bytes'] for p in data['profiles'])
     assert all(p['grid_bytes']==data['profiles'][0]['grid_bytes'] for p in data['profiles'])
     return True

@@ -44,6 +44,8 @@ python source/tools/build.py --upx
 
 ## 当前验证
 
+构建另外自动运行配置同步和Controller档案回归。后者只读四份本体/外传Steam/非Steam准确EXE，核对静态地图/句柄表/资格来源并确认故意写错地址会被拒绝；源码包没有完整游戏样本时明确跳过真实样本检查，不下载游戏。
+
 13组：输入规则、连续方向、两作宿主战斗／调用约定、原生菜单/删除确认/软件光标、调查扇区与静态原事件、拾取提示、Runtime写入／回滚、公共输入阶段、真实后台日志、TOML与原子保存、生产Input＋静态SDL虚拟设备、未知宿主ASI加载。UPX另外验证压缩完整性和加载。
 
 产物必须PE32/i386、DLL、非零入口、唯一InitializeASI导出、重定位可用，不依赖SDL3.dll或外置libgcc／libstdc++／libwinpthread；标准Windows系统DLL允许导入，主目标零导入已不再作为最终契约。

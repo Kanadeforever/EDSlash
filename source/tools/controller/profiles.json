@@ -212,7 +212,8 @@
         "menu_shop_switch": 4835888,
         "menu_shop_position_call1": 4836286,
         "menu_shop_position_call2": 4836685,
-        "menu_inlay_position_call": 4969964
+        "menu_inlay_position_call": 4969964,
+        "inspect_static_picker": 4515936
       },
       "offsets": {
         "invalid_offset": 1082,
@@ -382,7 +383,8 @@
         "menu_shop_switch": "8b44240483f8ff8981d00000",
         "menu_shop_position_call1": "ff15c88352008b0d88695400",
         "menu_shop_position_call2": "ff15c88352008b0d88695400",
-        "menu_inlay_position_call": "ff15c88352008b0d88695400"
+        "menu_inlay_position_call": "ff15c88352008b0d88695400",
+        "inspect_static_picker": "8b15488e550053558b6c240c"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -528,7 +530,7 @@
         "menu_message_primary": 4942064,
         "inspect_portal_gate": 4439504,
         "inspect_static_gate": 4453728,
-        "inspect_map_global": 5807912,
+        "inspect_map_global": 5807664,
         "inspect_basic_get": 4363328,
         "menu_talk_vtable": 5584892,
         "menu_text_vtable": 5585008,
@@ -605,7 +607,8 @@
         "menu_shop_switch": 4903552,
         "menu_shop_position_call1": 4903950,
         "menu_shop_position_call2": 4904349,
-        "menu_inlay_position_call": 5051820
+        "menu_inlay_position_call": 5051820,
+        "inspect_static_picker": 4563296
       },
       "offsets": {
         "invalid_offset": 1094,
@@ -775,7 +778,8 @@
         "menu_shop_switch": "8b44240483f8ff8981d00000",
         "menu_shop_position_call1": "ff15e41355008b0d785e5700",
         "menu_shop_position_call2": "ff15e41355008b0d785e5700",
-        "menu_inlay_position_call": "ff15e41355008b0d785e5700"
+        "menu_inlay_position_call": "ff15e41355008b0d785e5700",
+        "inspect_static_picker": "8b15309e580053558b6c240c"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -998,7 +1002,8 @@
         "menu_shop_switch": 4835888,
         "menu_shop_position_call1": 4836286,
         "menu_shop_position_call2": 4836685,
-        "menu_inlay_position_call": 4969964
+        "menu_inlay_position_call": 4969964,
+        "inspect_static_picker": 4515936
       },
       "offsets": {
         "invalid_offset": 1082,
@@ -1168,7 +1173,8 @@
         "menu_shop_switch": "8b44240483f8ff8981d00000",
         "menu_shop_position_call1": "ff15c88352008b0d88695400",
         "menu_shop_position_call2": "ff15c88352008b0d88695400",
-        "menu_inlay_position_call": "ff15c88352008b0d88695400"
+        "menu_inlay_position_call": "ff15c88352008b0d88695400",
+        "inspect_static_picker": "8b15488e550053558b6c240c"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -1314,7 +1320,7 @@
         "menu_message_primary": 4942064,
         "inspect_portal_gate": 4439504,
         "inspect_static_gate": 4453728,
-        "inspect_map_global": 5807912,
+        "inspect_map_global": 5807664,
         "inspect_basic_get": 4363328,
         "menu_talk_vtable": 5584892,
         "menu_text_vtable": 5585008,
@@ -1391,7 +1397,8 @@
         "menu_shop_switch": 4903552,
         "menu_shop_position_call1": 4903950,
         "menu_shop_position_call2": 4904349,
-        "menu_inlay_position_call": 5051820
+        "menu_inlay_position_call": 5051820,
+        "inspect_static_picker": 4563296
       },
       "offsets": {
         "invalid_offset": 1094,
@@ -1561,7 +1568,8 @@
         "menu_shop_switch": "8b44240483f8ff8981d00000",
         "menu_shop_position_call1": "ff15e41355008b0d785e5700",
         "menu_shop_position_call2": "ff15e41355008b0d785e5700",
-        "menu_inlay_position_call": "ff15e41355008b0d785e5700"
+        "menu_inlay_position_call": "ff15e41355008b0d785e5700",
+        "inspect_static_picker": "8b15309e580053558b6c240c"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",

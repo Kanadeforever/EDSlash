@@ -37,6 +37,8 @@ def main():
     args = parser.parse_args()
     # 同步器先在临时配置上回归，不能直接拿用户发布配置当测试数据。
     run([sys.executable, SOURCE / 'tools/test_sync_config.py'], os.environ.copy())
+    # 真实原指令须能拒绝旧错误地图地址，不能把模拟对象回放当成档案地址正确的证据。
+    run([sys.executable, SOURCE / 'tools/controller/test_profiles.py'], os.environ.copy())
     cc, environment = compiler()
     cmake = program("cmake", environment)
     ninja = program("ninja", environment)
