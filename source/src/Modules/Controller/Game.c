@@ -7,6 +7,7 @@
 #include "../../Runtime/Perf.h"
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static uint32_t movement_owner;
@@ -63,6 +64,46 @@ static void submit(int opcode, int a, int b, int c)
 {
     void *owner = manager();
     if (Memory_Readable(owner, 0x10)) ((This4)g_profile->submit)(owner, opcode, a, b, c);
+}
+
+static bool move_cell(void *map,unsigned width,BYTE *cells,unsigned kind,int x,int y)
+{
+    /* 只询问原地形资格，动态角色占用及最终碰撞仍交给原移动状态处理。
+     * 每格19字节；先验证边界和乘法，避免坏地图尺寸导致越界读取。 */
+    if (!((This2)g_profile->map_bounds)(map,x,y)) return false;
+    if (!width || width>65536 || x<0 || y<0) return false;
+    uint64_t index=(uint64_t)(unsigned)y*width+(unsigned)x;
+    if (index>UINT32_MAX/19u) return false;
+    BYTE *cell=cells+(size_t)index*19u;
+    return Memory_Readable(cell,19) && ((This1)g_profile->cell_passable)(cell,(int)kind);
+}
+
+static bool move_clip(void *role,int *goal_x,int *goal_y)
+{
+    void *map=ReadPtr(role,0x6F);
+    /* 地图尚未就绪时沿用原请求，由原业务拒绝；不拿不完整数据作碰撞结论。 */
+    if (!g_profile->map_bounds || !g_profile->cell_passable || !g_profile->world_to_grid ||
+        !Memory_Readable(map,0x18)) return true;
+    /* 地图头与移动类型每次采样只读一次，不在逐格循环重复读取/验证头字段。 */
+    uint32_t header[6];memcpy(header,map,sizeof header);
+    unsigned width=header[2],kind=*((BYTE *)role+0x62);BYTE *cells=(BYTE *)(uintptr_t)header[5];
+    if (!width || width>65536 || !cells) return true;
+    typedef WorldPoint *(__cdecl *Grid)(WorldPoint *,const WorldPoint *);
+    WorldPoint position={(int)Read32(role,0x2C),(int)Read32(role,0x30)},start;
+    ((Grid)g_profile->world_to_grid)(&start,&position);
+    int dx=*goal_x-start.x,dy=*goal_y-start.y;
+    if (abs(dx)>64 || abs(dy)>64) return false;
+    int steps=abs(dx)>abs(dy) ? abs(dx):abs(dy),x=start.x,y=start.y;
+    /* 远目标若落在墙后，原寻路会绕向另一侧。逐格缩短目标到直线上的最后可通行格，
+     * 通畅处保留原远目标和全向精度，不改角色位置，也不绕过原移动/碰撞。 */
+    for (int i=1;i<=steps;++i) {
+        int nx=start.x+(int)lround((double)dx*i/steps),ny=start.y+(int)lround((double)dy*i/steps);
+        bool clear=move_cell(map,width,cells,kind,nx,ny);
+        if (clear && nx!=x && ny!=y) clear=move_cell(map,width,cells,kind,nx,y) && move_cell(map,width,cells,kind,x,ny);
+        if (!clear) {*goal_x=x;*goal_y=y;return x!=start.x || y!=start.y;}
+        x=nx;y=ny;
+    }
+    return steps!=0;
 }
 
 bool Game_Menu(void)
@@ -265,6 +306,17 @@ void Game_Update(void)
             Log_Write("[移动配置] 左摇杆圆形死区，走跑共用前探=%d 格。",move_lead);
         }
         Control_MoveGoal((int)Read32(me,0x2C),(int)Read32(me,0x30),g_intent.lx,g_intent.ly,move_lead,&x,&y);
+        int requested_x=x,requested_y=y;
+        bool available=move_clip(me,&x,&y);
+        if (!available) {
+            if (movement_owner || move_goal_valid) Game_Release();
+            if (g_input.now-last_move_log>=1000) {
+                Log_Write("[移动受阻] 世界=%ld,%ld 请求=%d,%d；前方原地形不通行，本次不提交绕路目标。",
+                    (long)(int)Read32(me,0x2C),(long)(int)Read32(me,0x30),requested_x,requested_y);
+                last_move_log=g_input.now;
+            }
+            return;
+        }
         bool changed=!move_goal_valid || move_goal_x!=x || move_goal_y!=y || move_goal_run!=g_intent.run;
         bool moving=Read32(me,0x73)==0x0B;
         /* 新方向/新目标立即提交，不增加转向缓冲。相同目标在原版仍移动时不重复塞动作；
@@ -278,8 +330,8 @@ void Game_Update(void)
             movement_owner=Read32(me,0x73)==0x0B ? Read32(me,0x14) : 0;
         }
         if (g_input.now-last_move_log>=1000) {
-            Log_Write("[移动] 世界=%ld,%ld 地图目标=%d,%d 走跑=%d 提交后状态=%lu。",
-                (long)(int)Read32(me,0x2C),(long)(int)Read32(me,0x30),x,y,g_intent.run,
+            Log_Write("[移动] 世界=%ld,%ld 请求=%d,%d 地图目标=%d,%d 走跑=%d 提交后状态=%lu。",
+                (long)(int)Read32(me,0x2C),(long)(int)Read32(me,0x30),requested_x,requested_y,x,y,g_intent.run,
                 (unsigned long)Read32(me,0x73));
             last_move_log=g_input.now;
         }
@@ -293,12 +345,17 @@ void Game_Keyboard(BYTE *keys)
     if (g_intent.layer==LAYER_NONE || g_intent.layer==LAYER_MOUSE || g_intent.layer==LAYER_NATIVE) return;
     /* 本批页面已消费A/B/方向/START，不再把同一操作桥成Esc或世界热键。
      * 未实现页面保留原有限键盘导航，A仍不写Enter。 */
+    /* 小地图属于世界快捷操作。已进入地图时，格子页捕获仍允许R3原Tab入口；
+     * 标题/读档没有玩家，不发送。RT等组合层保留自己的绑定，不额外切小地图。 */
+    if ((g_intent.layer==LAYER_GAME || g_intent.layer==LAYER_MENU) &&
+        (g_intent.pressed & KEY(PAD_R3)) && Memory_Readable(world(),0x5C) &&
+        Read32(world(),0x58) && role_valid(player())) keys[VK_TAB]|=0x80;
     if (Menu_CapturesInput()) return;
     if (g_intent.menu_toggle) keys[VK_ESCAPE]|=0x80;
     if (g_intent.layer==LAYER_GAME) {
-        static const int buttons[]={PAD_UP,PAD_DOWN,PAD_LEFT,PAD_RIGHT,PAD_R3};
-        static const int keys_vk[]={'C','V','N','B',VK_TAB};
-        for (unsigned i=0;i<5;++i) if (g_intent.pressed & KEY(buttons[i])) keys[keys_vk[i]]|=0x80;
+        static const int buttons[]={PAD_UP,PAD_DOWN,PAD_LEFT,PAD_RIGHT};
+        static const int keys_vk[]={'C','V','N','B'};
+        for (unsigned i=0;i<4;++i) if (g_intent.pressed & KEY(buttons[i])) keys[keys_vk[i]]|=0x80;
     } else if (g_intent.layer==LAYER_MENU) {
         /* 首版只桥接原版已经支持的键盘导航；格子与几何 Focus 不在此处伪装成已完成。 */
         /* Enter 在游戏内会打开控制台。没有确认当前页面的原生确认事件前，A 不注入键盘。 */

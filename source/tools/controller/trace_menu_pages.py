@@ -35,9 +35,10 @@ def main():
          ('技能切页', 0x4BE9A0, 0x300), ('连招节点鼠标命中', 0x4BD410, 0xC0)],
     ]
     lines = ['格子界面原生证据' if args.grid else '必杀自动学习原生证据' if args.learning else '技能与日志原生界面证据',
-             '双版本基线只读；地址和接口需结合完整控制流核对。', '']
-    for profile, tables, regions in zip(profiles, probes, helpers):
-        path = root / '参考资料/刀剑封魔录系列反编译资料库_v0.31/基线程序' / f'ComeOn-{profile["tag"]}-NonSteam.exe'
+             '四样本基线只读；地址和接口需结合完整控制流核对。', '']
+    for profile in profiles:
+        tables=probes[profile["game_id"]-1].copy();regions=helpers[profile["game_id"]-1].copy()
+        path = root / '参考资料/刀剑封魔录系列反编译资料库_v0.31/基线程序' / f'ComeOn-{profile["tag"]}-{profile["edition"]}.exe'
         pe = PE(path)
         if hashlib.sha256(pe.data).hexdigest() != profile['sha256']:
             raise SystemExit('基线散列不符')

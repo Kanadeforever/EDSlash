@@ -11,6 +11,7 @@
 /* 每一项都属于一份已经核对的非 Steam EXE，禁止在业务函数内猜另一版本的地址。 */
 typedef struct {
     const char *name, *sha256;
+    unsigned game_id;
     uint32_t entry, size;
     uintptr_t keyboard_iat, async_iat, keyboard_buffer, resolver_call, resolver;
     uintptr_t mouse_global, world_global, entities_global, handles_global, ui, skill_global;

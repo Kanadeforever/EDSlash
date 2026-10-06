@@ -51,4 +51,6 @@ DirectShow/ActiveMovie/MovieManager 的历史逆向地址仍是知识，但此�
 
 ## 支持与测试矩阵
 
-DisplayFix平台专项与Controller非Steam双基线分别判断。扩大声明须分别测试本体Steam/非Steam、外传Steam/非Steam、外传Steam＋cnc-ddraw OpenGL、资源语言切换；旧显示验收不扩大为三模块全支持。
+DisplayFix平台专项与Controller四份Steam／非Steam准确基线分别判断。扩大声明须分别测试本体Steam/非Steam、外传Steam/非Steam、外传Steam＋cnc-ddraw OpenGL、资源语言切换；旧显示验收不扩大为三模块全支持。
+
+Controller准确Steam本体SHA-256为0887ceae7589999a389ec271d690e1c55204d59575f8f2adb5ef46a1e605b3f5，Steam外传为97ae4c2350618f38a74c3d02bf315c749fc448f705e860129372ebd592ed66e5。地址表中的game_id限定同一游戏再按完整散列选择，四样本签名/CALL/虚表均复核。原Runtime身份和显示专项保持，新Controller支持以四样本静态通过、两作宿主回放为证据，不宣称Steam实机已通过。

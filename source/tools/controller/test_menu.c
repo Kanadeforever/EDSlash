@@ -258,7 +258,7 @@ static int __attribute__((thiscall)) message_primary(void *self,int e,int x,void
 {
     CHECK(root_kind(self)==4 && e==0 && x==0 && y==NULL);
     void *child=ReadPtr(self,0xA8),*owner=ReadPtr(self,0xCC);
-    CHECK((owner==menu_roots[3] || owner==menu_roots[11] || !owner) && Read32(child,0x28)==0x2A && Read32(child,0xC4)<=1);
+    CHECK((owner==menu_roots[3] || !owner || (owner>= (void *)menu_roots[9] && owner<= (void *)menu_roots[14])) && Read32(child,0x28)==0x2A && Read32(child,0xC4)<=1);
     bool yes=Read32(child,0xC4)==1;((This2)menu_tables[4][0x1C/4])(self,0,0);ptr(self,0xCC,NULL);
     if (yes && owner==menu_roots[3]) {++deleted_records;Write32(owner,0xC0,Read32(owner,0xC0)-1);}
     if (yes && owner==menu_roots[11]) ++shop_trades;
@@ -317,6 +317,8 @@ static void menu_fixture(Profile *profile,bool expansion)
         ptr(menu_roots[k],0,menu_tables[k]);ptr(menu_roots[k],0x50,menu_resource);
         unsigned root_ids[15]={0x19,0x2D,0x98,0x94,0x29,0x28,0x2C,0x63,0x7D,0x14,0xB4,0x56,0x3D,0x3E,0x5B};
         Write32(menu_roots[k],0x28,root_ids[k]);
+        /* 原构造器的依附页初值为-1，0不能代表无依附。 */
+        Write32(menu_roots[k],0xAC,UINT32_MAX);Write32(menu_roots[k],0xB0,UINT32_MAX);
         ptr(menu_roots[k],0x0C,k<14 ? menu_roots[k+1]:NULL);
         ptr(menu_roots[k],0x9C,menu_children[k][0]);
         menu_tables[k][1]=(uintptr_t)menu_tick;menu_tables[k][0x1C/4]=(uintptr_t)menu_show;
@@ -740,7 +742,7 @@ static void __attribute__((noinline,noclone)) grid_regression(bool expansion)
     neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(Read32(menu_roots[10],0xC0)==11);
     Write32(grid_player,0xA4+(86+11)*4,3);neutral_menu();menu_step(KEY(PAD_A),0,0);
     CHECK(Read32(grid_player,0x2C4)==3);neutral_menu();menu_step(KEY(PAD_X),0,0);neutral_menu();
-    CHECK(Menu_Context(&reason)==menu_roots[9] && Read32(menu_roots[9],0xFC)==0);
+    CHECK(Menu_Context(&reason)==menu_roots[9] && Read32(menu_roots[9],0xFC)==1);
     /* 原来源记忆经过X切页仍有效，B可以把仓库拿起的物品放回原仓库逻辑槽。 */
     menu_step(KEY(PAD_B),0,0);CHECK(Read32(grid_player,0x2C4)==UINT32_MAX && Read32(grid_player,0xA4+97*4)==3);
     /* 10列5行的末格与上下左右边界真实导航，不将二维边缘误当线性下一格。 */
@@ -769,9 +771,10 @@ static void __attribute__((noinline,noclone)) all_regions_regression(bool expans
     Profile profile;menu_fixture(&profile,expansion);activate_page(9);neutral_menu();
     /* 辅助页不在普通根链，属性13也为0，但原登记对象和显示状态确实存在。 */
     ptr(ui_data,0x1C,menu_roots[9]);ptr(menu_roots[9],0x0C,NULL);
-    for (unsigned k=10;k<15;++k) {Write32(menu_roots[k],0x64,1);ptr(menu_roots[k],0x50,nonroot_resource);}
+    for (unsigned k=10;k<15;++k) {Write32(menu_roots[k],0x64,k!=13);ptr(menu_roots[k],0x50,nonroot_resource);}
     unsigned reason;
     for (unsigned k=10;k<15;++k) {
+        if (k==13) continue;
         menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[k]);
         ((This0)menu_tables[k][1])(menu_roots[k]);CHECK(Read32(menu_roots[k],0xBC)==1);
     }
@@ -783,7 +786,7 @@ static void __attribute__((noinline,noclone)) all_regions_regression(bool expans
     menu_step(KEY(PAD_Y),0,0);neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(Read32(menu_roots[11],0xD0)==0x57);
     neutral_menu();menu_step(KEY(PAD_Y),0,0);neutral_menu();menu_step(KEY(PAD_A),0,0);
     CHECK(shop_requests==1 && shop_trades==0);neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);
-    neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(shop_trades==1);
+    neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(shop_trades==1);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[11]);
     /* 单独三种特殊页均按真实槽控件调用原业务；持有图样取槽中心，不破坏其它字段。 */
     for (unsigned k=12;k<15;++k) {
         activate_page(k);neutral_menu();unsigned logical=k==12 ? 62:k==13 ? 69:81;
@@ -798,12 +801,39 @@ static void __attribute__((noinline,noclone)) all_regions_regression(bool expans
     }
     Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
 }
+static void __attribute__((noinline,noclone)) modal_region_regression(bool expansion)
+{
+    Profile profile;menu_fixture(&profile,expansion);unsigned reason;
+    for (unsigned k=9;k<15;++k) {
+        activate_page(k);neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);neutral_menu();
+        POINT before;CHECK(Menu_CursorAnchor(&before));
+        ptr(menu_roots[4],0xCC,menu_roots[k]);((This2)menu_tables[4][0x1C/4])(menu_roots[4],1,0);
+        neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[4]);
+        menu_step(KEY(PAD_RIGHT),0,0);neutral_menu();menu_step(KEY(PAD_A),0,0);neutral_menu();
+        CHECK(Menu_Context(&reason)==menu_roots[k]);POINT after;CHECK(Menu_CursorAnchor(&after));
+        CHECK(before.x==after.x && before.y==after.y);
+    }
+    /* 镶嵌会话的第三个非模态说明页不抢焦点，X仅循环道具箱与镶嵌。 */
+    activate_page(9);Write32(menu_roots[13],0x64,1);Write32(menu_roots[14],0x64,1);
+    Write32(unknown_root,0x64,1);ptr(unknown_root,0x0C,menu_roots[9]);ptr(ui_data,0x18,unknown_root);
+    neutral_menu();menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[13]);
+    menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[9]);
+    BYTE keys[256]={0};g_intent.pressed=KEY(PAD_R3);Game_Keyboard(keys);CHECK(keys[VK_TAB]==0x80);
+    /* 依附已关闭页的过期辅助窗口不能继续截住世界输入。 */
+    Write32(unknown_root,0x64,0);Write32(menu_roots[9],0x64,0);Write32(menu_roots[14],0x64,0);
+    Write32(menu_roots[13],0xAC,0x14);ptr(ui_data,0x3C,menu_roots[13]);
+    CHECK(Menu_Context(&reason)==NULL);neutral_menu();CHECK(!Game_Menu());
+    /* 旧辅助窗口不再挡世界A：这一步经过真实Game_Update/Inspect原事件路径。 */
+    menu_step(KEY(PAD_A),0,0);last_opcode=0;Game_Update();CHECK(last_opcode==19);
+    Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
+}
 int main(void)
 {
     menu_regression(false);menu_regression(true);
     combo_delete_regression(false);combo_delete_regression(true);
     grid_regression(false);grid_regression(true);
     all_regions_regression(false);all_regions_regression(true);
+    modal_region_regression(false);modal_region_regression(true);
     printf("两作菜单原生虚表、焦点、动画与输入隔离回放通过：%u项\n",checks);
     return 0;
 }

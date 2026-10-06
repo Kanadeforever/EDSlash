@@ -16,8 +16,8 @@ bool Profile_Attach(GameId game)
 
 bool Profile_Select(void)
 {
-    /* 第一版只接受两份准确基线。只看 PE 大小不够区分被改过的 EXE；
-       用系统 SHA-256 对磁盘 EXE 求值，再决定整套地址，不猜 Steam 或第三方改版。 */
+    /* 接受本体/外传Steam与非Steam四份准确基线。只看 PE 大小不够区分被改过的 EXE；
+       用系统 SHA-256 对磁盘 EXE 求值，再决定整套地址，未知改版继续拒绝。 */
     WCHAR path[MAX_PATH];
     DWORD count = GetModuleFileNameW(NULL, path, MAX_PATH);
     if (!count || count >= MAX_PATH) return false;
@@ -41,8 +41,14 @@ bool Profile_Select(void)
     char hex[65];
     for (unsigned i = 0; i < 32; ++i) snprintf(hex + i*2, 3, "%02x", digest[i]);
     Log_Write("[基线] 当前 EXE SHA-256=%s", hex);
-    /* 只验证Runtime选定的档案，散列匹配不能改选另一游戏身份。 */
-    ok=g_profile && !strcmp(hex,g_profile->sha256);
+    /* 同一游戏的Steam/非Steam准确档案可按文件散列切换，不能跨本体/外传改身份。
+     * 四样本的共用入口已逐项离线核对；切换后仍完整检查各自的内存签名。 */
+    unsigned game=g_profile ? g_profile->game_id:0;
+    for (unsigned i=0;i<sizeof profiles/sizeof profiles[0];++i) {
+        if (profiles[i].game_id==game && !strcmp(hex,profiles[i].sha256)) {
+            selected=i;g_profile=&profiles[i];ok=true;break;
+        }
+    }
 
 done:
     if (hash) CryptDestroyHash(hash);

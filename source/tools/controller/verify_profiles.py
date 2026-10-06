@@ -42,10 +42,10 @@ class PE:
 
 def verify_baselines(data):
     base = ROOT / '参考资料/刀剑封魔录系列反编译资料库_v0.31/基线程序'
-    # 两份 EXE 必须同时存在才做本地证据检查。源码构建不携带游戏 EXE，也不下载游戏。
-    paths = [base / f'ComeOn-{p["tag"]}-NonSteam.exe' for p in data['profiles']]
+    # 四份 EXE 必须同时存在才做本地证据检查。源码构建不携带游戏 EXE，也不下载游戏。
+    paths = [base / f'ComeOn-{p["tag"]}-{p["edition"]}.exe' for p in data['profiles']]
     if not all(p.is_file() for p in paths):
-        print('未提供成对基线 EXE：跳过样本复核，不能将本次构建称为双样本验证通过。')
+        print('未提供完整四份基线 EXE：跳过样本复核，不能称为四样本验证通过。')
         return False
     for profile, path in zip(data['profiles'], paths):
         pe = PE(path)
@@ -100,8 +100,8 @@ def verify_baselines(data):
         assert pe.read(profile['addresses']['projection'],0x45).hex() == profile['projection_bytes']
         assert pe.read(profile['addresses']['world_to_grid'],0x35).hex() == profile['grid_bytes']
         print(f'{profile["name"]}：散列、函数签名、输入调用点和坐标转换通过')
-    assert data['profiles'][0]['projection_bytes'] == data['profiles'][1]['projection_bytes']
-    assert data['profiles'][0]['grid_bytes'] == data['profiles'][1]['grid_bytes']
+    assert all(p['projection_bytes']==data['profiles'][0]['projection_bytes'] for p in data['profiles'])
+    assert all(p['grid_bytes']==data['profiles'][0]['grid_bytes'] for p in data['profiles'])
     return True
 
 

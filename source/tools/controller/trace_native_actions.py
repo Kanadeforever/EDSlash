@@ -73,7 +73,7 @@ HISTORY_GATE_WRITES = [
 def main():
     sys.stdout.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--baselines', type=Path, required=True, help='两份非 Steam 基线 EXE 所在目录')
+    parser.add_argument('--baselines', type=Path, required=True, help='四份Steam/非Steam 基线 EXE 所在目录')
     parser.add_argument('--output', type=Path, required=True, help='证据文本的输出位置')
     args = parser.parse_args()
     # 参考资料目录是项目只读边界。即便误把它填成输出位置，也不能写入。
@@ -89,9 +89,9 @@ def main():
     metadata = json.loads(Path(__file__).with_name('profiles.json').read_text(encoding='utf-8'))
     engine = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
     lines = ['# 手柄原生动作拆分原始证据', '',
-             '由两份准确散列的非 Steam EXE 只读导出。指令证明局部控制流，不代替实机命中记录。', '']
+             '由四份准确散列的Steam/非Steam EXE 只读导出。指令证明局部控制流，不代替实机命中记录。', '']
     for index, profile in enumerate(metadata['profiles']):
-        source = args.baselines / f'ComeOn-{profile["tag"]}-NonSteam.exe'
+        source = args.baselines / f'ComeOn-{profile["tag"]}-{profile["edition"]}.exe'
         data = source.read_bytes()
         digest = hashlib.sha256(data).hexdigest()
         if digest != profile['sha256']:

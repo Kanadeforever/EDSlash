@@ -17,6 +17,9 @@ typedef struct {
     bool grid_buttons;
 } MenuState;
 static MenuState state;
+/* 模态确认暂时接管输入时，保存已核对的物品页及其格号。
+ * 返回时必须再次验证原登记对象与显示状态，不能复用已销毁的指针。 */
+static MenuState resume_grid;
 static bool installed,frame_captured;
 enum { MENU_KINDS=15, QUEST_KIND=7, SKILL_KIND=8, BAG_KIND=9, STORAGE_KIND=10,
        SHOP_KIND=11,CRAFT_KIND=12,INLAY_KIND=13,CHARM_KIND=14,
@@ -40,12 +43,17 @@ static int kind_of(void *root)
     if (table && table==g_profile->menu_system_vtable && Read32(root,0x28)==0x2D) return 1;
     if (table && table==g_profile->menu_confirm_vtable && Read32(root,0x28)==0x98) return 2;
     if (table && table==g_profile->menu_load_vtable && Read32(root,0x28)==0x94) return 3;
-    /* 这张对话类也被其它页面复用；当前只接通owner仍是原读档页的删除确认。
-     * 不能把所有动态2A文本菜单都误认为删除确认或泛调用owner的虚表。 */
+    /* 通用确认框把确认结果交回原owner；不仅交易/删档，乾坤袋和镶嵌也复用它。
+     * 只接纳明确核对过的owner虚表和编号，未知业务仍不调用其回调。 */
     void *owner=ReadPtr(root,0xCC);
-    if (table && table==g_profile->menu_message_vtable &&
-        ((!owner) || (Read32(owner,0)==g_profile->menu_load_vtable && Read32(owner,0x28)==0x94) ||
-         (Read32(owner,0)==g_profile->menu_shop_vtable && Read32(owner,0x28)==0x56))) return 4;
+    bool known_owner=!owner;
+    uintptr_t owner_tables[7]={g_profile->menu_load_vtable,g_profile->menu_bag_vtable,
+        g_profile->menu_storage_vtable,g_profile->menu_shop_vtable,g_profile->menu_craft_vtable,
+        g_profile->menu_inlay_vtable,g_profile->menu_charm_vtable};
+    unsigned owner_ids[7]={0x94,0x14,0xB4,0x56,0x3D,0x3E,0x5B};
+    for (unsigned i=0;i<7 && owner;++i)
+        if (owner_tables[i] && Read32(owner,0)==owner_tables[i] && Read32(owner,0x28)==owner_ids[i]) known_owner=true;
+    if (table && table==g_profile->menu_message_vtable && known_owner) return 4;
     if (table && table==g_profile->menu_talk_vtable) return 5;
     if (table && table==g_profile->menu_text_vtable) return 6;
     if (table && table==g_profile->menu_quest_vtable && Read32(root,0x28)==0x63) return QUEST_KIND;
@@ -60,12 +68,23 @@ static void *grid_root(unsigned index)
 {
     if (index>=6) return NULL;
     void *root=(void *)(uintptr_t)((This1)g_profile->get_jm)((void *)g_profile->ui,(int)grid_ids[index]);
-    return visible(root) && Read32(root,0x64) && kind_of(root)==BAG_KIND+(int)index ? root:NULL;
+    if (!visible(root) || !Read32(root,0x64) || kind_of(root)!=BAG_KIND+(int)index) return NULL;
+    /* 原base Tick会在依附页关闭时收起辅助面板。采样发生在Tick前，
+     * 所以先只读复核同样的两条依附关系，避免过期面板挡住场景A。 */
+    for (unsigned offset=0xAC;offset<=0xB0;offset+=4) {
+        uint32_t id=Read32(root,offset);
+        if (id==UINT32_MAX) continue;
+        void *dependency=(void *)(uintptr_t)((This1)g_profile->get_jm)((void *)g_profile->ui,(int)id);
+        if (dependency && !visible(dependency)) return NULL;
+    }
+    return root;
 }
 static bool page(void *object,void *hud)
 {
     void *resource=ReadPtr(object,0x50);
-    if (object!=hud && visible(object) && (kind_of(object)==5 || kind_of(object)==6 || kind_of(object)>=BAG_KIND)) return true;
+    int kind=kind_of(object);
+    if (kind>=BAG_KIND && grid_root((unsigned)(kind-BAG_KIND))!=object) return false;
+    if (object!=hud && visible(object) && (kind==5 || kind==6 || kind>=BAG_KIND)) return true;
     return object!=hud && visible(object) && Memory_Readable(resource,12) &&
         ((This1)g_profile->ui_property)(resource,13)==1;
 }
@@ -75,7 +94,9 @@ void *Menu_Context(unsigned *reason)
     if (!g_profile) return NULL;
     void *ui=(void *)g_profile->ui,*hud=ReadPtr((void *)g_profile->skill_global,0);
     void *capture=ReadPtr(ui,0x3C);
-    if (capture!=hud && visible(capture)) {
+    int capture_kind=kind_of(capture);
+    bool stale_grid=capture_kind>=BAG_KIND && grid_root((unsigned)(capture_kind-BAG_KIND))!=capture;
+    if (capture!=hud && visible(capture) && !stale_grid) {
         /* 数字文本等子对象可能是capture，向父级归一化；异常父链最多走8层。
          * 找不到已核对父页时仍返回原capture阻塞世界，不能擅自忽略未知弹窗。 */
         void *root=capture;
@@ -107,11 +128,20 @@ void *Menu_Context(unsigned *reason)
     bool controller=installed && g_input.connected && g_input.focused &&
         g_intent.layer!=LAYER_NONE && g_intent.layer!=LAYER_MOUSE && g_intent.layer!=LAYER_NATIVE;
     if (!controller && page(routed,hud)) { *reason=3;return routed; }
+    /* 确认框消失后，优先回到仍登记且显示的原操作页；不得越过模态页。 */
+    int resume_kind=kind_of(resume_grid.root);
+    if (controller && resume_kind>=BAG_KIND && grid_root((unsigned)(resume_kind-BAG_KIND))==resume_grid.root)
+        {*reason=2;return resume_grid.root;}
     /* 已显示的背包/仓库可独立选焦点，不改原链顺序，也不能盖过上面已返回的模态页。 */
-    if (controller && state.owned && kind_of(state.root)>=BAG_KIND &&
+    bool inlay_session=grid_root(INLAY_KIND-BAG_KIND)!=NULL;
+    bool permitted_grid=!inlay_session || kind_of(state.root)==BAG_KIND || kind_of(state.root)==INLAY_KIND;
+    if (controller && state.owned && permitted_grid && kind_of(state.root)>=BAG_KIND &&
         (selected_grid || grid_root((unsigned)(kind_of(state.root)-BAG_KIND))==state.root)) {*reason=2;return state.root;}
     /* 已知物品面板也可能不是普通顶层页，使用原登记对象补充路由，不依赖鼠标根页属性13。 */
-    if (!first) for (unsigned i=0;i<6;++i) {void *root=grid_root(i);if (root) {*reason=2;return root;}}
+    /* 镶嵌同时显示装备说明等辅助窗口；未知的非模态说明页不能抢走已接通的操作区。
+     * 真实capture和确认框仍已在前面优先返回，不能用此规则越过它们。 */
+    if (!first || (controller && kind_of(first)<0))
+        for (unsigned i=0;i<6;++i) {void *root=grid_root(i);if (root) {*reason=2;return root;}}
     if (first) *reason=2;
     return first;
 }
@@ -229,6 +259,7 @@ void Menu_Suspend(void)
      * 当前/待退出菜单或真实GUI存在才保留门；纯战斗交接继续原成功历史协议。 */
     bool needs_gate=installed && (state.root || state.barrier || Menu_Context(&reason)!=NULL);
     clear_focus();
+    memset(&resume_grid,0,sizeof resume_grid);
     memset(&carried,0,sizeof carried);carried.origin=-1;
     memset(&state,0,sizeof state);
     state.barrier=needs_gate;
@@ -354,6 +385,8 @@ static void grid_switch(void *root)
     void *next=NULL;unsigned target=(unsigned)kind;
     for (unsigned i=1;i<6;++i) {
         unsigned index=((unsigned)(kind-BAG_KIND)+i)%6;
+        /* 镶嵌会话只导航道具箱与镶嵌槽，原版同时展示的其它页仅作说明。 */
+        if (grid_root(INLAY_KIND-BAG_KIND) && index!=0 && index!=INLAY_KIND-BAG_KIND) continue;
         next=grid_root(index);if (next) {target=BAG_KIND+index;break;}
     }
     /* X只在已显示的两种区域间转移插件焦点，不调用Show擅自打开仓库。
@@ -604,7 +637,11 @@ void Menu_Update(void)
     int kind=root ? kind_of(root):-1;
     frame_captured=state.barrier || kind>=0;
     if (root!=state.root || !state.owned) {
-        clear_focus();state.root=root;state.id=kind==5 ? 0xFFFFFFFFu:0;state.direction=0;
+        /* 原确认回调关闭弹窗后，继续原页的格子/按钮区域，而不是重选背包首格。 */
+        bool restore=kind>=BAG_KIND && root==resume_grid.root;
+        clear_focus();
+        if (restore) {state=resume_grid;memset(&resume_grid,0,sizeof resume_grid);}
+        state.root=root;if (!restore) state.id=kind==5 ? 0xFFFFFFFFu:0;state.direction=0;
         state.owned=true;state.barrier=true;frame_captured=true;
         Log_Write("[菜单路由] 页面=%02lX 类型=%d 来源=手柄；等待旧输入释放。",(unsigned long)Read32(root,0x28),kind);
     }
@@ -785,7 +822,15 @@ static int tick(void *self,unsigned kind)
 static int show(void *self,unsigned kind,int active,int mode)
 {
     /* 捕捉同一常驻对象的关闭/重开，不能只靠指针变化识别新的一页。 */
-    if (self==state.root || active) Menu_Suspend();
+    bool modal=active && (kind==2 || kind==4);
+    if (modal && state.owned && kind_of(state.root)>=BAG_KIND) {
+        /* Show会同步进入原回调，先备份，随后清除旧高亮和输入重复计时。 */
+        MenuState previous=state;Menu_Suspend();resume_grid=previous;
+    } else if (active && kind>=BAG_KIND && (resume_grid.root || (state.owned && kind_of(state.root)>=BAG_KIND))) {
+        /* 原交易/镶嵌回调可能再次Show已打开的道具箱，不能因此丢掉商品页焦点。 */
+        state.barrier=true;state.direction=0;
+    } else if ((self==state.root && kind>=BAG_KIND) || (active && kind!=2 && kind!=4)) Menu_Suspend();
+    else if (self==state.root) {clear_focus();state.root=NULL;state.barrier=true;}
     return ((This2)original[kind][1])(self,active,mode);
 }
 static int hover(void *self,unsigned kind,int event,int x,void *y)

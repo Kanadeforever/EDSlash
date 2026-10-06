@@ -889,9 +889,33 @@ static void configured_binding_regression(bool expansion)
     CHECK(releases==3 && last_right_style);
     Combat_Reset();Game_Release();custom_binding=0;
 }
+static int __attribute__((thiscall)) move_terrain(void *cell,int kind)
+{ (void)kind;return *((BYTE *)cell)!=0; }
+static void move_obstacle_regression(bool expansion)
+{
+    Profile profile;configure(&profile,expansion);
+    profile.map_bounds=(uintptr_t)native_dash_bounds;profile.cell_passable=(uintptr_t)move_terrain;
+    ptr(roles[0],0x6F,dash_map);Write32(dash_map,8,128);ptr(dash_map,0x14,dash_cells);
+    memset(dash_cells,0xFF,sizeof dash_cells);
+    g_intent.lx=1;Game_Update();int far_x=(int)Read32(mouse_data,0x90),far_y=(int)Read32(mouse_data,0x94);
+    CHECK(far_x>100 && far_y<100);g_intent.lx=0;Game_Update();
+    /* 世界右前方两格后的墙只能缩短直线目标，不能改投左侧绕路点。 */
+    dash_cells[(98*128+102)*19]=0;g_intent.lx=1;Game_Update();
+    CHECK(Read32(mouse_data,0x90)==101 && Read32(mouse_data,0x94)==99);
+    g_intent.lx=0;Game_Update();dash_cells[(99*128+101)*19]=0;
+    unsigned before=move_requests;g_intent.lx=1;Game_Update();CHECK(move_requests==before);
+    memset(dash_cells,0xFF,sizeof dash_cells);g_intent.lx=0;Game_Update();
+    g_intent.lx=1;Game_Update();CHECK(Read32(mouse_data,0x90)==(unsigned)far_x && Read32(mouse_data,0x94)==(unsigned)far_y);
+    g_intent.lx=0;Game_Update();dash_cells[(97*128+99)*19]=0;
+    /* 画面右上经原等距逆投影后也须停在障碍前，不能退向画面左边。 */
+    g_intent.lx=1;g_intent.ly=-1;Game_Update();
+    CHECK(Read32(mouse_data,0x90)==99 && Read32(mouse_data,0x94)==98);
+    Game_Release();
+}
 int main(void)
 {
     exercise(false);exercise(true);
+    move_obstacle_regression(false);move_obstacle_regression(true);
     combat_regression(false);combat_regression(true);
     chain_regression(false);chain_regression(true);
     transfer_regression(false);transfer_regression(true);
