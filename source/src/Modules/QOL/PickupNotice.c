@@ -1,7 +1,7 @@
 #include "PickupNotice.h"
 #include "../../Runtime/Win32Bridge.h"
 
-/* 所有入口均在两份非Steam基线逐条核对。最后三项是已有管理器全局，读取不会改写游戏。 */
+/* 所有入口均在本体/外传Steam与非Steam四份准确EXE逐条核对。最后三项是已有管理器全局，读取不会改写游戏。 */
 typedef struct NoticeProfile {
     unsigned long string_get,text_draw,inventory_get,item_at,player_get;
     unsigned long inventory_root,world_global,hud_global;
@@ -20,7 +20,7 @@ static int g_enabled;
 /* 有界队列不分配游戏内存，避免连捡大量金币时挤爆提示，也不把缓存字符串交给游戏长期持有。 */
 static struct { unsigned long world,collector,created;char text[176]; } notices[6];
 static unsigned long notice_count;
-/* freestanding主插件没有CRT；按字节复制有界提示，避免编译器为结构赋值引入memcpy导入。 */
+/* 按字节复制固定长度提示，明确限制访问范围；当前统一主插件允许标准运行库与系统导入。 */
 static void copy_notice(unsigned long to,unsigned long from)
 {
     volatile unsigned char *target=(volatile unsigned char *)&notices[to];

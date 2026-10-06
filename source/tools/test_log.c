@@ -36,6 +36,10 @@ int main(void)
     wchar_t path[1100];static char bytes[65536];size_t size;
     CHECK(RuntimeFile_Sibling(GetModuleHandleW(NULL),L"EDSlash.log",path,1100));
     CHECK(RuntimeFile_Read(path,bytes,sizeof bytes,&size));
+    /* 本次日志必须包含实际编译摘要，不能沿用旧性能候选的实机标签。 */
+    CHECK(strstr(bytes,EDSLASH_BUILD_ID)!=NULL);
+    CHECK(strstr(bytes,"当前产物实机待验收")!=NULL);
+    CHECK(strstr(bytes,"性能候选1")==NULL);
     /* 每条记录应恰好出现一次，即使四个生产线程交错也不能串行内容。 */
     for (unsigned id=0;id<4;++id) for(unsigned n=0;n<128;++n) {
         char expected[160];snprintf(expected,sizeof expected,"[日志回归] 生产者=%u 序号=%u 中文保持\r\n",id,n);

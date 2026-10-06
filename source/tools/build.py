@@ -37,8 +37,18 @@ def main():
     args = parser.parse_args()
     # 同步器先在临时配置上回归，不能直接拿用户发布配置当测试数据。
     run([sys.executable, SOURCE / 'tools/test_sync_config.py'], os.environ.copy())
+    run([sys.executable, SOURCE / 'tools/font_fix/test_font_fix.py'], os.environ.copy())
     # 真实原指令须能拒绝旧错误地图地址，不能把模拟对象回放当成档案地址正确的证据。
     run([sys.executable, SOURCE / 'tools/controller/test_profiles.py'], os.environ.copy())
+    # 源码与构建输入摘要包含未提交内容，不以HEAD冒充当前产物。
+    digest = hashlib.sha256()
+    inputs = sorted(p for p in SOURCE.rglob("*") if p.is_file() and
+                    ".build" not in p.parts and "__pycache__" not in p.parts and
+                    p.suffix.lower() in {".c", ".h", ".py", ".json", ".toml", ".txt", ".bat"})
+    for path in inputs:
+        digest.update(path.relative_to(SOURCE).as_posix().encode("utf-8") + b"\0")
+        digest.update(path.read_bytes())
+    build_id = digest.hexdigest()
     cc, environment = compiler()
     cmake = program("cmake", environment)
     ninja = program("ninja", environment)
@@ -61,7 +71,7 @@ def main():
     samples = verify_baselines(metadata)
     run([cmake, "--log-level=WARNING", "-S", SOURCE, "-B", BUILD, "-G", "Ninja",
          f"-DCMAKE_MAKE_PROGRAM={ninja}", f"-DCMAKE_C_COMPILER={cc}",
-         f"-DCMAKE_CXX_COMPILER={cxx}", "-DCMAKE_BUILD_TYPE=Release"], environment)
+         f"-DCMAKE_CXX_COMPILER={cxx}", "-DCMAKE_BUILD_TYPE=Release", f"-DEDSLASH_BUILD_ID={build_id}"], environment)
     run([cmake, "--build", BUILD, "--parallel", "6", "--", "--quiet"], environment)
     ctest = str(Path(cmake).with_name("ctest.exe"))
     if not Path(ctest).is_file():
@@ -87,11 +97,11 @@ def main():
                           "SHA256": debug_evidence["ASI_SHA256"],
                           "字节数": debug_evidence["ASI字节数"],
                           "源码调试信息": True, "优化": "与发行件相同"}
-    evidence["双基线静态复核"] = samples
-    evidence["实机验收"] = {"性能候选1": "用户确认掉帧缓解、功能正常、实机通过",
-                            "本轮双产物加载": "非游戏进程通过",
-                            "本轮新文件实机": "尚未单独复测"}
-    evidence["候选"] = "统一迁移性能候选1：后台日志、配置快速路径、5秒聚合计时"
+    evidence["四官方EXE静态复核"] = samples
+    evidence["构建身份"] = {"源码与构建输入SHA256": build_id, "架构": "单ASI、统一TOML及日志、官方静态SDL3.4.16"}
+    # 脚本只产生离线证据；历史用户反馈不附到新产物。
+    evidence["本轮验证"] = {"宿主回归": "CTest全部通过", "双产物加载": "非游戏进程通过",
+                            "实机": "待用户测试；历史分项反馈见docs/版本与更新记录.md"}
     selected = {}
     for line in (BUILD / "CMakeCache.txt").read_text(encoding="utf-8").splitlines():
         if line.startswith(("SDL_VIDEO:", "SDL_DIRECTX:", "SDL_AUDIO:", "SDL_JOYSTICK:",
@@ -113,8 +123,8 @@ def main():
         evidence["UPX"] = {"源": "已剥离发行件", "SHA256": hashlib.sha256(packed.read_bytes()).hexdigest(),
                            "字节数": packed.stat().st_size, "压缩完整性及非游戏加载": "通过",
                            "本轮新文件实机": "尚未单独复测"}
-    evidence["范围"] = "单ASI、静态SDL、TOML；本体/外传菜单、空存档尾页恢复、六物品区域X循环和原业务、持有图样中心锚点；仅外传手柄主菜单隐藏光标；构建配置补键"
-    evidence["菜单验收"] = "双版本菜单、45槽与七处局部调用共52处回滚、六区域登记路由/隐藏过滤/原特殊槽/商店确认及视觉差异宿主通过；实际两作GUI/脚本/交易/属性/性能待验收"
+    evidence["范围"] = "四官方准确EXE；共享接口、失败隔离、工具输出边界及当前构建身份整改"
+    evidence["验收边界"] = "原EXE静态及宿主回归不能证明GUI、脚本、设备、地图或Steam DLL全部通过"
     if args.checks_only:
         print("发行件／完整版及全部离线检查通过；未更新发布目录。")
         return

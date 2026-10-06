@@ -25,6 +25,17 @@ typedef void (*RuntimeEventCallback)(RuntimeEventId event_id,
                                      unsigned long value2,
                                      void* user_data);
 
+/* 同步事件契约：subject仅在本次回调期间借用，不能保存供下一帧解引用。
+ * GAMEPLAY_ENTER：Strategy对象；value1/value2是目标宽/高。
+ * GAMEPLAY_EXIT：Strategy对象；value1/value2是退出后的实际宽/高。
+ * UI_DRAW_BEGIN/END：CJMMng对象；value1是原绘制上下文，value2为0。
+ * INPUT_FRAME_BEGIN/END：原键盘对象（256字节缓冲位于对象+8），不是缓冲首址。
+ *   BEGIN两值为0；END的value1是原刷新返回值，value2为0。
+ * INPUT_SAMPLED：实际256字节键盘缓冲；value1为GetTickCount毫秒，value2为0。
+ * INPUT_RESOLVED：WorldMouseManager对象；两值为0。
+ * 这些对象不能互换。总线不读取游戏内存，不凭void*猜类型；提供者负责真实身份。
+ * 无效事件或空subject不广播；允许Gameplay退出的实际宽高为0。 */
+
 /* 注册一个回调。成功返回 1；事件无效、回调为空或槽位已满时返回 0。 */
 int EventBus_Subscribe(RuntimeEventId event_id, RuntimeEventCallback callback, void* user_data);
 

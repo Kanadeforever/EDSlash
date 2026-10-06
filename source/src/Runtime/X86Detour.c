@@ -11,6 +11,25 @@ static void copy_bytes(unsigned char* destination,
     }
 }
 
+/* 只允许三种已经从四份原EXE核实的完整入口。
+ * 逐字节白名单同时保证指令边界和没有相对转移；未知前缀直接拒绝，
+ * 不分配网关、不写游戏字节。这里不是通用指令解码或重定位器。 */
+static int supported_prefix(const unsigned char* bytes, unsigned long size)
+{
+    static const unsigned char input[5] = {0x33,0xC0,0x8D,0x51,0x08};
+    static const unsigned char ground[7] = {0x83,0xEC,0x08,0x8D,0x54,0x24,0x00};
+    static const unsigned char pickup[5] = {0x56,0x8B,0x74,0x24,0x0C};
+    const unsigned char* expected = 0;
+    unsigned long i;
+    if (size == 7ul) expected = ground;
+    else if (size == 5ul) {
+        expected = bytes[0] == input[0] ? input : pickup;
+    }
+    if (!expected) return 0;
+    for (i = 0; i < size; ++i) if (bytes[i] != expected[i]) return 0;
+    return 1;
+}
+
 static void write_rel32(unsigned char* instruction,
                         unsigned long opcode_address,
                         unsigned long destination)
@@ -43,6 +62,7 @@ int X86Detour_Install(X86Detour* detour,
     if (!RuntimeWin32_Read(target, detour->original, overwrite_size)) {
         return 0;
     }
+    if (!supported_prefix(detour->original, overwrite_size)) return 0;
 
     gateway = (unsigned char*)RuntimeWin32_AllocateExecutable(overwrite_size + 5ul);
     if (!gateway) {

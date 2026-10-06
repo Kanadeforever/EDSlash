@@ -38,9 +38,10 @@ typedef enum RuntimeModuleId {
 } RuntimeModuleId;
 
 /* 第一个 Claim 成功；相同 owner 重复 Claim 也视为成功；不同 owner 抢同一个 Hook 会失败。 */
+/* Claim只接受NONE与COUNT之间的真实模块；同owner重复声明成功，冲突或非法值不改槽。 */
 int HookManager_Claim(SharedHookId hook_id, RuntimeModuleId owner);
 
-/* 查询当前 Hook 的唯一 owner。没有人声明时返回 RUNTIME_MODULE_NONE。 */
+/* 查询当前Hook的唯一owner；空槽或非法hook_id均返回NONE，不改变槽。 */
 RuntimeModuleId HookManager_GetOwner(SharedHookId hook_id);
 
 /*
@@ -48,6 +49,7 @@ RuntimeModuleId HookManager_GetOwner(SharedHookId hook_id);
  * 这不是“卸载已经写进游戏内存的机器码 Hook”；这里只回滚尚未完成初始化时的所有权声明。
  * 以后如果做热卸载，必须另行设计真正的物理 Hook 撤销生命周期，不能误把这个函数当卸载器。
  */
+/* Release仅清合法owner的声明，不恢复机器码；非法owner无操作，其他模块不受影响。 */
 void HookManager_ReleaseOwned(RuntimeModuleId owner);
 
 #endif

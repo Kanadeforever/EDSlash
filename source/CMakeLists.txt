@@ -4,6 +4,8 @@ project(EDSlash VERSION 0.2.0 LANGUAGES C CXX)
 if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 4 OR NOT MINGW)
     message(FATAL_ERROR "EDSlash需要32位MinGW工具链；设置EDSLASH_CC或将i686编译器加入PATH。")
 endif()
+# 入口提供内容摘要；直接CMake构建明确显示未指定身份。
+set(EDSLASH_BUILD_ID "未指定源码摘要" CACHE STRING "当前构建输入内容身份")
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 # 一次编译保留完整源码调试信息，优化级别和NDEBUG保持Release原设置。
@@ -41,7 +43,7 @@ target_compile_options(EDSlash PRIVATE -O2 -Wall -Wextra -Werror -fms-extensions
 target_link_libraries(EDSlash PRIVATE SDL3::SDL3-static user32 advapi32 m)
 # 编译器运行库静态链接；系统DLL由Windows提供，不再需要外置SDL3.dll。
 target_link_options(EDSlash PRIVATE -static -static-libgcc -static-libstdc++ -Wl,--exclude-all-symbols -Wl,--dynamicbase -Wl,--nxcompat)
-target_compile_definitions(EDSlash PRIVATE SDL_STATIC_LIB)
+target_compile_definitions(EDSlash PRIVATE SDL_STATIC_LIB EDSLASH_BUILD_ID="${EDSLASH_BUILD_ID}")
 enable_testing()
 function(edslash_test name)
     add_executable(${name} ${ARGN})
@@ -79,10 +81,21 @@ edslash_test(test_guard_settings src/Modules/Controller/Control.c src/Modules/Co
     src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c tools/controller/test_guard_settings.c)
 target_link_libraries(test_guard_settings PRIVATE user32 m)
 
+# 启动故障回归链接生产Controller业务、Registry和配置，游戏地址仅使用宿主数组。
+edslash_test(test_startup tools/controller/test_startup.c src/Runtime/ModuleRegistry.c
+    src/Runtime/HookManager.c src/Runtime/EventBus.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c
+    src/Modules/Controller/Control.c src/Modules/Controller/Game.c src/Modules/Controller/Combat.c
+    src/Modules/Controller/SkillResolver.c src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
+    src/Modules/Controller/Menu.c src/Modules/Controller/Cursor.c src/Modules/Controller/Inspect.c)
+target_link_libraries(test_startup PRIVATE user32 m)
+
 edslash_test(test_notice tools/qol/test_notice.c)
 edslash_test(test_runtime tools/test_runtime.c src/Runtime/X86Detour.c)
+# 探针链接真实管理器和事件总线，纳入正式回归。
+edslash_test(audit_runtime_contracts tools/audit_runtime_contracts.c src/Runtime/HookManager.c src/Runtime/EventBus.c)
 edslash_test(test_input_frame tools/test_input_frame.c)
 edslash_test(test_log tools/test_log.c src/Runtime/Log.c src/Runtime/FileIO.c)
+target_compile_definitions(test_log PRIVATE EDSLASH_BUILD_ID="${EDSLASH_BUILD_ID}")
 edslash_test(test_config tools/test_config.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c)
 target_compile_options(test_config PRIVATE -municode)
 target_link_options(test_config PRIVATE -municode)

@@ -329,7 +329,7 @@ static FnGetSystemMetrics          g_GetSystemMetrics = (FnGetSystemMetrics)0;
 /* DllMain 和某些 ASI Loader 都可能尝试调用 InitializeASI；这个标志保证真正初始化只做一次。 */
 static volatile LONG g_initialized = 0;
 
-/* 保存当前 BladeSwordQOL.asi 自己的模块句柄，用来找到同目录的 EDSlash.toml。 */
+/* 保存当前 EDSlash.asi 自己的模块句柄，用来找到同目录的 EDSlash.toml。 */
 static HINSTANCE g_self_module = (HINSTANCE)0;
 
 /* 路径最大给 1024 字节，远大于这类老游戏常见安装路径。 */
@@ -1607,7 +1607,8 @@ static BOOL g_gameplay_profile_active = FALSE;
 static BOOL g_strategy_transition_in_progress = FALSE;
 
 /* ComeOn.exe 的显示模式管理对象；当前兼容样本中架构固定，真实修改位置仍由内容签名验证。 */
-#define GAME_DISPLAY_MANAGER ((LPVOID)0x00548398u)
+/* 原外传显示模式解析器装入578928；此声明目前没有读取，保留正确地址供维护核对。 */
+#define GAME_DISPLAY_MANAGER ((LPVOID)0x00578928u)
 #define DISPLAY_CURRENT_MODE_OFFSET   0x04u
 #define DISPLAY_CURRENT_WIDTH_OFFSET  0x228u
 #define DISPLAY_CURRENT_HEIGHT_OFFSET 0x22Cu
@@ -6505,8 +6506,8 @@ static void initialize_display_fix(void)
     }
 
     /*
-     * 先把实际 INI 绝对路径写进日志。
-     * DisplayFix 始终读取“与当前 ASI 同目录”的 DisplayFix.ini；
+     * 先把实际 TOML 绝对路径写进日志。
+     * DisplayFix从Runtime统一配置取得参数，日志路径对应ASI旁的EDSlash.toml；
      * 如果日志显示 BaseHeight 回退成 480，用户可以直接核对自己编辑的是否就是这里这份文件。
      */
     log_text("[信息] 配置文件路径=", g_ini_path);
@@ -6801,7 +6802,7 @@ static void initialize_display_fix(void)
  * 也会让两个后端都尝试初始化。真正的唯一入口在 src/Main.c，Runtime 先识别游戏 Profile，
  * 然后只调用与当前游戏匹配的这个函数。
  *
- * module 是 BladeSwordQOL.asi 自己的模块句柄。后端继续用它寻找同目录 EDSlash.toml / .log，
+ * module 是 EDSlash.asi 自己的模块句柄。后端继续用它寻找同目录 EDSlash.toml / .log，
  * 因此把入口合并以后不会改变配置文件相对路径语义。
  */
 int DisplayFixWaiZhuan_Initialize(void* module)

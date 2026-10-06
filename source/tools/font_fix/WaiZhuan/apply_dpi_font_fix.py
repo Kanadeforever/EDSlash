@@ -4,7 +4,8 @@
 
 工具验证真正要修改的字体创建机器码及其稳定上下文，不用整个 EXE 的 SHA-256 作为补丁门槛。
 因此其它补丁只要没有修改同一段字体代码即可共存；目标签名缺失、重复或上下文异常时拒绝写入。
-脚本始终先复制目标文件，再修改副本，不覆盖用户输入文件。
+脚本在明确输出目录独占创建派生文件，不覆盖输入、已有输出或只读参考资料。
+派生文件改变完整SHA，不能通过统一Controller的四官方准确SHA门。
 """
 
 # Path 是 Python 标准库中的路径工具。
@@ -15,8 +16,8 @@ from pathlib import Path
 # SHA-256 只用于记录输入输出，不作为能否打补丁的硬性门槛。
 import hashlib
 
-# shutil.copy2() 用来复制文件，并尽量保留原文件时间戳。
-import shutil
+# argparse读取输入和显式输出目录参数。
+import argparse
 
 # struct 用来从 PE 文件头中读取小端整数。
 # 这里只做很轻量的 PE32 / x86 身份检查，不依赖第三方库。
@@ -32,7 +33,8 @@ import sys
 # -------------------------------------------------------------------------------------------------
 #
 # 原游戏在这段代码里：
-#   1) push 0x48              -> GetDeviceCaps 的 LOGPIXELSY 参数 = 90
+#   1) push 0x48              -> 留给后续字体计算的参数
+#      push 0x5A              -> GetDeviceCaps的LOGPIXELSY参数 = 90
 #   2) push edi               -> 设备上下文 HDC
 #   3) call [GetDeviceCaps]    -> 根据 Windows 当前缩放得到 96/120/144/... DPI
 #   4) 后面把这个 DPI 交给 MulDiv，算出字体高度
@@ -46,8 +48,8 @@ import sys
 # 我们检查的是一小段非常具体的机器码上下文。
 # 只要这段代码仍然是我们确认过的字体创建路径，就允许补丁。
 ORIGINAL_CONTEXT = bytes.fromhex(
-    "6A 48 "                  # push 0x48：LOGPIXELSY
-    "6A 5A "                  # push 0x5A：前一处逻辑参数，作为上下文锚点
+    "6A 48 "                  # push 0x48：后续字体计算参数
+    "6A 5A "                  # push 0x5A：LOGPIXELSY=90，GetDeviceCaps的第二参数
     "57 "                     # push edi：HDC
     "8B F0 "                  # mov esi,eax
     "FF 15 54 10 55 00 "      # call dword ptr [00551054] -> GetDeviceCaps
@@ -193,7 +195,7 @@ def locate_font_dpi_code(data: bytes) -> tuple[str, int]:
 # -------------------------------------------------------------------------------------------------
 # 3. 真正的补丁流程
 # -------------------------------------------------------------------------------------------------
-def patch_exe(input_path: Path) -> tuple[str, Path | None, int, str, str | None]:
+def patch_exe(input_path: Path, output_dir: Path | None = None) -> tuple[str, Path | None, int, str, str | None]:
     """
     验证并修复 EXE。
 
@@ -239,15 +241,20 @@ def patch_exe(input_path: Path) -> tuple[str, Path | None, int, str, str | None]
             f"预期：{ORIGINAL_CALL.hex(' ').upper()}"
         )
 
-    # 输出文件名沿用输入文件自己的名字。
+    # 输出名字沿用输入文件，但输出目录与输入分离。
     # 例如：
     #   ComeOn.exe          -> ComeOn_DPI_FontFix.exe
     #   ComeOn480P.exe      -> ComeOn480P_DPI_FontFix.exe
     #   MyWideComeOn.exe    -> MyWideComeOn_DPI_FontFix.exe
-    output_path = input_path.with_name(input_path.stem + "_DPI_FontFix" + input_path.suffix)
+    # 默认位置从仓库推导，与输入目录无关；resolve解析已有目录链接。
+    input_path = input_path.resolve()
+    directory = (output_dir or Path(__file__).resolve().parents[4] / ".workspace/release/字体修复").resolve()
+    output_path = directory / (input_path.stem + "_DPI_FontFix" + input_path.suffix)
+    # 检查路径分量，阻止显式路径或目录链接绕回只读参考资料。
+    if "参考资料" in directory.parts or output_path.resolve() == input_path:
+        raise RuntimeError("拒绝写入参考资料或覆盖输入文件。")
+    directory.mkdir(parents=True, exist_ok=True)
 
-    # 先 copy2()，这样目标文件会继承输入 EXE 的修改时间等常用属性。
-    shutil.copy2(input_path, output_path)
 
     # 用 bytearray 创建可修改副本。
     patched_data = bytearray(source_data)
@@ -256,7 +263,9 @@ def patch_exe(input_path: Path) -> tuple[str, Path | None, int, str, str | None]
     patched_data[patch_offset : patch_offset + len(PATCH_CALL)] = PATCH_CALL
 
     # 写回输出副本。
-    output_path.write_bytes(patched_data)
+    # xb只创建新文件；已有文件或链接一律拒绝，不提供覆盖开关。
+    with output_path.open("xb") as output:
+        output.write(patched_data)
 
     # 重新从磁盘读取，确保实际生成的文件就是预期结果。
     written_data = output_path.read_bytes()
@@ -299,17 +308,15 @@ def patch_exe(input_path: Path) -> tuple[str, Path | None, int, str, str | None]
 def main() -> int:
     """读取用户拖入的 EXE，执行修复，并显示容易理解的结果。"""
 
-    # 脚本只接受一个输入文件。
-    if len(sys.argv) != 2:
-        print("用法：python apply_dpi_font_fix.py <ComeOn.exe 或兼容改版 EXE>")
-        print("推荐直接把目标 EXE 拖到 apply_fix.bat 上。")
-        return 1
-
-    # resolve() 把相对路径转换成完整绝对路径，后面的提示会更清楚。
-    input_path = Path(sys.argv[1]).resolve()
+    # 显式选目录或采用仓库工作发布目录，不再随输入写回。
+    parser = argparse.ArgumentParser(description="生成独立字体修复EXE，保护输入及已有输出。")
+    parser.add_argument("input", type=Path)
+    parser.add_argument("--output-dir", type=Path, help="派生目录；禁止参考资料")
+    args = parser.parse_args()
+    input_path = args.input.resolve()
 
     try:
-        status, output_path, context_offset, input_sha256, output_sha256 = patch_exe(input_path)
+        status, output_path, context_offset, input_sha256, output_sha256 = patch_exe(input_path, args.output_dir)
     except Exception as exc:
         # 只显示面向用户的错误信息，不扔一大串 Python traceback。
         print(f"[失败] {exc}")
@@ -330,7 +337,7 @@ def main() -> int:
     print(f"[信息] 输出 SHA-256：{output_sha256}")
     print()
     print("兼容性判断依据是目标字体机器码，而不是整个 EXE 的 SHA-256。")
-    print("因此，只要其他补丁没有改动同一段字体代码，宽屏等改版可以直接继续补丁。")
+    print("派生EXE改变完整SHA，统一Controller会拒绝；统一插件字体修复应保留官方EXE。")
 
     return 0
 

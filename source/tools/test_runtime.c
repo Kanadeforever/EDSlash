@@ -7,7 +7,7 @@
 
 static unsigned char target[16];
 static unsigned char gateway_memory[32];
-static int protect_calls, fail_protect_call, flush_ok = 1, frees, checks;
+static int protect_calls, fail_protect_call, flush_ok = 1, frees, allocations, checks;
 static char log_output[512];
 static unsigned long log_size;
 
@@ -42,6 +42,7 @@ static void* __stdcall allocate_stub(void* address, unsigned long size,
                                     unsigned long type, unsigned long protect)
 {
     (void)address; (void)size; (void)type; (void)protect;
+    ++allocations;
     return gateway_memory;
 }
 static int __stdcall free_stub(void* memory, unsigned long size, unsigned long type)
@@ -54,7 +55,8 @@ static void reset_case(X86Detour* detour)
 {
     memset(detour, 0, sizeof(*detour));
     memset(target, 0x90, sizeof(target));
-    protect_calls = fail_protect_call = frees = 0;
+    memcpy(target, "\x83\xEC\x08\x8D\x54\x24\x00", 7);
+    protect_calls = fail_protect_call = frees = allocations = 0;
     flush_ok = 1;
 }
 /* 模拟公共日志出口，桥只负责转发；实际宽字符文件写入另由配置／日志测试验证。 */
@@ -77,10 +79,32 @@ int main(void)
     g_virtual_alloc = allocate_stub;
     g_virtual_free = free_stub;
 
+    /* 相对转移、未知前缀及截断均应在分配/写入之前拒绝。 */
+    const unsigned char rejected[][7] = {
+        {0xE8,0,0,0,0,0x90,0x90}, {0xE9,0,0,0,0,0x90,0x90},
+        {0x75,0,0x90,0x90,0x90,0x90,0x90}, {0x0F,0x85,0,0,0,0,0x90},
+        {0x90,0x90,0x90,0x90,0x90,0x90,0x90}
+    };
+    for (unsigned n=0;n<sizeof rejected/sizeof rejected[0];++n) {
+        reset_case(&detour);memcpy(target,rejected[n],7);
+        CHECK(!X86Detour_Install(&detour,(unsigned long)target,(unsigned long)target+100,7));
+        CHECK(!detour.installed && !protect_calls && !allocations && !frees && !memcmp(target,rejected[n],7));
+    }
+    reset_case(&detour);
+    CHECK(!X86Detour_Install(&detour,(unsigned long)target,(unsigned long)target+100,5));
+    CHECK(!protect_calls && !allocations && !frees);
+    const unsigned char accepted[][5]={{0x33,0xC0,0x8D,0x51,0x08},{0x56,0x8B,0x74,0x24,0x0C}};
+    for (unsigned n=0;n<2;++n) {
+        reset_case(&detour);memcpy(target,accepted[n],5);
+        CHECK(X86Detour_Install(&detour,(unsigned long)target,(unsigned long)target+100,5));
+        CHECK(!memcmp(gateway_memory,accepted[n],5));
+        CHECK(X86Detour_Remove(&detour) && !memcmp(target,accepted[n],5));
+    }
+
     /* 写入前失败：游戏字节保持原样，尚未使用的网关可以释放。 */
     reset_case(&detour); fail_protect_call = 1;
     CHECK(!X86Detour_Install(&detour, (unsigned long)target, (unsigned long)target + 100, 7));
-    CHECK(!detour.installed && target[0] == 0x90 && frees == 1);
+    CHECK(!detour.installed && target[0] == 0x83 && frees == 1);
 
     /* 恢复保护失败：跳转已经存在，必须保留可用网关和安装记录。 */
     reset_case(&detour); fail_protect_call = 2;
@@ -88,7 +112,7 @@ int main(void)
     CHECK(detour.installed && target[0] == 0xE9 && frees == 0);
     fail_protect_call = 0;
     CHECK(X86Detour_Remove(&detour));
-    CHECK(!detour.installed && target[0] == 0x90 && frees == 1);
+    CHECK(!detour.installed && target[0] == 0x83 && frees == 1);
 
     /* 缓存刷新失败也不能把已经写入的入口当成没有修改。 */
     reset_case(&detour); flush_ok = 0;
@@ -122,7 +146,7 @@ int main(void)
     CHECK(X86Detour_Install(&detour, (unsigned long)target, (unsigned long)target + 100, 7));
     flush_ok = 0;
     CHECK(!X86Detour_Remove(&detour));
-    CHECK(detour.installed && frees == 0 && target[0] == 0x90);
+    CHECK(detour.installed && frees == 0 && target[0] == 0x83);
     flush_ok = 1;
     CHECK(X86Detour_Remove(&detour));
     CHECK(!detour.installed && frees == 1);

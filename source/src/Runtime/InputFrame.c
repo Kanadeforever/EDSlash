@@ -3,6 +3,7 @@
 #include "Win32Bridge.h"
 #include "X86Detour.h"
 #include "ModuleRegistry.h"
+#include "../Modules/Controller/ControllerModule.h"
 #include "Log.h"
 #include "Perf.h"
 typedef int (__fastcall *InputFn)(unsigned char *,void *);
@@ -15,7 +16,9 @@ static int __fastcall input_frame(unsigned char *keys,void *unused)
     /* 这里已经离开Loader锁，允许启动后台日志线程；SDL仍由手柄采样桥初始化。 */
     (void)RuntimeLog_Start();RuntimePerf_Initialize();
     int64_t perf=RuntimePerf_Begin();
-    RuntimeConfig_ApplyFrame(!ModuleRegistry_IsInitialized(RUNTIME_MODULE_CONTROLLER));
+    /* 没有就绪的动作桥就没有正在执行的手柄动作，Runtime接收idle候选。
+     * Registry登记成功不能代替延后SHA、SDL和动作桥的实际成功结果。 */
+    RuntimeConfig_ApplyFrame(!ControllerModule_IsReady());
     Runtime_EmitEvent(RUNTIME_EVENT_INPUT_FRAME_BEGIN,keys,0,0);
     int result=original ? original(keys,unused):0;
     Runtime_EmitEvent(RUNTIME_EVENT_INPUT_FRAME_END,keys,(unsigned long)result,0);

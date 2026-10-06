@@ -38,7 +38,7 @@ void EventBus_Emit(RuntimeEventId event_id, void* subject, unsigned long value1,
     unsigned long i;
     unsigned long count;
 
-    if ((unsigned long)event_id >= (unsigned long)RUNTIME_EVENT_COUNT) {
+    if ((unsigned long)event_id >= (unsigned long)RUNTIME_EVENT_COUNT || !subject) {
         return;
     }
 

@@ -6,7 +6,9 @@ int HookManager_Claim(SharedHookId hook_id, RuntimeModuleId owner)
 {
     RuntimeModuleId current;
 
-    if ((unsigned long)hook_id >= (unsigned long)SHARED_HOOK_COUNT || owner == RUNTIME_MODULE_NONE) {
+    /* NONE只是空槽标记；COUNT和负数也不能成为真实模块身份。先检查再访问数组。 */
+    if ((unsigned long)hook_id >= (unsigned long)SHARED_HOOK_COUNT ||
+        owner <= RUNTIME_MODULE_NONE || owner >= RUNTIME_MODULE_COUNT) {
         return 0;
     }
 
@@ -32,7 +34,7 @@ void HookManager_ReleaseOwned(RuntimeModuleId owner)
 {
     unsigned long i;
 
-    if (owner == RUNTIME_MODULE_NONE) {
+    if (owner <= RUNTIME_MODULE_NONE || owner >= RUNTIME_MODULE_COUNT) {
         return;
     }
 

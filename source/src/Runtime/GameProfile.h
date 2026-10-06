@@ -17,7 +17,7 @@ typedef enum GameId {
 
 /*
  * RuntimeApiProfile 保存主程序导入表中两个基础入口的位置。
- * Runtime 通过这两个入口查询其它 Kernel32 API，因此主 ASI 自身仍可保持零导入表。
+ * Runtime通过这两个游戏入口解析桥所需API；当前主ASI允许标准Windows导入，并非零导入。
  */
 typedef struct RuntimeApiProfile {
     unsigned long get_module_handle_a_iat_rva;

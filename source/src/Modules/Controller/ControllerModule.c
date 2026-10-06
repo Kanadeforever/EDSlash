@@ -29,6 +29,7 @@ static bool installed;
 static DWORD game_thread;
 static HINSTANCE self_module;
 static int runtime_state;
+int ControllerModule_IsReady(void) { return runtime_state == 1; }
 static void initialize_runtime(void);
 static WNDPROC previous_window_proc;
 static HWND hooked_window;
@@ -249,7 +250,15 @@ static void initialize_runtime(void)
         Log_Write("[停止] Controller基线或机器码不匹配，撤回采样入口，其他模块继续。");
         if (*(void **)g_profile->keyboard_iat==(void *)keyboard_hook)
             patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
-        return;
+        Input_Shutdown();return;
+    }
+    /* SDL失败与没有连接手柄不同。前者不再安装动作桥，后者允许正常等待设备。
+     * 初始化发生在游戏输入线程而非Loader锁；失败后Runtime可以接收idle配置。 */
+    if (!Input_Initialize()) {
+        if (*(void **)g_profile->keyboard_iat==(void *)keyboard_hook)
+            patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
+        Log_Write("[停止] SDL初始化失败，撤回采样入口，其他模块继续。");
+        Input_Shutdown();return;
     }
     original_async = *(void **)g_profile->async_iat;
     memcpy(saved_call, (void *)g_profile->resolver_call, 5);
@@ -263,11 +272,11 @@ static void initialize_runtime(void)
     /* 任一步失败都撤回前面已经写入的槽，不能留下半套输入桥。 */
     if (!patch((void *)g_profile->resolver_call, replacement, 5)) {
         patch((void *)g_profile->keyboard_iat, &original_keyboard, 4);
-        Log_Write("[停止] 无法安装动作阶段，已撤回采样入口。"); return;
+        Log_Write("[停止] 无法安装动作阶段，已撤回采样入口。"); Input_Shutdown();return;
     }
     if (!patch((void *)g_profile->async_iat, &async, 4)) {
         patch((void *)g_profile->keyboard_iat, &original_keyboard, 4);
-        patch((void *)g_profile->resolver_call, saved_call, 5); return;
+        patch((void *)g_profile->resolver_call, saved_call, 5); Input_Shutdown();return;
     }
     BYTE history_replacement[5]={0xE8};
     intptr_t history_relative=(intptr_t)history_hook-(intptr_t)g_profile->history_call-5;
@@ -275,7 +284,7 @@ static void initialize_runtime(void)
     if (!patch((void *)g_profile->history_call,history_replacement,5)) {
         patch((void *)g_profile->async_iat,&original_async,4);
         patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
-        patch((void *)g_profile->resolver_call,saved_call,5);return;
+        patch((void *)g_profile->resolver_call,saved_call,5);Input_Shutdown();return;
     }
     BYTE retry_replacement[5]={0xE8};
     intptr_t retry_relative=(intptr_t)retry_hook-(intptr_t)g_profile->retry_call-5;
@@ -284,7 +293,7 @@ static void initialize_runtime(void)
         patch((void *)g_profile->history_call,saved_history_call,5);
         patch((void *)g_profile->async_iat,&original_async,4);
         patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
-        patch((void *)g_profile->resolver_call,saved_call,5);return;
+        patch((void *)g_profile->resolver_call,saved_call,5);Input_Shutdown();return;
     }
     BYTE end_replacement[5]={0xE8};
     intptr_t end_relative=(intptr_t)end_hook-(intptr_t)g_profile->end_call-5;
@@ -294,7 +303,7 @@ static void initialize_runtime(void)
         patch((void *)g_profile->history_call,saved_history_call,5);
         patch((void *)g_profile->async_iat,&original_async,4);
         patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
-        patch((void *)g_profile->resolver_call,saved_call,5);return;
+        patch((void *)g_profile->resolver_call,saved_call,5);Input_Shutdown();return;
     }
     if (!Guard_Initialize() || !Feedback_Initialize() || !Menu_Initialize() || !Cursor_Initialize() || !Inspect_Initialize()) {
         Inspect_Shutdown();Cursor_Shutdown();Menu_Shutdown();Guard_Shutdown();Feedback_Shutdown();
@@ -304,11 +313,11 @@ static void initialize_runtime(void)
         patch((void *)g_profile->async_iat,&original_async,4);
         patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
         patch((void *)g_profile->resolver_call,saved_call,5);
-        Log_Write("[停止] 防御/闪避/菜单入口未通过安装，已撤回手柄动作阶段。");return;
+        Log_Write("[停止] 防御/闪避/菜单入口未通过安装，已撤回手柄动作阶段。");Input_Shutdown();return;
     }
     installed = true;
     runtime_state = 1;
-    Log_Write("[启动] %s；输入采样和原版目标解析后阶段已安装。SDL 将在游戏输入线程初始化。", g_profile->name);
+    Log_Write("[启动] %s；SDL、输入采样和原版目标解析后阶段已就绪。", g_profile->name);
 }
 
 int ControllerModule_Initialize(const RuntimeContext *runtime)
@@ -362,4 +371,5 @@ void ControllerModule_Shutdown(void)
                 patch((void *)g_profile->end_call,saved_end_call,5);
         }
     Input_Shutdown();
+    runtime_state=-1;
 }
