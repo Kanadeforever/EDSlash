@@ -69,6 +69,9 @@ edslash_test(test_menu src/Modules/Controller/Control.c src/Modules/Controller/G
     src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Inspect.c src/Modules/Controller/Cursor.c src/Modules/Controller/Crash.c src/Runtime/FileIO.c src/Runtime/HookManager.c tools/controller/test_menu.c)
 target_link_libraries(test_menu PRIVATE user32 m)
 add_test(NAME test_focus_containment COMMAND test_menu --containment)
+add_test(NAME test_skill_visual_navigation COMMAND test_menu --skill-focus navigation)
+add_test(NAME test_skill_action_frame COMMAND test_menu --skill-focus frame)
+add_test(NAME test_skill_y_focus COMMAND test_menu --skill-focus preserve)
 # 调查回放使用真实地图格/句柄与原事件包装，不读取游戏进程或真实资源脚本。
 edslash_test(test_inspect src/Modules/Controller/Control.c src/Modules/Controller/Game.c
     src/Modules/Controller/Combat.c src/Modules/Controller/SkillResolver.c

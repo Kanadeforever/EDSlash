@@ -342,7 +342,7 @@ static int direction(void)
     if (fabsf(x)<0.55f && fabsf(y)<0.55f) return 0;
     return fabsf(y)>=fabsf(x) ? (y<0 ? 1:2):(x<0 ? 3:4);
 }
-static unsigned navigate(MenuButton *list,unsigned count,unsigned current,int dir)
+static unsigned navigate(MenuButton *list,unsigned count,unsigned current,int dir,bool aligned)
 {
     double best=1e30;unsigned result=current;
     for (unsigned i=0;i<count;++i) if (i!=current) {
@@ -350,6 +350,14 @@ static unsigned navigate(MenuButton *list,unsigned count,unsigned current,int di
         double forward=dir==1 ? -dy:dir==2 ? dy:dir==3 ? -dx:dx;
         double side=dir<=2 ? fabs(dx):fabs(dy);
         /* 只选所推半平面，优先同一行/列附近控件；走到边缘保持原位置，不跳到另一端。 */
+        /* 技能图标按视觉行/列导航：边缘没有同列/同行邻项就停留。
+         * 允许控件轻微错位（宽/高四分之一），不跨到侧列凑一个斜向候选。
+         * 其它非网格页面仍保留通用几何导航，不改变系统/确认框语义。 */
+        if(aligned) {
+            void *object=list[current].object;
+            double span=object ? Read32(object,dir<=2 ? 0x1C:0x20):(dir<=2 ? 44:48);
+            if(side>span*0.25)continue;
+        }
         double score=forward+side*3.0;
         if (forward>0.5 && score<best) { best=score;result=i; }
     }
@@ -616,7 +624,7 @@ bool Menu_FocusFrame(RECT *rectangle)
         }
         void *slot=list[i].object;int x=(int)Read32(slot,0x14),y=(int)Read32(slot,0x18);
         int w=(int)Read32(slot,0x1C),h=(int)Read32(slot,0x20);
-        if(kind==SKILL_KIND && !((state.id>=0x84 && state.id<=0x8F) || (state.id>=0xCF && state.id<=0xDA)))return false;
+        if(kind==SKILL_KIND && !((state.id>=0x81 && state.id<=0x8F) || (state.id>=0xCF && state.id<=0xDA)))return false;
         /* 实物格/技能图标只画内框，不把关闭/页签/金额等按钮误判为方形格子。 */
         *rectangle=(RECT){x+1,y+1,x+w-1,y+h-1};return true;
     }
@@ -767,7 +775,9 @@ void Menu_Update(void)
             if ((g_intent.pressed & KEY(PAD_Y)) && Read32(root,0xC4)<4) {
                 ((This1)g_profile->menu_skill_slot)(root,(int)((Read32(root,0xC4)+1)%4));
                 Log_Write("[技能菜单] 当前编辑套组=%lu。",(unsigned long)Read32(root,0xC4)+1);
-                state.id=0;state.direction=0;state.barrier=true;return;
+                /* 下方技能不因切套组改变，保留其业务ID；上方节点保留同一位置。
+                 * 若新组更短，下面统一合法项校正会选末项，不清零回首项。 */
+                state.direction=0;state.barrier=true;project();return;
             }
         }
     }
@@ -792,7 +802,7 @@ void Menu_Update(void)
     }
     int dir=direction();
     if (dir && (dir!=state.direction || (int32_t)(g_input.now-state.next_repeat)>=0)) {
-        selected=navigate(list,count,selected,dir);
+        selected=navigate(list,count,selected,dir,kind==SKILL_KIND);
         if (state.id!=list[selected].id) focus_sound(kind);
         state.id=list[selected].id;
         state.next_repeat=g_input.now+(dir==state.direction ? 110u:350u);

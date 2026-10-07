@@ -1152,8 +1152,48 @@ static void containment_regression(bool expansion,unsigned limit)
 
     Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
 }
+/* 按实际截图提供左侧3动作与右侧4×3技能，左右列有小幅错位，不能靠节点顺序导航。 */
+static void skill_visual_regression(bool expansion,const char *scenario)
+{
+    Profile profile;menu_fixture(&profile,expansion);
+    for(unsigned i=0;i<15;++i) {
+        BYTE *node=menu_children[8][i];Write32(node,0x28,i<3 ? 0x81+i:0x84+i-3);
+        Write32(node,0x14,i<3 ? 20:100+(i-3)%4*60);
+        Write32(node,0x18,i<3 ? 110+i*50:100+(i-3)/4*50);
+        Write32(node,0x1C,44);Write32(node,0x20,48);Write32(node,0x64,1);
+    }
+    Write32(menu_children[8][15],0x64,0);
+    activate_page(8);neutral_menu();menu_step(KEY(PAD_RB),0,0);neutral_menu();CHECK(focus_id(8)==0x84);
+    if(!strcmp(scenario,"navigation")) {
+        menu_step(KEY(PAD_DOWN),0,0);neutral_menu();menu_step(KEY(PAD_DOWN),0,0);neutral_menu();CHECK(focus_id(8)==0x8C);
+        menu_step(KEY(PAD_DOWN),0,0);CHECK(focus_id(8)==0x8C); /* 不能溜到左侧跳跃 */
+        neutral_menu();menu_step(KEY(PAD_LEFT),0,0);neutral_menu();CHECK(focus_id(8)==0x83);
+        menu_step(KEY(PAD_UP),0,0);neutral_menu();menu_step(KEY(PAD_UP),0,0);neutral_menu();CHECK(focus_id(8)==0x81);
+        menu_step(KEY(PAD_UP),0,0);CHECK(focus_id(8)==0x81); /* 左侧顶端不能跳右侧 */
+    } else if(!strcmp(scenario,"frame")) {
+        menu_step(KEY(PAD_LEFT),0,0);neutral_menu();CHECK(focus_id(8)==0x81);RECT r;
+        for(unsigned id=0x81;id<=0x83;++id) {
+            CHECK(focus_id(8)==id && Menu_FocusFrame(&r) && Menu_HidesCursor());
+            focus_draws=0;emit_focus();CHECK(focus_draws>0);
+            if(id<0x83) {menu_step(KEY(PAD_DOWN),0,0);neutral_menu();}
+        }
+    } else {
+        menu_step(KEY(PAD_RIGHT),0,0);neutral_menu();unsigned before=focus_id(8);CHECK(before==0x85);
+        /* 四次新按键绕回第一套，按住同一次Y不得多切，技能位置始终不变。 */
+        for(unsigned set=1;set<=4;++set) {
+            menu_step(KEY(PAD_Y),0,0);CHECK(Read32(menu_roots[8],0xC4)==set%4 && focus_id(8)==before);
+            menu_step(KEY(PAD_Y),0,0);CHECK(Read32(menu_roots[8],0xC4)==set%4 && focus_id(8)==before);
+            neutral_menu();
+        }
+    }
+    Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
+}
 int main(int argc,char **argv)
 {
+    if(argc>2 && !strcmp(argv[1],"--skill-focus")) {
+        skill_visual_regression(false,argv[2]);skill_visual_regression(true,argv[2]);
+        printf("两作技能视觉导航/动作框/Y焦点场景通过：%s\n",argv[2]);return 0;
+    }
     if(argc>1 && !strcmp(argv[1],"--containment")) {unsigned limit=argc>2 && !strcmp(argv[2],"bag") ? 9:15;containment_regression(false,limit);containment_regression(true,limit);printf("两作最终绘制边界格内、动画偏移与非格子指针回放通过\n");return 0;}
     shared_focus_regression(false);shared_focus_regression(true);
     discard_regression(false);discard_regression(true);
