@@ -315,6 +315,55 @@ int RuntimeConfig_SetBinding(unsigned game,unsigned role,unsigned slot,ConfigBin
     }
     return commit_text(work,size);
 }
+const ConfigSnapshot *RuntimeConfig_Saved(void) {return ready ? &pending:NULL;}
+ConfigBinding RuntimeConfig_GetSavedBinding(unsigned game,unsigned role,unsigned slot)
+{
+    for(unsigned i=0;i<pending_count;++i)
+        if(pending_bindings[i].game==game && pending_bindings[i].role==role && pending_bindings[i].slot==slot)
+            return pending_bindings[i].binding;
+    ConfigBinding automatic={0,0,0};return automatic;
+}
+int RuntimeConfig_SaveBatch(const ConfigEdit *edits,size_t count,
+                            const ConfigBindingEdit *bindings,size_t binding_count)
+{
+    if(!ready || count>CONFIG_COUNT || binding_count>128 || (count && !edits) || (binding_count && !bindings))
+        return error("批量配置参数无效");
+    if(!count && !binding_count)return 1;
+    /* candidate仅是工作副本；所有编辑完成并通过decode前不能更新document或pending。 */
+    candidate=document;size_t size=document.size;
+    for(size_t i=0;i<count;++i) {
+        const ConfigEdit *edit=&edits[i];const ConfigDescriptor *f=RuntimeConfig_Descriptor(edit->id);
+        char value[80];
+        for(size_t j=0;j<i;++j)if(edits[j].id==edit->id)return error("批量配置包含重复字段");
+        if(!f)return error("批量配置字段无效");
+        if(f->type==CONFIG_TEXT) {
+            if(edit->id!=CONFIG_ASPECT_RATIO || !edit->text || !valid_ratio(edit->text) ||
+                strlen(edit->text)>=sizeof active.aspect_ratio || !literal(f,0,edit->text,value,sizeof value))
+                return error("批量文本值无效");
+        } else if(edit->value<f->minimum || edit->value>f->maximum ||
+                  !literal(f,edit->value,NULL,value,sizeof value))return error("批量设置值超出范围");
+        if(!Toml_Update(&candidate,f->table,f->key,value,work,sizeof work,&size) || !Toml_Parse(&candidate,work,size))
+            return error("无法生成批量配置候选");
+    }
+    for(size_t i=0;i<binding_count;++i) {
+        const ConfigBindingEdit *edit=&bindings[i];ConfigBinding b=edit->value;
+        if((edit->game!=1 && edit->game!=2) || edit->role<1 || edit->role>65535 || edit->slot<1 || edit->slot>14 ||
+            b.selector<0 || b.selector>65535 || (b.custom!=0 && b.custom!=1) || (b.right!=0 && b.right!=1))
+            return error("批量技能绑定参数无效");
+        for(size_t j=0;j<i;++j)if(bindings[j].game==edit->game && bindings[j].role==edit->role && bindings[j].slot==edit->slot)
+            return error("批量技能绑定包含重复槽位");
+        char table[96],selector[32];
+        snprintf(table,sizeof table,"controller.bindings.%s.character_%u.slot_%u",edit->game==1 ? "daojian":"waizhuan",edit->role,edit->slot);
+        snprintf(selector,sizeof selector,"%d",b.selector);
+        const char *keys[]={"mode","selector","hand"};
+        const char *values[]={b.custom ? "\"skill\"":"\"game\"",selector,b.right ? "\"right\"":"\"left\""};
+        for(unsigned j=0;j<3;++j)
+            if(!Toml_Update(&candidate,table,keys[j],values[j],work,sizeof work,&size) || !Toml_Parse(&candidate,work,size))
+                return error("无法生成完整批量技能绑定");
+    }
+    /* commit_text复用外部改动检测、完整decode、CRLF规范化与一次替换；生效仍在原安全边界。 */
+    return commit_text(candidate.bytes,candidate.size);
+}
 int RuntimeConfig_HasPending(void) {return ready && (saved_serial!=applied_serial || pending_idle);}
 int RuntimeConfig_ApplyFrame(int action_idle)
 {

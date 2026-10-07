@@ -28,10 +28,19 @@ typedef struct {
 typedef struct { int values[CONFIG_COUNT]; char aspect_ratio[40]; unsigned generation; } ConfigSnapshot;
 /* 自动模式沿用原游戏当前绑定；自定义按Player+0x348的角色selector隔离。 */
 typedef struct { int custom, selector, right; } ConfigBinding;
+/* 设置窗口的候选修改：调用期间借用text；非文本项使用value，不持有游戏对象。 */
+typedef struct {ConfigId id;int value;const char *text;} ConfigEdit;
+typedef struct {unsigned game,role,slot;ConfigBinding value;} ConfigBindingEdit;
 
 int RuntimeConfig_Initialize(void *module);
 int RuntimeConfig_OpenPath(const wchar_t *path);
 const ConfigSnapshot *RuntimeConfig_Current(void);
+/* 已保存值可与实际生效值不同（待空闲／待重启），窗口不能只显示active。 */
+const ConfigSnapshot *RuntimeConfig_Saved(void);
+ConfigBinding RuntimeConfig_GetSavedBinding(unsigned game,unsigned role,unsigned slot);
+/* 所有候选一起校验、一次原子保存；任一失败不保存部分字段。 */
+int RuntimeConfig_SaveBatch(const ConfigEdit *edits,size_t count,
+                            const ConfigBindingEdit *bindings,size_t binding_count);
 int RuntimeConfig_GetInt(ConfigId id);
 const ConfigDescriptor *RuntimeConfig_Descriptor(ConfigId id);
 /* 修改先验证并原子保存，成功后更新候选快照；在帧边界显式提交生效。 */

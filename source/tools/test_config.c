@@ -97,10 +97,32 @@ int wmain(void)
     CHECK(RuntimeFile_Read(path,saved,sizeof saved,&size));
     CHECK(size>0 && !memcmp(saved,"# EDSlash",9));
     for (size_t i=0;i<size;++i) if(saved[i]=='\n') CHECK(i>0 && saved[i-1]=='\r');
+    /* 设置窗口一次提交多个字段和两个角色槽，不能在第二项无效时保存第一项。 */
+    ConfigEdit edits[]={{CONFIG_DEADZONE,11000,NULL},{CONFIG_AIM_EXPAND_MS,1500,NULL},{CONFIG_BASE_HEIGHT,600,NULL}};
+    ConfigBindingEdit binds[]={{1,4,2,{1,1002,1}},{2,50,14,{1,3000,0}}};
+    CHECK(RuntimeConfig_SaveBatch(edits,3,binds,2));
+    CHECK(RuntimeConfig_Saved()->values[CONFIG_BASE_HEIGHT]==600 && RuntimeConfig_GetInt(CONFIG_BASE_HEIGHT)==720);
+    CHECK(RuntimeConfig_GetSavedBinding(1,4,2).selector==1002 && !RuntimeConfig_GetBinding(1,4,2).custom);
+    CHECK(RuntimeFile_Read(path,saved,sizeof saved,&size));size_t before_size=size;
+    ConfigEdit invalid_batch[]={{CONFIG_DEADZONE,12000,NULL},{CONFIG_AIM_EXPAND_MS,0,NULL}};
+    CHECK(!RuntimeConfig_SaveBatch(invalid_batch,2,NULL,0));
+    CHECK(RuntimeFile_Read(path,text,sizeof text,&size) && size==before_size && !memcmp(text,saved,size));
+    CHECK(RuntimeConfig_Saved()->values[CONFIG_DEADZONE]==11000);
+    ConfigEdit duplicate[]={{CONFIG_DEADZONE,12000,NULL},{CONFIG_DEADZONE,13000,NULL}};
+    CHECK(!RuntimeConfig_SaveBatch(duplicate,2,NULL,0));
+    ConfigBindingEdit invalid_binds[]={{1,4,3,{1,1003,1}},{1,0,4,{1,1004,1}}};
+    CHECK(!RuntimeConfig_SaveBatch(NULL,0,invalid_binds,2));
+    CHECK(!RuntimeConfig_GetSavedBinding(1,4,3).custom);
+    CHECK(RuntimeFile_Read(path,text,sizeof text,&size) && size==before_size && !memcmp(text,saved,size));
+    CHECK(RuntimeConfig_ApplyFrame(0) && RuntimeConfig_GetInt(CONFIG_AIM_EXPAND_MS)==1500);
+    CHECK(!RuntimeConfig_GetBinding(1,4,2).custom && RuntimeConfig_HasPending() && RuntimeConfig_NeedsRestart());
+    CHECK(RuntimeConfig_ApplyFrame(1) && RuntimeConfig_GetBinding(1,4,2).selector==1002);
+    CHECK(RuntimeConfig_GetBinding(2,50,14).selector==3000 && RuntimeConfig_GetInt(CONFIG_BASE_HEIGHT)==720);
     /* 外部程序改过文件时，保存不能覆盖新内容。 */
     const char *external="[meta]\r\nschema=1\r\n[controller.input]\r\ndeadzone=9000\r\n";
     CHECK(RuntimeFile_WriteAtomic(path,external,strlen(external),0));
     CHECK(!RuntimeConfig_SetInt(CONFIG_DEADZONE,13000));
+    CHECK(!RuntimeConfig_SaveBatch(edits,3,binds,2));
     CHECK(RuntimeFile_Read(path,text,sizeof text,&size) && !strcmp(text,external));
     CHECK(RuntimeConfig_OpenPath(path));
     /* 禁止删除共享可模拟最后替换失败：正式文件和有效快照都应保持。 */
