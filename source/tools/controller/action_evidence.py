@@ -27,6 +27,12 @@ def main():
             address=p['addresses'][field];lines.append(f'[{field} {address:08X} 窗口{size}字节]')
             for instruction in decoder.disasm(pe.read(address,size),address):
                 lines.append(f'{instruction.address:08X} {instruction.bytes.hex():24} {instruction.mnemonic:8} {instruction.op_str}'.rstrip())
+        # 对应原Frame普通/矩形wrapper的坐标偏移证据，不能只依赖目标矩形。
+        ordinary=0x4F4560 if p['game_id']==1 else 0x50B440
+        for title,address,size in [('原普通绘制原点',ordinary,112),('原裁取绘制原点',ordinary+0x70,112)]:
+            lines.append(f'[{title} {address:08X} 窗口{size}字节]')
+            for instruction in decoder.disasm(pe.read(address,size),address):
+                lines.append(f'{instruction.address:08X} {instruction.bytes.hex():24} {instruction.mnemonic:8} {instruction.op_str}'.rstrip())
         address=0x4C4860 if p['game_id']==1 else 0x4D8E40
         lines.append(f'[原HUD槽更新 {address:08X} 窗口256字节]')
         for instruction in decoder.disasm(pe.read(address,256),address):

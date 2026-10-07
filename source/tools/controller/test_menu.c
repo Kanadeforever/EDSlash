@@ -280,6 +280,8 @@ static void *focus_entries[1]={focus_entry};
 static unsigned focus_draws,drop_requests;static RECT focus_rectangle;
 static void record_focus(int x,int y,int width,int height)
 {
+    int16_t values[4];memcpy(values,focus_description+0xE,8);
+    x+=values[0]-values[2];y+=values[1]-values[3];
     RECT r={x,y,x+width,y+height};
     if(!focus_draws)focus_rectangle=r;
     else {
@@ -334,7 +336,7 @@ static void cursor_fixture(Profile *profile)
     if(!subscribed) {CHECK(Runtime_Subscribe(RUNTIME_EVENT_UI_DRAW_END,draw,NULL));subscribed=true;}
     CHECK(Cursor_Initialize());cursor_draws=focus_draws=drop_requests=0;
     ptr(hud_data,0x48,focus_sprites);Write32(hud_data,0x44,6);
-    ptr(focus_description,8,focus_bank);Write32(focus_description,4,0);ptr(focus_bank,4,focus_entries);
+    memset(focus_description,0,sizeof focus_description);ptr(focus_description,8,focus_bank);Write32(focus_description,4,0);ptr(focus_bank,4,focus_entries);
     ptr(focus_sprites+5*32,0,focus_description);Write32(focus_sprites+5*32,4,0);Write32(focus_sprites+5*32,8,1);
     Write32(focus_image,0xC,26);Write32(focus_image,0x10,26);Write32(focus_surface,0xC,856);Write32(focus_surface,0x10,480);
 }
@@ -958,7 +960,7 @@ static void action_regression(bool expansion)
     action_step(0,1,0);CHECK(ActionMenu_Active() && action_builds==1 && Read32(action_root,0xC8)==0);
     CHECK(((This0)action_table[1])(action_root)==7 && ReadPtr(action_root,0xC0)==action_nodes[0][0]);
     action_step(0,0,0);action_step(0,1,0);CHECK(ReadPtr(action_root,0xC0)==action_nodes[0][1]);
-    CHECK(Menu_HidesCursor());emit_focus();CHECK(focus_draws>1 && focus_rectangle.left==131 && focus_rectangle.top==99 && focus_rectangle.right==161 && focus_rectangle.bottom==129);
+    CHECK(Menu_HidesCursor());emit_focus();CHECK(focus_draws>1 && focus_rectangle.left==133 && focus_rectangle.top==101 && focus_rectangle.right==161 && focus_rectangle.bottom==129);
     CHECK(Read32(hud_data,0x12C)==111); /* 预览不能直接改右手 */
     action_step(KEY(PAD_R3),0,0);CHECK(Read32(action_root,0xC8)==1 && action_commits==0);
     action_step(0,0,0);action_step(0,1,0);CHECK(ReadPtr(action_root,0xC0)==action_nodes[1][1]);
@@ -1013,7 +1015,7 @@ static void quickbar_regression(bool expansion)
     menu_step(KEY(PAD_A),0,0);CHECK(Read32(grid_player,0x2C4)==101);
     neutral_menu();menu_step(KEY(PAD_X),0,0);neutral_menu();unsigned reason;
     CHECK(Menu_Context(&reason)==hud_data && ReadPtr(hud_data,0xA8)==NULL);
-    emit_focus();CHECK(focus_draws==1 && focus_rectangle.left==9 && focus_rectangle.top==349 && focus_rectangle.right==35);
+    emit_focus();CHECK(focus_draws>0 && focus_rectangle.left==11 && focus_rectangle.top==351 && focus_rectangle.right==33 && focus_rectangle.bottom==373);
     unsigned valid_draws=focus_draws;
     Write32(focus_sprites+5*32,8,0);emit_focus();CHECK(focus_draws==valid_draws);
     Write32(focus_sprites+5*32,8,1);Write32(focus_sprites+5*32,4,1);emit_focus();CHECK(focus_draws==valid_draws);
@@ -1090,16 +1092,18 @@ static void shared_focus_regression(bool expansion)
         CHECK(focus_rectangle.left==r.left && focus_rectangle.top==r.top && focus_rectangle.right==r.right && focus_rectangle.bottom==r.bottom);
         CHECK(Menu_HidesCursor()); /* 格子页空手均不用鼠标箭头 */
         Write32(grid_player,0x2C4,999);POINT point;CHECK(!Menu_HidesCursor() && Menu_CursorAnchor(&point));
-        int offset=kind>=12 && kind<15 ? 1:0;
-        CHECK(point.x==(r.left+r.right)/2+offset && point.y==(r.top+r.bottom)/2+offset);
+        CHECK(point.x==(r.left+r.right)/2 && point.y==(r.top+r.bottom)/2);
         Write32(grid_player,0x2C4,UINT32_MAX);
     }
-    activate_page(9);neutral_menu();menu_step(KEY(PAD_Y),0,0);neutral_menu();RECT panel;
-    CHECK(Menu_FocusFrame(&panel));focus_draws=0;emit_focus();CHECK(focus_draws>0 && focus_rectangle.right==panel.right);
+    activate_page(9);neutral_menu();unsigned reason;
+    if(Menu_Context(&reason)==hud_data) {menu_step(KEY(PAD_X),0,0);neutral_menu();}
+    CHECK(Menu_Context(&reason)==menu_roots[9]);
+    menu_step(KEY(PAD_Y),0,0);neutral_menu();RECT panel;
+    CHECK(!Menu_FocusFrame(&panel) && !Menu_HidesCursor());focus_draws=0;emit_focus();CHECK(focus_draws==0);
     ptr(menu_roots[4],0xCC,menu_roots[9]);((This2)menu_tables[4][0x1C/4])(menu_roots[4],1,0);
-    neutral_menu();CHECK(Menu_FocusFrame(&panel));focus_draws=0;emit_focus();
-    CHECK(RuntimeFocus_WasDrawn(RUNTIME_MODULE_CONTROLLER) && focus_draws>0); /* 原物品确认框同样用框 */
-    menu_step(KEY(PAD_B),0,0);neutral_menu();
+    neutral_menu();CHECK(!Menu_FocusFrame(&panel) && !Menu_HidesCursor());focus_draws=0;emit_focus();
+    CHECK(!RuntimeFocus_WasDrawn(RUNTIME_MODULE_CONTROLLER) && focus_draws==0); /* 非格子确认项恢复原指针 */
+    menu_step(KEY(PAD_B),0,0);neutral_menu();menu_step(KEY(PAD_Y),0,0);neutral_menu();
     CHECK(!RuntimeFocus_Register(RUNTIME_MODULE_NONE,other_focus,&other_focus_active));
     CHECK(!RuntimeFocus_Register(RUNTIME_MODULE_COUNT,other_focus,&other_focus_active));
     CHECK(!RuntimeFocus_Register((RuntimeModuleId)-1,other_focus,&other_focus_active));
@@ -1117,8 +1121,40 @@ static void shared_focus_regression(bool expansion)
     Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
     CHECK(!RuntimeFocus_WasDrawn(RUNTIME_MODULE_CONTROLLER));
 }
-int main(void)
+/* 以可交互格的真实24像素边界为验收，不以当前请求矩形作为自己的正确答案。 */
+static void containment_regression(bool expansion,unsigned limit)
 {
+    Profile profile;menu_fixture(&profile,expansion);activate_page(9);neutral_menu();
+    int16_t origin[4]={4,-1,1,-3};memcpy(focus_description+0xE,origin,8);
+    for(unsigned kind=9;kind<=limit;++kind) {
+        if(kind<15)activate_page(kind);
+        else {activate_page(9);neutral_menu();menu_step(KEY(PAD_X),0,0);}
+        neutral_menu();RECT r;CHECK(Menu_FocusFrame(&r));focus_draws=0;emit_focus();
+        POINT center;Write32(grid_player,0x2C4,999);CHECK(Menu_CursorAnchor(&center));Write32(grid_player,0x2C4,UINT32_MAX);
+        int w=kind<=11 || kind==15 ? 24:80,h=kind<=11 || kind==15 ? 24:30;
+        CHECK(focus_rectangle.left>=center.x-w/2 && focus_rectangle.top>=center.y-h/2);
+        CHECK(focus_rectangle.right<=center.x+w/2 && focus_rectangle.bottom<=center.y+h/2);
+        CHECK(!memcmp(focus_description+0xE,origin,8)); /* 补偿不改原动画数据 */
+        int16_t alternate[4]={-4,5,1,2};memcpy(focus_description+0xE,alternate,8);focus_draws=0;emit_focus();
+        CHECK(focus_rectangle.left>=center.x-w/2 && focus_rectangle.top>=center.y-h/2);
+        CHECK(focus_rectangle.right<=center.x+w/2 && focus_rectangle.bottom<=center.y+h/2);
+        CHECK(!memcmp(focus_description+0xE,alternate,8));memcpy(focus_description+0xE,origin,8);
+
+    }
+    activate_page(9);neutral_menu();unsigned reason;
+    if(Menu_Context(&reason)==hud_data) {menu_step(KEY(PAD_X),0,0);neutral_menu();}
+    CHECK(Menu_Context(&reason)==menu_roots[9]);
+    menu_step(KEY(PAD_Y),0,0);neutral_menu();RECT r;
+    CHECK(!Menu_FocusFrame(&r) && !Menu_HidesCursor()); /* 非格子按钮区保留手型 */
+    activate_page(8);neutral_menu();CHECK(Menu_FocusFrame(&r));focus_draws=0;emit_focus();CHECK(focus_draws>0);
+    menu_step(KEY(PAD_RB),0,0);neutral_menu();menu_step(KEY(PAD_X),0,0);neutral_menu();
+    CHECK(Menu_FocusFrame(&r));focus_draws=0;emit_focus();CHECK(focus_draws>0);
+
+    Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
+}
+int main(int argc,char **argv)
+{
+    if(argc>1 && !strcmp(argv[1],"--containment")) {unsigned limit=argc>2 && !strcmp(argv[2],"bag") ? 9:15;containment_regression(false,limit);containment_regression(true,limit);printf("两作最终绘制边界格内、动画偏移与非格子指针回放通过\n");return 0;}
     shared_focus_regression(false);shared_focus_regression(true);
     discard_regression(false);discard_regression(true);
     action_regression(false);action_regression(true);

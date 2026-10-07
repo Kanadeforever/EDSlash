@@ -60,9 +60,9 @@ bool ActionMenu_FocusFrame(RECT *rectangle)
     int width=(int)Read32(node,0x1C),height=(int)Read32(node,0x20);
     if (width<=0 || height<=0 || width>1024 || height>1024) return false;
     int x=(int)Read32(node,0x14),y=(int)Read32(node,0x18);
-    /* 原框的绘制锚点保留：上/左仍减1。右/下比旧外框各收2世界GUI单位，
-     * 框宽高回到候选按钮本身；只改提示矩形，不改菜单命中或图标布局。 */
-    *rectangle=(RECT){x-1,y-1,x+width-1,y+height-1};return true;
+    /* 技能图标每边内收1个GUI像素；Runtime补偿动画原点，最终可见边界不出按钮。
+     * 只改提示矩形，不改变命中、原图标布局或选择业务。 */
+    *rectangle=(RECT){x+1,y+1,x+width-1,y+height-1};return true;
 }
 void ActionMenu_Suspend(void)
 {

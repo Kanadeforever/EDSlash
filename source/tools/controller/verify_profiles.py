@@ -92,6 +92,17 @@ def verify_focus_sources(pe,profile):
     frame_rect=a['focus_rect_draw']+0x3E+struct.unpack('<i',call[1:])[0]
     call=pe.read(frame_rect+4,5)
     assert call[0]==0xE8 and frame_rect+9+struct.unpack('<i',call[1:])[0]==a['focus_image_get']
+    # 矩形绘制会将帧E/10减去12/14原点，Runtime最终可见矩形必须补偿。
+    for offset,expected in [(0x23,b'\x0f\xbf\x7e\x10'),(0x32,b'\x0f\xbf\x4e\x14'),
+                            (0x3E,b'\x0f\xbf\x4e\x12'),(0x42,b'\x0f\xbf\x76\x0e')]:
+        assert pe.read(frame_rect+offset,4)==expected,(profile['name'],'帧原点来源')
+    call=pe.read(a['cursor_sprite_draw']+0x25,5)
+    ordinary=a['cursor_sprite_draw']+0x2A+struct.unpack('<i',call[1:])[0]
+    assert call[0]==0xE8
+    for offset,expected in [(0x31,b'\x0f\xbf\x4e\x14'),(0x38,b'\x0f\xbf\x7e\x10'),
+                            (0x45,b'\x0f\xbf\x4e\x12'),(0x49,b'\x0f\xbf\x76\x0e')]:
+        assert pe.read(ordinary+offset,4)==expected,(profile['name'],'普通绘制原点来源')
+
 
     assert pe.read(a['menu_item_drop']+0xC5,3)==b'\xc2\x04\x00'
 

@@ -581,13 +581,14 @@ static void load_update(void *root)
 }
 static bool frame_page(int kind)
 {
-    /* 物品页打开的原确认框也是这一套操作的上一级；仍复用其原A/B业务。 */
-    return kind>=BAG_KIND || (kind==4 && (kind_of(ReadPtr(state.root,0xCC))>=BAG_KIND || kind_of(resume_grid.root)>=BAG_KIND));
+    /* 框仅属于物品格/特殊槽和技能图标区；按钮/确认项不是格子，保留原指针。 */
+    return (kind>=BAG_KIND && !state.grid_buttons) || kind==SKILL_KIND;
 }
 bool Menu_HidesCursor(void)
 {
     if (ActionMenu_Active()) return true;
-    if (owns() && frame_page(kind_of(state.root))) {
+    RECT rectangle;
+    if (owns() && Menu_FocusFrame(&rectangle)) {
         void *container=grid_container();
         /* 空手只画动态框；持有时原软件光标分支画物品图标，保留中心锚点。 */
         return !container || Read32(container,0x2C4)==UINT32_MAX;
@@ -605,13 +606,19 @@ bool Menu_FocusFrame(RECT *rectangle)
     for(unsigned i=0;i<count;++i)if(list[i].id==state.id) {
         if(!list[i].object) {
             /* 背包/仓库/购买虚拟格为24像素，原资源坐标已由buttons按当前页计算。 */
+            if(kind==SKILL_KIND) {
+                /* 连招虚拟格原可见43×47，中心含半像素；边界先从原中心还原再内收1。 */
+                int x=(int)(list[i].x-21.5),y=(int)(list[i].y-23.5);
+                *rectangle=(RECT){x+1,y+1,x+42,y+46};return true;
+            }
             int x=(int)list[i].x,y=(int)list[i].y;
-            *rectangle=(RECT){x-13,y-13,x+13,y+13};return true;
+            *rectangle=(RECT){x-11,y-11,x+11,y+11};return true;
         }
         void *slot=list[i].object;int x=(int)Read32(slot,0x14),y=(int)Read32(slot,0x18);
         int w=(int)Read32(slot,0x1C),h=(int)Read32(slot,0x20);
-        /* 快捷格保持已验收外框；特殊槽和面板按钮按原控件边界贴合，不改命中。 */
-        *rectangle=kind==QUICK_KIND ? (RECT){x-1,y-1,x+w+1,y+h+1}:(RECT){x-1,y-1,x+w-1,y+h-1};return true;
+        if(kind==SKILL_KIND && !((state.id>=0x84 && state.id<=0x8F) || (state.id>=0xCF && state.id<=0xDA)))return false;
+        /* 实物格/技能图标只画内框，不把关闭/页签/金额等按钮误判为方形格子。 */
+        *rectangle=(RECT){x+1,y+1,x+w-1,y+h-1};return true;
     }
     return false;
 }

@@ -969,6 +969,105 @@ menu_action_global=0055C0EC
 0047F73D 90                       nop
 0047F73E 90                       nop
 0047F73F 90                       nop
+[原普通绘制原点 004F4560 窗口112字节]
+004F4560 53                       push     ebx
+004F4561 56                       push     esi
+004F4562 57                       push     edi
+004F4563 8bf1                     mov      esi, ecx
+004F4565 e886170000               call     0x4f5cf0
+004F456A 8b7810                   mov      edi, dword ptr [eax + 0x10]
+004F456D 8bce                     mov      ecx, esi
+004F456F e87c170000               call     0x4f5cf0
+004F4574 8b580c                   mov      ebx, dword ptr [eax + 0xc]
+004F4577 8bce                     mov      ecx, esi
+004F4579 e872170000               call     0x4f5cf0
+004F457E 8b4c2424                 mov      ecx, dword ptr [esp + 0x24]
+004F4582 8b10                     mov      edx, dword ptr [eax]
+004F4584 51                       push     ecx
+004F4585 8b4c2424                 mov      ecx, dword ptr [esp + 0x24]
+004F4589 51                       push     ecx
+004F458A 8b4c2424                 mov      ecx, dword ptr [esp + 0x24]
+004F458E 51                       push     ecx
+004F458F 6a00                     push     0
+004F4591 0fbf4e14                 movsx    ecx, word ptr [esi + 0x14]
+004F4595 6a00                     push     0
+004F4597 57                       push     edi
+004F4598 0fbf7e10                 movsx    edi, word ptr [esi + 0x10]
+004F459C 2bf9                     sub      edi, ecx
+004F459E 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F45A2 03f9                     add      edi, ecx
+004F45A4 53                       push     ebx
+004F45A5 0fbf4e12                 movsx    ecx, word ptr [esi + 0x12]
+004F45A9 0fbf760e                 movsx    esi, word ptr [esi + 0xe]
+004F45AD 8b5c2430                 mov      ebx, dword ptr [esp + 0x30]
+004F45B1 2bf1                     sub      esi, ecx
+004F45B3 8b4c242c                 mov      ecx, dword ptr [esp + 0x2c]
+004F45B7 03f3                     add      esi, ebx
+004F45B9 57                       push     edi
+004F45BA 56                       push     esi
+004F45BB 51                       push     ecx
+004F45BC 8bc8                     mov      ecx, eax
+004F45BE ff520c                   call     dword ptr [edx + 0xc]
+004F45C1 5f                       pop      edi
+004F45C2 5e                       pop      esi
+004F45C3 5b                       pop      ebx
+004F45C4 c21800                   ret      0x18
+004F45C7 90                       nop
+004F45C8 90                       nop
+004F45C9 90                       nop
+004F45CA 90                       nop
+004F45CB 90                       nop
+004F45CC 90                       nop
+004F45CD 90                       nop
+004F45CE 90                       nop
+004F45CF 90                       nop
+[原裁取绘制原点 004F45D0 窗口112字节]
+004F45D0 56                       push     esi
+004F45D1 57                       push     edi
+004F45D2 8bf1                     mov      esi, ecx
+004F45D4 e817170000               call     0x4f5cf0
+004F45D9 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F45DD 8b10                     mov      edx, dword ptr [eax]
+004F45DF 51                       push     ecx
+004F45E0 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F45E4 51                       push     ecx
+004F45E5 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F45E9 51                       push     ecx
+004F45EA 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F45EE 51                       push     ecx
+004F45EF 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F45F3 0fbf7e10                 movsx    edi, word ptr [esi + 0x10]
+004F45F7 51                       push     ecx
+004F45F8 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F45FC 51                       push     ecx
+004F45FD 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F4601 51                       push     ecx
+004F4602 0fbf4e14                 movsx    ecx, word ptr [esi + 0x14]
+004F4606 2bf9                     sub      edi, ecx
+004F4608 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F460C 03f9                     add      edi, ecx
+004F460E 0fbf4e12                 movsx    ecx, word ptr [esi + 0x12]
+004F4612 0fbf760e                 movsx    esi, word ptr [esi + 0xe]
+004F4616 2bf1                     sub      esi, ecx
+004F4618 8b4c242c                 mov      ecx, dword ptr [esp + 0x2c]
+004F461C 03f1                     add      esi, ecx
+004F461E 8b4c2428                 mov      ecx, dword ptr [esp + 0x28]
+004F4622 57                       push     edi
+004F4623 56                       push     esi
+004F4624 51                       push     ecx
+004F4625 8bc8                     mov      ecx, eax
+004F4627 ff520c                   call     dword ptr [edx + 0xc]
+004F462A 5f                       pop      edi
+004F462B 5e                       pop      esi
+004F462C c22800                   ret      0x28
+004F462F 90                       nop
+004F4630 56                       push     esi
+004F4631 57                       push     edi
+004F4632 8b7c240c                 mov      edi, dword ptr [esp + 0xc]
+004F4636 8bf1                     mov      esi, ecx
+004F4638 833f00                   cmp      dword ptr [edi], 0
+004F463B 7531                     jne      0x4f466e
+004F463D 8b4708                   mov      eax, dword ptr [edi + 8]
 [原HUD槽更新 004C4860 窗口256字节]
 004C4860 6aff                     push     -1
 004C4862 68485f5200               push     0x525f48
@@ -2014,6 +2113,105 @@ menu_action_global=0058D740
 0048E54D 90                       nop
 0048E54E 90                       nop
 0048E54F 90                       nop
+[原普通绘制原点 0050B440 窗口112字节]
+0050B440 53                       push     ebx
+0050B441 56                       push     esi
+0050B442 57                       push     edi
+0050B443 8bf1                     mov      esi, ecx
+0050B445 e8c6180000               call     0x50cd10
+0050B44A 8b7810                   mov      edi, dword ptr [eax + 0x10]
+0050B44D 8bce                     mov      ecx, esi
+0050B44F e8bc180000               call     0x50cd10
+0050B454 8b580c                   mov      ebx, dword ptr [eax + 0xc]
+0050B457 8bce                     mov      ecx, esi
+0050B459 e8b2180000               call     0x50cd10
+0050B45E 8b4c2424                 mov      ecx, dword ptr [esp + 0x24]
+0050B462 8b10                     mov      edx, dword ptr [eax]
+0050B464 51                       push     ecx
+0050B465 8b4c2424                 mov      ecx, dword ptr [esp + 0x24]
+0050B469 51                       push     ecx
+0050B46A 8b4c2424                 mov      ecx, dword ptr [esp + 0x24]
+0050B46E 51                       push     ecx
+0050B46F 6a00                     push     0
+0050B471 0fbf4e14                 movsx    ecx, word ptr [esi + 0x14]
+0050B475 6a00                     push     0
+0050B477 57                       push     edi
+0050B478 0fbf7e10                 movsx    edi, word ptr [esi + 0x10]
+0050B47C 2bf9                     sub      edi, ecx
+0050B47E 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B482 03f9                     add      edi, ecx
+0050B484 53                       push     ebx
+0050B485 0fbf4e12                 movsx    ecx, word ptr [esi + 0x12]
+0050B489 0fbf760e                 movsx    esi, word ptr [esi + 0xe]
+0050B48D 8b5c2430                 mov      ebx, dword ptr [esp + 0x30]
+0050B491 2bf1                     sub      esi, ecx
+0050B493 8b4c242c                 mov      ecx, dword ptr [esp + 0x2c]
+0050B497 03f3                     add      esi, ebx
+0050B499 57                       push     edi
+0050B49A 56                       push     esi
+0050B49B 51                       push     ecx
+0050B49C 8bc8                     mov      ecx, eax
+0050B49E ff520c                   call     dword ptr [edx + 0xc]
+0050B4A1 5f                       pop      edi
+0050B4A2 5e                       pop      esi
+0050B4A3 5b                       pop      ebx
+0050B4A4 c21800                   ret      0x18
+0050B4A7 90                       nop
+0050B4A8 90                       nop
+0050B4A9 90                       nop
+0050B4AA 90                       nop
+0050B4AB 90                       nop
+0050B4AC 90                       nop
+0050B4AD 90                       nop
+0050B4AE 90                       nop
+0050B4AF 90                       nop
+[原裁取绘制原点 0050B4B0 窗口112字节]
+0050B4B0 56                       push     esi
+0050B4B1 57                       push     edi
+0050B4B2 8bf1                     mov      esi, ecx
+0050B4B4 e857180000               call     0x50cd10
+0050B4B9 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B4BD 8b10                     mov      edx, dword ptr [eax]
+0050B4BF 51                       push     ecx
+0050B4C0 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B4C4 51                       push     ecx
+0050B4C5 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B4C9 51                       push     ecx
+0050B4CA 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B4CE 51                       push     ecx
+0050B4CF 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B4D3 0fbf7e10                 movsx    edi, word ptr [esi + 0x10]
+0050B4D7 51                       push     ecx
+0050B4D8 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B4DC 51                       push     ecx
+0050B4DD 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B4E1 51                       push     ecx
+0050B4E2 0fbf4e14                 movsx    ecx, word ptr [esi + 0x14]
+0050B4E6 2bf9                     sub      edi, ecx
+0050B4E8 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B4EC 03f9                     add      edi, ecx
+0050B4EE 0fbf4e12                 movsx    ecx, word ptr [esi + 0x12]
+0050B4F2 0fbf760e                 movsx    esi, word ptr [esi + 0xe]
+0050B4F6 2bf1                     sub      esi, ecx
+0050B4F8 8b4c242c                 mov      ecx, dword ptr [esp + 0x2c]
+0050B4FC 03f1                     add      esi, ecx
+0050B4FE 8b4c2428                 mov      ecx, dword ptr [esp + 0x28]
+0050B502 57                       push     edi
+0050B503 56                       push     esi
+0050B504 51                       push     ecx
+0050B505 8bc8                     mov      ecx, eax
+0050B507 ff520c                   call     dword ptr [edx + 0xc]
+0050B50A 5f                       pop      edi
+0050B50B 5e                       pop      esi
+0050B50C c22800                   ret      0x28
+0050B50F 90                       nop
+0050B510 56                       push     esi
+0050B511 57                       push     edi
+0050B512 8b7c240c                 mov      edi, dword ptr [esp + 0xc]
+0050B516 8bf1                     mov      esi, ecx
+0050B518 833f00                   cmp      dword ptr [edi], 0
+0050B51B 7531                     jne      0x50b54e
+0050B51D 8b4708                   mov      eax, dword ptr [edi + 8]
 [原HUD槽更新 004D8E40 窗口256字节]
 004D8E40 6aff                     push     -1
 004D8E42 68c8d35400               push     0x54d3c8
@@ -3060,6 +3258,105 @@ menu_action_global=0055C0EC
 0047F73D 90                       nop
 0047F73E 90                       nop
 0047F73F 90                       nop
+[原普通绘制原点 004F4560 窗口112字节]
+004F4560 53                       push     ebx
+004F4561 56                       push     esi
+004F4562 57                       push     edi
+004F4563 8bf1                     mov      esi, ecx
+004F4565 e886170000               call     0x4f5cf0
+004F456A 8b7810                   mov      edi, dword ptr [eax + 0x10]
+004F456D 8bce                     mov      ecx, esi
+004F456F e87c170000               call     0x4f5cf0
+004F4574 8b580c                   mov      ebx, dword ptr [eax + 0xc]
+004F4577 8bce                     mov      ecx, esi
+004F4579 e872170000               call     0x4f5cf0
+004F457E 8b4c2424                 mov      ecx, dword ptr [esp + 0x24]
+004F4582 8b10                     mov      edx, dword ptr [eax]
+004F4584 51                       push     ecx
+004F4585 8b4c2424                 mov      ecx, dword ptr [esp + 0x24]
+004F4589 51                       push     ecx
+004F458A 8b4c2424                 mov      ecx, dword ptr [esp + 0x24]
+004F458E 51                       push     ecx
+004F458F 6a00                     push     0
+004F4591 0fbf4e14                 movsx    ecx, word ptr [esi + 0x14]
+004F4595 6a00                     push     0
+004F4597 57                       push     edi
+004F4598 0fbf7e10                 movsx    edi, word ptr [esi + 0x10]
+004F459C 2bf9                     sub      edi, ecx
+004F459E 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F45A2 03f9                     add      edi, ecx
+004F45A4 53                       push     ebx
+004F45A5 0fbf4e12                 movsx    ecx, word ptr [esi + 0x12]
+004F45A9 0fbf760e                 movsx    esi, word ptr [esi + 0xe]
+004F45AD 8b5c2430                 mov      ebx, dword ptr [esp + 0x30]
+004F45B1 2bf1                     sub      esi, ecx
+004F45B3 8b4c242c                 mov      ecx, dword ptr [esp + 0x2c]
+004F45B7 03f3                     add      esi, ebx
+004F45B9 57                       push     edi
+004F45BA 56                       push     esi
+004F45BB 51                       push     ecx
+004F45BC 8bc8                     mov      ecx, eax
+004F45BE ff520c                   call     dword ptr [edx + 0xc]
+004F45C1 5f                       pop      edi
+004F45C2 5e                       pop      esi
+004F45C3 5b                       pop      ebx
+004F45C4 c21800                   ret      0x18
+004F45C7 90                       nop
+004F45C8 90                       nop
+004F45C9 90                       nop
+004F45CA 90                       nop
+004F45CB 90                       nop
+004F45CC 90                       nop
+004F45CD 90                       nop
+004F45CE 90                       nop
+004F45CF 90                       nop
+[原裁取绘制原点 004F45D0 窗口112字节]
+004F45D0 56                       push     esi
+004F45D1 57                       push     edi
+004F45D2 8bf1                     mov      esi, ecx
+004F45D4 e817170000               call     0x4f5cf0
+004F45D9 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F45DD 8b10                     mov      edx, dword ptr [eax]
+004F45DF 51                       push     ecx
+004F45E0 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F45E4 51                       push     ecx
+004F45E5 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F45E9 51                       push     ecx
+004F45EA 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F45EE 51                       push     ecx
+004F45EF 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F45F3 0fbf7e10                 movsx    edi, word ptr [esi + 0x10]
+004F45F7 51                       push     ecx
+004F45F8 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F45FC 51                       push     ecx
+004F45FD 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F4601 51                       push     ecx
+004F4602 0fbf4e14                 movsx    ecx, word ptr [esi + 0x14]
+004F4606 2bf9                     sub      edi, ecx
+004F4608 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+004F460C 03f9                     add      edi, ecx
+004F460E 0fbf4e12                 movsx    ecx, word ptr [esi + 0x12]
+004F4612 0fbf760e                 movsx    esi, word ptr [esi + 0xe]
+004F4616 2bf1                     sub      esi, ecx
+004F4618 8b4c242c                 mov      ecx, dword ptr [esp + 0x2c]
+004F461C 03f1                     add      esi, ecx
+004F461E 8b4c2428                 mov      ecx, dword ptr [esp + 0x28]
+004F4622 57                       push     edi
+004F4623 56                       push     esi
+004F4624 51                       push     ecx
+004F4625 8bc8                     mov      ecx, eax
+004F4627 ff520c                   call     dword ptr [edx + 0xc]
+004F462A 5f                       pop      edi
+004F462B 5e                       pop      esi
+004F462C c22800                   ret      0x28
+004F462F 90                       nop
+004F4630 56                       push     esi
+004F4631 57                       push     edi
+004F4632 8b7c240c                 mov      edi, dword ptr [esp + 0xc]
+004F4636 8bf1                     mov      esi, ecx
+004F4638 833f00                   cmp      dword ptr [edi], 0
+004F463B 7531                     jne      0x4f466e
+004F463D 8b4708                   mov      eax, dword ptr [edi + 8]
 [原HUD槽更新 004C4860 窗口256字节]
 004C4860 6aff                     push     -1
 004C4862 68485f5200               push     0x525f48
@@ -4105,6 +4402,105 @@ menu_action_global=0058D740
 0048E54D 90                       nop
 0048E54E 90                       nop
 0048E54F 90                       nop
+[原普通绘制原点 0050B440 窗口112字节]
+0050B440 53                       push     ebx
+0050B441 56                       push     esi
+0050B442 57                       push     edi
+0050B443 8bf1                     mov      esi, ecx
+0050B445 e8c6180000               call     0x50cd10
+0050B44A 8b7810                   mov      edi, dword ptr [eax + 0x10]
+0050B44D 8bce                     mov      ecx, esi
+0050B44F e8bc180000               call     0x50cd10
+0050B454 8b580c                   mov      ebx, dword ptr [eax + 0xc]
+0050B457 8bce                     mov      ecx, esi
+0050B459 e8b2180000               call     0x50cd10
+0050B45E 8b4c2424                 mov      ecx, dword ptr [esp + 0x24]
+0050B462 8b10                     mov      edx, dword ptr [eax]
+0050B464 51                       push     ecx
+0050B465 8b4c2424                 mov      ecx, dword ptr [esp + 0x24]
+0050B469 51                       push     ecx
+0050B46A 8b4c2424                 mov      ecx, dword ptr [esp + 0x24]
+0050B46E 51                       push     ecx
+0050B46F 6a00                     push     0
+0050B471 0fbf4e14                 movsx    ecx, word ptr [esi + 0x14]
+0050B475 6a00                     push     0
+0050B477 57                       push     edi
+0050B478 0fbf7e10                 movsx    edi, word ptr [esi + 0x10]
+0050B47C 2bf9                     sub      edi, ecx
+0050B47E 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B482 03f9                     add      edi, ecx
+0050B484 53                       push     ebx
+0050B485 0fbf4e12                 movsx    ecx, word ptr [esi + 0x12]
+0050B489 0fbf760e                 movsx    esi, word ptr [esi + 0xe]
+0050B48D 8b5c2430                 mov      ebx, dword ptr [esp + 0x30]
+0050B491 2bf1                     sub      esi, ecx
+0050B493 8b4c242c                 mov      ecx, dword ptr [esp + 0x2c]
+0050B497 03f3                     add      esi, ebx
+0050B499 57                       push     edi
+0050B49A 56                       push     esi
+0050B49B 51                       push     ecx
+0050B49C 8bc8                     mov      ecx, eax
+0050B49E ff520c                   call     dword ptr [edx + 0xc]
+0050B4A1 5f                       pop      edi
+0050B4A2 5e                       pop      esi
+0050B4A3 5b                       pop      ebx
+0050B4A4 c21800                   ret      0x18
+0050B4A7 90                       nop
+0050B4A8 90                       nop
+0050B4A9 90                       nop
+0050B4AA 90                       nop
+0050B4AB 90                       nop
+0050B4AC 90                       nop
+0050B4AD 90                       nop
+0050B4AE 90                       nop
+0050B4AF 90                       nop
+[原裁取绘制原点 0050B4B0 窗口112字节]
+0050B4B0 56                       push     esi
+0050B4B1 57                       push     edi
+0050B4B2 8bf1                     mov      esi, ecx
+0050B4B4 e857180000               call     0x50cd10
+0050B4B9 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B4BD 8b10                     mov      edx, dword ptr [eax]
+0050B4BF 51                       push     ecx
+0050B4C0 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B4C4 51                       push     ecx
+0050B4C5 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B4C9 51                       push     ecx
+0050B4CA 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B4CE 51                       push     ecx
+0050B4CF 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B4D3 0fbf7e10                 movsx    edi, word ptr [esi + 0x10]
+0050B4D7 51                       push     ecx
+0050B4D8 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B4DC 51                       push     ecx
+0050B4DD 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B4E1 51                       push     ecx
+0050B4E2 0fbf4e14                 movsx    ecx, word ptr [esi + 0x14]
+0050B4E6 2bf9                     sub      edi, ecx
+0050B4E8 8b4c2430                 mov      ecx, dword ptr [esp + 0x30]
+0050B4EC 03f9                     add      edi, ecx
+0050B4EE 0fbf4e12                 movsx    ecx, word ptr [esi + 0x12]
+0050B4F2 0fbf760e                 movsx    esi, word ptr [esi + 0xe]
+0050B4F6 2bf1                     sub      esi, ecx
+0050B4F8 8b4c242c                 mov      ecx, dword ptr [esp + 0x2c]
+0050B4FC 03f1                     add      esi, ecx
+0050B4FE 8b4c2428                 mov      ecx, dword ptr [esp + 0x28]
+0050B502 57                       push     edi
+0050B503 56                       push     esi
+0050B504 51                       push     ecx
+0050B505 8bc8                     mov      ecx, eax
+0050B507 ff520c                   call     dword ptr [edx + 0xc]
+0050B50A 5f                       pop      edi
+0050B50B 5e                       pop      esi
+0050B50C c22800                   ret      0x28
+0050B50F 90                       nop
+0050B510 56                       push     esi
+0050B511 57                       push     edi
+0050B512 8b7c240c                 mov      edi, dword ptr [esp + 0xc]
+0050B516 8bf1                     mov      esi, ecx
+0050B518 833f00                   cmp      dword ptr [edi], 0
+0050B51B 7531                     jne      0x50b54e
+0050B51D 8b4708                   mov      eax, dword ptr [edi + 8]
 [原HUD槽更新 004D8E40 窗口256字节]
 004D8E40 6aff                     push     -1
 004D8E42 68c8d35400               push     0x54d3c8

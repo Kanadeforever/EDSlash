@@ -114,6 +114,13 @@ static void focus_render(RuntimeEventId event,void *subject,unsigned long surfac
         RuntimeLog_Write("[焦点绘制] %s 原图=%d,%d 目标=%ld,%ld；同尺寸原Draw，异尺寸原图边缘拼接，禁止越界裁取。",
             "共享焦点",sw,sh,(long)(rectangle.right-rectangle.left),(long)(rectangle.bottom-rectangle.top));
     }
+    /* 原SpriteDraw和RectDraw都把帧的E/10位置减12/14原点后加到目标坐标。
+     * 提供者传的是最终可见矩形，先减掉这个偏移，动画换帧也每帧重读。
+     * 只补偿绘制位置，不改变原帧数据、源图范围或菜单命中坐标。 */
+    int16_t origin[4];
+    if(!RuntimeWin32_Read((unsigned long)(uintptr_t)description+0xE,origin,sizeof origin))return;
+    int dx=(int)origin[0]-origin[2],dy=(int)origin[1]-origin[3];
+    rectangle.left-=dx;rectangle.right-=dx;rectangle.top-=dy;rectangle.bottom-=dy;
     if(border(frame,(void *)(uintptr_t)surface,&rectangle,sw,sh,(int)focus_read32(hud,0x58),(int)focus_read32(hud,0x5C)))drawn_owner=owner;
     set_stage(NULL);
 }
