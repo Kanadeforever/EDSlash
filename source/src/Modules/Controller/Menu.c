@@ -579,10 +579,15 @@ static void load_update(void *root)
         ((This1)g_profile->menu_load_submit)(root,-1);state.barrier=true;
     }
 }
+static bool frame_page(int kind)
+{
+    /* 物品页打开的原确认框也是这一套操作的上一级；仍复用其原A/B业务。 */
+    return kind>=BAG_KIND || (kind==4 && (kind_of(ReadPtr(state.root,0xCC))>=BAG_KIND || kind_of(resume_grid.root)>=BAG_KIND));
+}
 bool Menu_HidesCursor(void)
 {
     if (ActionMenu_Active()) return true;
-    if (owns() && kind_of(state.root)==QUICK_KIND) {
+    if (owns() && frame_page(kind_of(state.root))) {
         void *container=grid_container();
         /* 空手只画动态框；持有时原软件光标分支画物品图标，保留中心锚点。 */
         return !container || Read32(container,0x2C4)==UINT32_MAX;
@@ -594,12 +599,19 @@ bool Menu_HidesCursor(void)
 bool Menu_FocusFrame(RECT *rectangle)
 {
     unsigned reason;
-    if (!rectangle || !owns() || !state.owned || kind_of(state.root)!=QUICK_KIND ||
+    if (!rectangle || !owns() || !state.owned || !frame_page(kind_of(state.root)) ||
         Menu_Context(&reason)!=state.root || !Read32(state.root,0x64)) return false;
-    MenuButton list[64];unsigned count=buttons(state.root,QUICK_KIND,list);
-    for (unsigned i=0;i<count;++i) if (list[i].id==state.id) {
+    int kind=kind_of(state.root);MenuButton list[64];unsigned count=buttons(state.root,kind,list);
+    for(unsigned i=0;i<count;++i)if(list[i].id==state.id) {
+        if(!list[i].object) {
+            /* 背包/仓库/购买虚拟格为24像素，原资源坐标已由buttons按当前页计算。 */
+            int x=(int)list[i].x,y=(int)list[i].y;
+            *rectangle=(RECT){x-13,y-13,x+13,y+13};return true;
+        }
         void *slot=list[i].object;int x=(int)Read32(slot,0x14),y=(int)Read32(slot,0x18);
-        *rectangle=(RECT){x-1,y-1,x+(int)Read32(slot,0x1C)+1,y+(int)Read32(slot,0x20)+1};return true;
+        int w=(int)Read32(slot,0x1C),h=(int)Read32(slot,0x20);
+        /* 快捷格保持已验收外框；特殊槽和面板按钮按原控件边界贴合，不改命中。 */
+        *rectangle=kind==QUICK_KIND ? (RECT){x-1,y-1,x+w+1,y+h+1}:(RECT){x-1,y-1,x+w-1,y+h-1};return true;
     }
     return false;
 }
@@ -645,7 +657,7 @@ bool Menu_CursorAnchor(POINT *point)
             void *container=grid_container();bool holding=container && Read32(container,0x2C4)!=UINT32_MAX;
             point->x=(LONG)list[i].x+(holding ? 0:6);point->y=(LONG)list[i].y+(holding ? 0:6);return true;
         }
-        if (kind>=CRAFT_KIND && !state.grid_buttons) {
+        if (frame_page(kind)) {
             void *container=grid_container();
             if (container && Read32(container,0x2C4)!=UINT32_MAX) {
                 point->x=(LONG)list[i].x;point->y=(LONG)list[i].y;return true;

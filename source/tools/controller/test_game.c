@@ -113,6 +113,14 @@ void *ReadPtr(const void *p,unsigned offset) { return (void *)(uintptr_t)Read32(
 void Write32(void *p,unsigned offset,uint32_t value) { memcpy((BYTE *)p+offset,&value,4); }
 bool Memory_Patch(void *p,const void *bytes,size_t count)
 { CHECK(Memory_Readable(p,count));memcpy(p,bytes,count);return true; }
+int RuntimeWin32_IsReadable(unsigned long address,unsigned long bytes)
+{return Memory_Readable((void *)(uintptr_t)address,bytes);}
+int RuntimeWin32_Read(unsigned long address,void *out,unsigned long bytes)
+{
+    if(!Memory_Readable((void *)(uintptr_t)address,bytes))return 0;
+    memcpy(out,(void *)(uintptr_t)address,bytes);return 1;
+}
+void RuntimeLog_Write(const char *format,...) {(void)format;}
 static void ptr(void *base,unsigned offset,void *value) { Write32(base,offset,(uint32_t)(uintptr_t)value); }
 
 static int __attribute__((thiscall)) native_submit(void *self,int opcode,int a,int b,int c)

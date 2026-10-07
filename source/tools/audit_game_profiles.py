@@ -196,6 +196,22 @@ def audit_runtime_qol(profile, pe, image, imports):
             '拾取提示五函数及三个全局':'通过'}
 
 
+def audit_focus_source(profile,pe):
+    """核对真正Runtime生成表，避免Controller迁出后共享服务悄悄串用地址。"""
+    source=code_only(text(ROOT/'source/src/Runtime/FocusData.h'))
+    entries=rows(initializer(source,'static const FocusBackend focus_profiles'))
+    values=integers(entries[profile['game_id']-1]);assert len(values)==54
+    keys=('skill_global','menu_hud_vtable','cursor_sprite_draw','focus_rect_draw','focus_frame_get','focus_image_get')
+    assert values[:6]==[profile['addresses'][key] for key in keys]
+    for i,address in enumerate(values[2:6]):assert pe.read(address,12)==bytes(values[6+i*12:18+i*12])
+    renderer=code_only(text(ROOT/'source/src/Runtime/Focus.c'))
+    assert not re.search(r'g_profile|g_input|g_intent|#include.*Controller',renderer)
+    client=code_only(text(ROOT/'source/src/Modules/Controller/Cursor.c'))
+    assert 'RuntimeFocus_Register' in client and 'g_profile->focus_rect_draw' not in client
+    return {'共享生成表六字段':dict(zip(keys,[f'{v:08X}' for v in values[:6]])),
+            '四原函数源码签名与Controller逆依赖检查':'通过'}
+
+
 def audit_display_source(profile, pe, imports):
     source=code_only(text(ROOT/f'source/src/Modules/DisplayFix/Backend_{profile["tag"]}.c'))
     apis=[]
@@ -274,7 +290,7 @@ def main():
     for profile in profiles:
         path=ROOT/'参考资料/刀剑封魔录系列反编译资料库_v0.31/基线程序'/f'ComeOn-{profile["tag"]}-{profile["edition"]}.exe'
         result,pe,image,imports=audit(path,profile,decoder,uses,this_uses)
-        result['Runtime与QOL']=audit_runtime_qol(profile,pe,image,imports);report['样本'].append(result)
+        result['Runtime与QOL']=audit_runtime_qol(profile,pe,image,imports);result['Runtime焦点绘制']=audit_focus_source(profile,pe);report['样本'].append(result)
         result['显示生产源码']=audit_display_source(profile,pe,imports)
         result['字体工具只读上下文']=audit_font_tools(profile,pe)
         declared=result['显示生产源码']['显示对象声明']

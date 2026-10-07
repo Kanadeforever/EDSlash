@@ -35,6 +35,9 @@ int RuntimeWin32_WriteCode(unsigned long address,const void *bytes,unsigned long
 int X86Detour_Install(X86Detour *d,unsigned long t,unsigned long r,unsigned long n)
 {(void)d;(void)t;(void)r;(void)n;return 0;}
 void RuntimeLog_VWrite(const char *f,va_list args) {(void)f;(void)args;}
+void RuntimeLog_Write(const char *format,...) {(void)format;}
+int RuntimeWin32_IsReadable(unsigned long address,unsigned long size)
+{return Memory_Readable((void *)(uintptr_t)address,size);}
 int RuntimeLog_Start(void) {return 1;}
 void RuntimePerf_Initialize(void) {}
 int64_t RuntimePerf_Begin(void) {return 0;}

@@ -7,6 +7,7 @@
 #undef Memory_Patch
 #include "Menu.h"
 #include "Cursor.h"
+#include "../../src/Runtime/Focus.c"
 
 static BYTE menu_roots[15][0x300],menu_children[15][16][0xE4],menu_sprites[15][16][4*32];
 static BYTE unknown_root[0xD0],menu_resource[16];
@@ -326,7 +327,12 @@ static void cursor_fixture(Profile *profile)
     profile->cursor_sprite_call1=(uintptr_t)(cursor_code+8);profile->cursor_sprite_call2=(uintptr_t)(cursor_code+16);
     profile->cursor_sprite_draw=(uintptr_t)cursor_sprite;profile->focus_rect_draw=(uintptr_t)scaled_focus;
     profile->menu_item_drop=(uintptr_t)native_drop;profile->focus_frame_get=(uintptr_t)focus_frame_get;
-    profile->focus_image_get=(uintptr_t)focus_image_get;CHECK(Cursor_Initialize());cursor_draws=focus_draws=drop_requests=0;
+    profile->focus_image_get=(uintptr_t)focus_image_get;
+    backend=(FocusBackend){.hud_global=(uintptr_t)profile->skill_global,.hud_vtable=profile->menu_hud_vtable,
+        .sprite_draw=(uintptr_t)cursor_sprite,.rect_draw=(uintptr_t)scaled_focus,
+        .frame_get=(uintptr_t)focus_frame_get,.image_get=(uintptr_t)focus_image_get};ready=true;
+    if(!subscribed) {CHECK(Runtime_Subscribe(RUNTIME_EVENT_UI_DRAW_END,draw,NULL));subscribed=true;}
+    CHECK(Cursor_Initialize());cursor_draws=focus_draws=drop_requests=0;
     ptr(hud_data,0x48,focus_sprites);Write32(hud_data,0x44,6);
     ptr(focus_description,8,focus_bank);Write32(focus_description,4,0);ptr(focus_bank,4,focus_entries);
     ptr(focus_sprites+5*32,0,focus_description);Write32(focus_sprites+5*32,4,0);Write32(focus_sprites+5*32,8,1);
@@ -1059,8 +1065,61 @@ static void discard_regression(bool expansion)
     }
     Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
 }
+static bool other_focus_active,other_focus_invalid,other_focus_unregister;
+static int other_focus(RuntimeFocusRequest *request,void *user)
+{
+    CHECK(user==&other_focus_active);
+    if(other_focus_unregister) RuntimeFocus_Unregister(RUNTIME_MODULE_QOL);
+    request->rectangle=other_focus_invalid ? (RuntimeFocusRect){0,0,INT32_MAX,INT32_MAX}:(RuntimeFocusRect){450,100,476,126};
+    request->priority=200;return other_focus_active;
+}
+static void shared_focus_regression(bool expansion)
+{
+    Profile profile;menu_fixture(&profile,expansion);activate_page(9);neutral_menu();
+    ready=false;CHECK(!RuntimeFocus_Initialize(NULL));
+    GameProfile wrong={.game_id=GAME_ID_UNKNOWN};RuntimeContext invalid={.profile=&wrong};
+    CHECK(!RuntimeFocus_Initialize(&invalid));
+    wrong.game_id=expansion ? GAME_ID_WAIZHUAN:GAME_ID_DAOJIAN;
+    CHECK(!RuntimeFocus_Initialize(&invalid)); /* 宿主不是游戏原签名：共享服务必须拒绝 */
+    ready=true;
+    for(unsigned kind=9;kind<=15;++kind) {
+        if(kind<15)activate_page(kind);
+        else {activate_page(9);neutral_menu();menu_step(KEY(PAD_X),0,0);}
+        neutral_menu();RECT r;CHECK(Menu_FocusFrame(&r));focus_draws=0;emit_focus();
+        CHECK(focus_draws>0 && RuntimeFocus_WasDrawn(RUNTIME_MODULE_CONTROLLER));
+        CHECK(focus_rectangle.left==r.left && focus_rectangle.top==r.top && focus_rectangle.right==r.right && focus_rectangle.bottom==r.bottom);
+        CHECK(Menu_HidesCursor()); /* 格子页空手均不用鼠标箭头 */
+        Write32(grid_player,0x2C4,999);POINT point;CHECK(!Menu_HidesCursor() && Menu_CursorAnchor(&point));
+        int offset=kind>=12 && kind<15 ? 1:0;
+        CHECK(point.x==(r.left+r.right)/2+offset && point.y==(r.top+r.bottom)/2+offset);
+        Write32(grid_player,0x2C4,UINT32_MAX);
+    }
+    activate_page(9);neutral_menu();menu_step(KEY(PAD_Y),0,0);neutral_menu();RECT panel;
+    CHECK(Menu_FocusFrame(&panel));focus_draws=0;emit_focus();CHECK(focus_draws>0 && focus_rectangle.right==panel.right);
+    ptr(menu_roots[4],0xCC,menu_roots[9]);((This2)menu_tables[4][0x1C/4])(menu_roots[4],1,0);
+    neutral_menu();CHECK(Menu_FocusFrame(&panel));focus_draws=0;emit_focus();
+    CHECK(RuntimeFocus_WasDrawn(RUNTIME_MODULE_CONTROLLER) && focus_draws>0); /* 原物品确认框同样用框 */
+    menu_step(KEY(PAD_B),0,0);neutral_menu();
+    CHECK(!RuntimeFocus_Register(RUNTIME_MODULE_NONE,other_focus,&other_focus_active));
+    CHECK(!RuntimeFocus_Register(RUNTIME_MODULE_COUNT,other_focus,&other_focus_active));
+    CHECK(!RuntimeFocus_Register((RuntimeModuleId)-1,other_focus,&other_focus_active));
+    other_focus_active=true;other_focus_invalid=other_focus_unregister=false;
+    CHECK(RuntimeFocus_Register(RUNTIME_MODULE_QOL,other_focus,&other_focus_active));
+    CHECK(RuntimeFocus_Register(RUNTIME_MODULE_QOL,other_focus,&other_focus_active));
+    CHECK(!RuntimeFocus_Register(RUNTIME_MODULE_QOL,other_focus,NULL));
+    focus_draws=0;emit_focus();CHECK(RuntimeFocus_WasDrawn(RUNTIME_MODULE_QOL) && !RuntimeFocus_WasDrawn(RUNTIME_MODULE_CONTROLLER));
+    CHECK(focus_rectangle.left==450 && focus_rectangle.right==476);
+    other_focus_active=false;emit_focus();CHECK(RuntimeFocus_WasDrawn(RUNTIME_MODULE_CONTROLLER));
+    other_focus_active=true;other_focus_invalid=true;emit_focus();CHECK(RuntimeFocus_WasDrawn(RUNTIME_MODULE_CONTROLLER));
+    other_focus_invalid=false;other_focus_unregister=true;emit_focus();CHECK(RuntimeFocus_WasDrawn(RUNTIME_MODULE_CONTROLLER));
+    CHECK(RuntimeFocus_Stage()==NULL);RuntimeFocus_Unregister(RUNTIME_MODULE_QOL);
+    g_intent.layer=LAYER_NATIVE;emit_focus();CHECK(!RuntimeFocus_WasDrawn(RUNTIME_MODULE_CONTROLLER));
+    Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
+    CHECK(!RuntimeFocus_WasDrawn(RUNTIME_MODULE_CONTROLLER));
+}
 int main(void)
 {
+    shared_focus_regression(false);shared_focus_regression(true);
     discard_regression(false);discard_regression(true);
     action_regression(false);action_regression(true);
     quickbar_regression(false);quickbar_regression(true);

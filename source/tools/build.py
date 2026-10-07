@@ -42,6 +42,7 @@ def main():
     run([sys.executable, SOURCE / 'tools/font_fix/test_font_fix.py'], os.environ.copy())
     # 真实原指令须能拒绝旧错误地图地址，不能把模拟对象回放当成档案地址正确的证据。
     run([sys.executable, SOURCE / 'tools/controller/test_profiles.py'], os.environ.copy())
+    run([sys.executable, SOURCE / 'tools/generate_focus_profiles.py'], os.environ.copy())
     # 源码与构建输入摘要包含未提交内容，不以HEAD冒充当前产物。
     digest = hashlib.sha256()
     inputs = sorted(p for p in SOURCE.rglob("*") if p.is_file() and

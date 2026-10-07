@@ -4,6 +4,7 @@
 #include <wchar.h>
 
 Intent g_intent;PadInput g_input;
+const char *RuntimeFocus_Stage(void){return NULL;}
 static const RuntimeContext runtime={.self_module=(void *)1};
 const RuntimeContext *Runtime_GetContext(void){return &runtime;}
 static WCHAR output_path[1024];static unsigned checks;

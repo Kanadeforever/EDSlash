@@ -1,5 +1,6 @@
 #include "Plugin.h"
 #include "Crash.h"
+#include "../../Runtime/Focus.h"
 #include "../../Runtime/FileIO.h"
 #include <stdio.h>
 #include <string.h>
@@ -32,7 +33,8 @@ static LONG CALLBACK record_exception(EXCEPTION_POINTERS *details)
         "访问类型=%lu 故障地址=%08lX 线程=%lu 输入层=%d 按键=%08lX\r\n"
         "EIP=%08lX ESP=%08lX EBP=%08lX EAX=%08lX EBX=%08lX ECX=%08lX EDX=%08lX ESI=%08lX EDI=%08lX\r\n"
         "这是首次异常记录，不吞异常；最终退出由游戏/系统原处理链决定。\r\n\r\n",
-        time.wYear,time.wMonth,time.wDay,time.wHour,time.wMinute,time.wSecond,current_stage,
+        time.wYear,time.wMonth,time.wDay,time.wHour,time.wMinute,time.wSecond,
+        RuntimeFocus_Stage() ? RuntimeFocus_Stage():current_stage,
         code,(DWORD)(uintptr_t)e->ExceptionAddress,utf8,(DWORD)((uintptr_t)e->ExceptionAddress-(uintptr_t)module),
         (DWORD)access,(DWORD)address,GetCurrentThreadId(),g_intent.layer,(DWORD)g_input.buttons,
         c->Eip,c->Esp,c->Ebp,c->Eax,c->Ebx,c->Ecx,c->Edx,c->Esi,c->Edi);

@@ -87,7 +87,7 @@ edslash_test(test_startup tools/controller/test_startup.c src/Runtime/ModuleRegi
     src/Runtime/HookManager.c src/Runtime/EventBus.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c
     src/Modules/Controller/Control.c src/Modules/Controller/Game.c src/Modules/Controller/Combat.c
     src/Modules/Controller/SkillResolver.c src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
-    src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Cursor.c src/Modules/Controller/Crash.c src/Modules/Controller/Inspect.c)
+    src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Cursor.c src/Modules/Controller/Crash.c src/Modules/Controller/Inspect.c src/Runtime/Focus.c)
 target_link_libraries(test_startup PRIVATE user32 m)
 
 edslash_test(test_notice tools/qol/test_notice.c)

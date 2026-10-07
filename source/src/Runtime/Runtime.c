@@ -4,6 +4,7 @@
 #include "Config.h"
 #include "Log.h"
 #include "InputFrame.h"
+#include "Focus.h"
 
 /* 全工程只存在这一份 RuntimeContext。 */
 static RuntimeContext g_runtime;
@@ -48,6 +49,11 @@ int Runtime_Initialize(void* self_module)
         /* 显示修复与手柄使用各自的其它入口，公共输入帧故障不拖垮它们。 */
         RuntimeLog_Line("[输入][警告] 公共帧入口不可用；自动拾取模块将自行停止，显示与手柄继续初始化。");
     }
+
+    /* 提示绘制服务独立于Controller初始化，关闭手柄时其它模块也可以提供焦点。
+     * 原接口不匹配只停共享提示，保留原版高亮/鼠标，不拖垮功能模块。 */
+    if(!RuntimeFocus_Initialize(&g_runtime))
+        RuntimeLog_Line("[焦点][警告] 原绘制接口未通过校验，保留各界面原反馈。");
 
     /*
      * 官方模块全部通过同一个 ModuleRegistry 启动。

@@ -8,9 +8,9 @@ bool Menu_BlocksGameplay(void);
 bool Menu_CapturesInput(void);
 /* 仅返回软件光标绘制锚点，不用于GetCursorPos的输入采样或真实鼠标移动。 */
 bool Menu_CursorAnchor(POINT *point);
-/* 快捷格使用原动态选择框，返回当前真实格的矩形，不修改投掷装备状态。 */
+/* 格子/物品面板按钮及原确认框提供矩形，绘制由Runtime负责，不改物品状态。 */
 bool Menu_FocusFrame(RECT *rectangle);
-/* 外传标题、快捷格空手与动作菜单使用自身高亮/动态框；持有物品保留原图标。 */
+/* 外传标题、格子菜单空手与动作菜单使用自身高亮/动态框；持有物品保留原图标。 */
 bool Menu_HidesCursor(void);
 /* 在采样后处理菜单业务，所以标题没有玩家时也能工作。 */
 void Menu_Update(void);
