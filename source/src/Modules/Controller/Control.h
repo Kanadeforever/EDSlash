@@ -15,6 +15,9 @@ typedef struct {
     uint32_t buttons;
     float lx, ly, rx, ry;
     bool lt, rt, connected, focused, menu, action_menu;
+    bool world_remap;
+    unsigned char world_buttons[7]; /* 七个世界语义的物理来源，菜单／组合不使用它。 */
+    bool swap_menu_ab; /* 只交换菜单语义；物理按键仍用于救援及组合优先级。 */
     uint32_t now;
 } PadInput;
 typedef struct {

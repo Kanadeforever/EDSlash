@@ -104,6 +104,27 @@ Intent Control_Step(ControlState *s, const PadInput *in)
     if (s->chord || out.mode_changed) {
         out.held &= ~combo; out.pressed &= ~combo;
     }
+    if(next==LAYER_GAME && in->world_remap) {
+        static const unsigned logical[]={PAD_A,PAD_B,PAD_X,PAD_Y,PAD_L3,PAD_R3,PAD_START};
+        uint32_t masks[2]={out.held,out.pressed};
+        for(unsigned i=0;i<2;++i) {
+            uint32_t mapped=0;
+            /* 层和救援判断始终看原始按钮；这里只产生游戏动作语义，旧持键仍被原屏蔽。 */
+            for(unsigned j=0;j<7;++j)if(in->world_buttons[j]<15 && (masks[i]&KEY(in->world_buttons[j])))mapped|=KEY(logical[j]);
+            masks[i]=mapped|(masks[i]&(KEY(PAD_UP)|KEY(PAD_DOWN)|KEY(PAD_LEFT)|KEY(PAD_RIGHT)));
+        }
+        out.held=masks[0];out.pressed=masks[1];
+    }
+    if(next==LAYER_MENU && in->swap_menu_ab) {
+        /* 在原始屏蔽/层切换之后交换，不能让旧持键或世界B预览混入菜单确认。 */
+        uint32_t masks[2]={out.held,out.pressed};
+        for(unsigned i=0;i<2;++i) {
+            uint32_t old=masks[i];masks[i]&=~(KEY(PAD_A)|KEY(PAD_B));
+            if(old&KEY(PAD_A))masks[i]|=KEY(PAD_B);
+            if(old&KEY(PAD_B))masks[i]|=KEY(PAD_A);
+        }
+        out.held=masks[0];out.pressed=masks[1];
+    }
     out.lx = in->lx; out.ly = in->ly; out.rx = in->rx; out.ry = in->ry;
     if (s->block_left_stick) {
         if (!in->lx && !in->ly) s->block_left_stick=false;

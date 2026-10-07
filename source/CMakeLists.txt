@@ -113,7 +113,7 @@ edslash_test(audit_runtime_contracts tools/audit_runtime_contracts.c src/Runtime
 edslash_test(test_input_frame tools/test_input_frame.c)
 edslash_test(test_log tools/test_log.c src/Runtime/Log.c src/Runtime/FileIO.c)
 target_compile_definitions(test_log PRIVATE EDSLASH_BUILD_ID="${EDSLASH_BUILD_ID}")
-edslash_test(test_config tools/test_config.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c)
+edslash_test(test_config tools/test_config.c src/Runtime/SettingsModel.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c)
 target_compile_options(test_config PRIVATE -municode)
 target_link_options(test_config PRIVATE -municode)
 edslash_test(test_sdl tools/controller/test_sdl.c src/Modules/Controller/Input.c

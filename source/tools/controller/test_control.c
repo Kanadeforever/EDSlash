@@ -25,6 +25,20 @@ static void reset(void)
 
 int main(void)
 {
+    reset();in.world_remap=true;
+    const unsigned char world_map[]={PAD_X,PAD_B,PAD_A,PAD_Y,PAD_L3,PAD_R3,PAD_START};memcpy(in.world_buttons,world_map,7);
+    Intent mapped=step(KEY(PAD_X));CHECK(mapped.pressed==KEY(PAD_A));step(0);
+    mapped=step(KEY(PAD_A));CHECK(mapped.pressed==KEY(PAD_X));step(0);
+    in.menu=true;step(0);mapped=step(KEY(PAD_A));CHECK(mapped.pressed==KEY(PAD_A));step(0);
+    in.menu=false;in.rt=true;step(0);mapped=step(KEY(PAD_X));CHECK(mapped.pressed==KEY(PAD_X) && mapped.layer==LAYER_SKILL);
+    reset();in.world_remap=true;memcpy(in.world_buttons,world_map,7);
+    mapped=step(KEY(PAD_BACK)|KEY(PAD_START));CHECK(mapped.mode_changed && !mapped.pressed);
+    reset();in.menu=true;step(0);in.swap_menu_ab=true;step(0);
+    Intent swapped=step(KEY(PAD_A));CHECK(swapped.pressed==KEY(PAD_B) && swapped.held==KEY(PAD_B));
+    step(0);swapped=step(KEY(PAD_B));CHECK(swapped.pressed==KEY(PAD_A));
+    step(0);in.menu=false;step(0);swapped=step(KEY(PAD_B));CHECK(swapped.pressed==KEY(PAD_B));
+    step(0);in.rt=true;step(0);swapped=step(KEY(PAD_A));CHECK(swapped.layer==LAYER_SKILL && swapped.pressed==KEY(PAD_A));
+
     reset();
     Intent out=step(KEY(PAD_A));
     CHECK(out.layer==LAYER_GAME && out.pressed==KEY(PAD_A));

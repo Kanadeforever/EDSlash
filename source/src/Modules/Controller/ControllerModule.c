@@ -150,6 +150,10 @@ static BOOL WINAPI keyboard_hook(PBYTE keys)
     /* 安全点及模块确认由同一个生产函数协调，Guard延后接收时保留代数，下帧再确认。 */
     static unsigned guard_generation;
     Guard_SyncSettings(&g_input,&guard_generation);
+    g_input.swap_menu_ab=RuntimeConfig_GetInt(CONFIG_MENU_SWAP_AB)!=0;
+    static const unsigned char physical[]={PAD_A,PAD_B,PAD_X,PAD_Y,PAD_BACK,PAD_START,PAD_L3,PAD_R3};
+    g_input.world_remap=true;
+    for(unsigned i=0;i<7;++i)g_input.world_buttons[i]=physical[RuntimeConfig_GetInt((ConfigId)(CONFIG_WORLD_INTERACT+i))];
     Runtime_EmitEvent(RUNTIME_EVENT_INPUT_SAMPLED,keys,g_input.now,0);
     /* 鼠标事件可能尚未派发到窗口，补查真实按键的新边沿；稳定按住不反复争抢。 */
     unsigned mouse_buttons=(Input_PhysicalDown(VK_LBUTTON) ? 1u:0u) |

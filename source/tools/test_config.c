@@ -5,6 +5,7 @@
 #include <wchar.h>
 #include <stdlib.h>
 #include "../src/Runtime/Config.h"
+#include "../src/Runtime/SettingsModel.h"
 #include "../src/Runtime/Toml.h"
 #include "../src/Runtime/FileIO.h"
 static unsigned checks;
@@ -45,6 +46,15 @@ int wmain(void)
     CHECK(RuntimeConfig_OpenPath(path));
     CHECK(!RuntimeConfig_HasPending());
     CHECK(RuntimeConfig_GetInt(CONFIG_AIM_EXPAND_MS)==1000);
+    CHECK(RuntimeConfig_GetInt(CONFIG_MENU_SWAP_AB)==0);
+    ConfigEdit key_swap[]={{CONFIG_WORLD_INTERACT,2,NULL},{CONFIG_WORLD_LEFT,0,NULL}};
+    CHECK(!RuntimeConfig_SetInt(CONFIG_WORLD_INTERACT,2));
+    CHECK(RuntimeConfig_SaveBatch(key_swap,2,NULL,0));RuntimeConfig_ApplyFrame(0);
+    CHECK(RuntimeConfig_GetInt(CONFIG_WORLD_INTERACT)==0);
+    CHECK(RuntimeConfig_ApplyFrame(1) && RuntimeConfig_GetInt(CONFIG_WORLD_INTERACT)==2 && RuntimeConfig_GetInt(CONFIG_WORLD_LEFT)==0);
+    CHECK(RuntimeConfig_SetInt(CONFIG_MENU_SWAP_AB,1));RuntimeConfig_ApplyFrame(0);
+    CHECK(RuntimeConfig_GetInt(CONFIG_MENU_SWAP_AB)==0 && RuntimeConfig_HasPending());
+    CHECK(RuntimeConfig_ApplyFrame(1) && RuntimeConfig_GetInt(CONFIG_MENU_SWAP_AB)==1);
     CHECK(RuntimeConfig_SetInt(CONFIG_AIM_EXPAND_MS,250));
     CHECK(!RuntimeConfig_SetInt(CONFIG_AIM_EXPAND_MS,99) && !RuntimeConfig_SetInt(CONFIG_AIM_EXPAND_MS,10001));
     CHECK(RuntimeConfig_ApplyFrame(0) && RuntimeConfig_GetInt(CONFIG_AIM_EXPAND_MS)==250);
@@ -97,6 +107,24 @@ int wmain(void)
     CHECK(RuntimeFile_Read(path,saved,sizeof saved,&size));
     CHECK(size>0 && !memcmp(saved,"# EDSlash",9));
     for (size_t i=0;i<size;++i) if(saved[i]=='\n') CHECK(i>0 && saved[i-1]=='\r');
+    /* 双列模型在末行停留，滚动跟随焦点；Y说明不改变导航或候选保存。 */
+    SettingsModel model;CHECK(SettingsModel_Open(&model,1,4));
+    CHECK(SettingsModel_Count(0)+SettingsModel_Count(1)==CONFIG_COUNT && SettingsModel_Count(2)==14);
+    SettingsModel_Page(&model,-1);CHECK(model.page==2);
+    model.help=1;
+    for(unsigned i=0;i<20;++i)SettingsModel_Move(&model,2,4);
+    CHECK(model.focus[2]==12 && model.scroll[2]==3 && model.help);
+    SettingsModel_Move(&model,4,4);CHECK(model.focus[2]==13);
+    SettingsModel_Move(&model,2,4);CHECK(model.focus[2]==13);
+    SettingsModel_Page(&model,1);SettingsModel_Page(&model,-1);CHECK(model.focus[2]==13 && model.scroll[2]==3);
+    CHECK(SettingsModel_SetInt(&model,CONFIG_AIM_EXPAND_MS,450) && SettingsModel_Dirty(&model));
+    SettingsModel_Discard(&model);CHECK(!SettingsModel_Dirty(&model));
+    CHECK(SettingsModel_SetInt(&model,CONFIG_AIM_EXPAND_MS,600));
+    ConfigBinding draft_binding={1,444,0};CHECK(SettingsModel_SetBinding(&model,4,draft_binding));
+    CHECK(SettingsModel_Save(&model) && !SettingsModel_Dirty(&model));
+    CHECK(RuntimeConfig_GetSavedBinding(1,4,4).selector==444);
+    CHECK(SettingsModel_SetText(&model,"16:0") && !SettingsModel_Save(&model) && SettingsModel_Dirty(&model));
+    SettingsModel_Discard(&model);CHECK(!SettingsModel_Dirty(&model));
     /* 设置窗口一次提交多个字段和两个角色槽，不能在第二项无效时保存第一项。 */
     ConfigEdit edits[]={{CONFIG_DEADZONE,11000,NULL},{CONFIG_AIM_EXPAND_MS,1500,NULL},{CONFIG_BASE_HEIGHT,600,NULL}};
     ConfigBindingEdit binds[]={{1,4,2,{1,1002,1}},{2,50,14,{1,3000,0}}};

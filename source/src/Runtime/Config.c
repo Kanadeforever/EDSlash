@@ -13,6 +13,7 @@
 #define B(id,table,key,label,description,apply) {id,table,key,label,description,CONFIG_BOOL,1,0,1,1,NULL,NULL,apply}
 #define N(id,table,key,label,description,def,min,max,step,apply) {id,table,key,label,description,CONFIG_INT,def,min,max,step,NULL,NULL,apply}
 #define P(id,key,label) {id,"gameplay.stamina",key,label,"按最大体力百分比计算，0表示没有单次变化，最多两位小数。",CONFIG_PERCENT,0,0,10000,25,NULL,NULL,CONFIG_APPLY_FRAME}
+#define K(id,key,label,def) {id,"controller.world_keys",key,label,"仅普通世界层改绑；菜单和修饰组合保留原位置。七项不能重复，交换两键请同时保存。",CONFIG_CHOICE,def,0,7,1,NULL,"a|b|x|y|back|start|l3|r3",CONFIG_APPLY_IDLE}
 static const ConfigDescriptor fields[CONFIG_COUNT]={
     B(CONFIG_DISPLAY_ENABLED,"display","enabled","动态宽屏","保持原显示修复范围；修改后重启。",CONFIG_APPLY_RESTART),
     N(CONFIG_BASE_HEIGHT,"display","base_height","逻辑高度","默认480；更高数值扩大视野并增加游戏负担。",480,1,INT_MAX,16,CONFIG_APPLY_RESTART),
@@ -48,11 +49,19 @@ static const ConfigDescriptor fields[CONFIG_COUNT]={
      CONFIG_CHOICE,0,0,1,1,NULL,"face|dpad",CONFIG_APPLY_FRAME},
     N(CONFIG_AIM_EXPAND_MS,"controller.skill_aim","expand_time_ms","技能落点扩散耗时",
       "从最短距离扩到原技能最远落点的毫秒数；越小越快，范围100～10000，默认1000。每次按B固定本次值，下次预览使用新设置。",
-      1000,100,10000,50,CONFIG_APPLY_FRAME)
+      1000,100,10000,50,CONFIG_APPLY_FRAME),
+    {CONFIG_MENU_SWAP_AB,"controller.menu","swap_confirm_cancel","菜单确认取消交换",
+     "false为A确认B取消；true为B确认A取消。只影响菜单，世界操作和组合技能不变；输入释放后的安全点生效。",
+     CONFIG_BOOL,0,0,1,1,NULL,NULL,CONFIG_APPLY_IDLE},
+    K(CONFIG_WORLD_INTERACT,"interact","调查键",0),K(CONFIG_WORLD_AIM,"skill_aim","技能落点预览键",1),
+    K(CONFIG_WORLD_LEFT,"left_action","左手动作键",2),K(CONFIG_WORLD_RIGHT,"right_action","右手动作键",3),
+    K(CONFIG_WORLD_RUN,"run","奔跑切换键",6),K(CONFIG_WORLD_MAP,"minimap","小地图键",7),
+    K(CONFIG_WORLD_SYSTEM,"system_menu","系统菜单键",5)
 };
 #undef B
 #undef N
 #undef P
+#undef K
 typedef struct {unsigned game,role,slot;ConfigBinding binding;} BindingRecord;
 /* 文档和候选缓冲放静态区，不把64KiB文档压到游戏调用栈，也不逐帧分配。 */
 static TomlDocument document,candidate;
@@ -169,6 +178,10 @@ invalid:
         snprintf(error_text,sizeof error_text,"第%u行：%s的类型或范围错误",entry->line,f->label);return 0;
     }
     /* 检查全部条目，拼错键不能被当作无效注释而悄悄忽略。 */
+    /* 普通世界动作必须有独立物理键；批量保存允许两项同时交换，不留下中间冲突。 */
+    for(unsigned i=CONFIG_WORLD_INTERACT;i<=CONFIG_WORLD_SYSTEM;++i)
+        for(unsigned j=CONFIG_WORLD_INTERACT;j<i;++j)
+            if(snapshot->values[i]==snapshot->values[j])return error("世界操作键位重复，请一起调整交换的两项");
     for (unsigned i=0;i<doc->count;++i) {
         const TomlEntry *e=&doc->entries[i];int known=0;
         for (unsigned j=0;j<CONFIG_COUNT;++j)
