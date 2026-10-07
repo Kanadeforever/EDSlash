@@ -31,7 +31,7 @@ static int test_omni_setting=1;
 static int test_inspect_distance=160;
 static int test_single_trigger=1,test_combo_switch=0;
 #endif
-static int test_dodge_setting=1,test_dodge_distance=128;
+static int test_dodge_setting=1,test_dodge_distance=128,test_aim_ms=1000;
 static int test_guard_setting=1,test_run_setting=1,test_cost=-1,test_recovery=-1;
 static unsigned checks,readiness_logs;
 static unsigned move_requests;
@@ -39,7 +39,7 @@ static bool reject_move;
 static BYTE choices_data[32],groups_data[2][0x40],methods_data[3][0x90];
 static uint32_t group_members[2][2],engine_tick,history_timeout;
 static int group_table,method_table;
-static bool unavailable_skill,record_actions;
+static bool unavailable_skill,record_actions,jump_zero_range,jump_builtin;
 static BYTE throw_items[6][0x24];static bool test_throwing;
 static bool reject_busy;
 static bool emulate_combo;
@@ -49,10 +49,11 @@ static BYTE runtime_data[0x100];
 #define CHECK(e) do { ++checks; if (!(e)) { fprintf(stderr,"适配检查失败，行 %d：%s\n",__LINE__,#e); exit(1); } } while(0)
 
 /* 自有宿主记录共享UI绘制订阅，菜单回归可主动发出同一事件。 */
-static RuntimeEventCallback cursor_draw_callback;
+static RuntimeEventCallback cursor_draw_callback,cursor_begin_callback;
 int Runtime_Subscribe(RuntimeEventId event,RuntimeEventCallback callback,void *user)
 {
-    if (event!=RUNTIME_EVENT_UI_DRAW_END || !callback || user) return 0;
+    if ((event!=RUNTIME_EVENT_UI_DRAW_END && event!=RUNTIME_EVENT_UI_DRAW_BEGIN) || !callback || user) return 0;
+    if(event==RUNTIME_EVENT_UI_DRAW_BEGIN){cursor_begin_callback=callback;return 1;}
     cursor_draw_callback=callback;return 1;
 }
 void Log_Write(const char *format, ...)
@@ -85,6 +86,7 @@ int RuntimeConfig_GetInt(ConfigId id)
     case CONFIG_RECOVERY_MODE:return test_recovery>=0;
     case CONFIG_RECOVERY_PERCENT:return test_recovery>=0 ? test_recovery:0;
     case CONFIG_MOVE_LEAD:return 12;
+    case CONFIG_AIM_EXPAND_MS:return test_aim_ms;
     default:return 0;
     }
 }
@@ -130,7 +132,7 @@ static int __attribute__((thiscall)) native_submit(void *self,int opcode,int a,i
     if (opcode==16) { *((BYTE *)roles[0]+0x219)=a!=0; if(a) Write32(roles[0],0x14B,7); }
     if (opcode==18) Write32(roles[0],0x143,(uint32_t)a);
     if (opcode==9 || opcode==10 || opcode==11) {
-        CHECK(a==1001 || a==1002 || a==1003 || (test_throwing && a>=10042 && a<10048));
+        CHECK(a==1001 || a==1002 || a==1003 || (jump_builtin && a==10000) || (test_throwing && a>=10042 && a<10048));
         if (reject_busy && ReadPtr(roles[0],g_profile->active_offset)) return 0;
         if (opcode==11 && !record_actions) {
             unsigned offset=g_profile->pending_offset;
@@ -146,7 +148,7 @@ static int __attribute__((thiscall)) native_submit(void *self,int opcode,int a,i
         last_target=opcode==10 ? NULL:Game_Resolve((uint32_t)b);
         if (opcode==10) {last_aim.x=b;last_aim.y=c;}
         if (record_actions) {
-            Combat_Record(a>=10000 ? 222:(int)(Read32(methods_data[a-1001],0x27)&0xFFFF),0);
+            Combat_Record(jump_builtin && a==10000 ? (int)(Read32(methods_data[2],0x27)&0xFFFF):a>=10000 ? 222:(int)(Read32(methods_data[a-1001],0x27)&0xFFFF),0);
             ptr(roles[0],g_profile->active_offset,runtime_data);
         }
     }
@@ -189,6 +191,7 @@ static int __attribute__((thiscall)) native_property(void *self,int index)
 static int __attribute__((thiscall)) native_lookup(void *table,int id)
 {
     if (table==&group_table && (id==111 || id==222)) return (int)(uintptr_t)groups_data[id==111 ? 0:1];
+    if (table==&method_table && jump_builtin && id==10000)return (int)(uintptr_t)methods_data[2];
     if (table==&method_table && id>=1001 && id<=1003) return (int)(uintptr_t)methods_data[id-1001];
     return 0;
 }
@@ -199,7 +202,7 @@ static int __attribute__((thiscall)) native_role_method(void *self,int method)
 static int __attribute__((thiscall)) native_usable(void *self,int record)
 { CHECK(self==roles[0] && record!=0);return !reject_qualification; }
 static int __attribute__((thiscall)) native_distance(void *self,int method)
-{ CHECK(self==roles[0] && method>=1001 && method<=1003);return 64; }
+{ CHECK(self==roles[0] && method>=1001 && method<=1003);return jump_zero_range ? 0:64; }
 static int __attribute__((thiscall)) native_aim(void *self,int point,int origin)
 { CHECK(self==roles[0] && origin!=0);last_aim=*(WorldPoint *)(uintptr_t)point;return 1; }
 static int __cdecl native_dir8(const WorldPoint *point,const WorldPoint *origin)
@@ -992,8 +995,63 @@ static void readiness_regression(bool expansion)
     Write32(world_data,0x58,0);Game_Diagnose();g_input.now+=200;
     Write32(world_data,0x58,1);Game_Diagnose();CHECK(readiness_logs==1);
 }
-int main(void)
+/* 原技能快捷与B落点使用同一绑定；不从场景Actor取玩家档案字段。 */
+static int jump_fixture_selection;
+static BYTE jump_camera[0x14];
+static int __attribute__((thiscall)) jump_projection(void *self,WorldPoint *out,int x,int y)
+{CHECK(self==jump_camera);*out=(WorldPoint){6400+x+2*y,6400-x+2*y};return 1;}
+static int __attribute__((thiscall)) jump_range(void *self,int method)
+{CHECK(self==roles[0] && (method==1001 || method==1002 || (jump_builtin && method==10000)));return 1;}
+static void jump_regression(bool expansion)
 {
+    Profile profile;configure(&profile,expansion);Game_Release();
+    profile.projection=(uintptr_t)jump_projection;
+    profile.method_range=(uintptr_t)jump_range;profile.projection_global=(uintptr_t)jump_camera;
+    /* Actor的init字段故意为空，B必须沿可用快捷绑定而不是假定Actor有档案资源。 */
+    ptr(roles[0],0x308,NULL);
+    record_actions=true;reject_qualification=false;reject_busy=false;
+    g_input.connected=g_input.focused=true;g_intent.layer=LAYER_GAME;
+    for(unsigned kind=0;kind<(expansion ? 4u:3u);++kind) {
+        /* 外传第四个数据映射可代表瞬移；业务由原Method，控制器不改类型。 */
+        test_aim_ms=kind==1 ? 2000:kind==2 ? 200:kind==3 ? 10000:1000;int duration=test_aim_ms;
+        jump_builtin=kind==2;jump_fixture_selection=jump_builtin ? 10000:kind==3 ? 222:111;
+        /* 原RT+A默认绑定和B使用同一选择；两条路在相同初始历史下对照实际Method。 */
+        memset(binding_data,0,sizeof binding_data);Write32(binding_data,0x18,'Q');
+        Write32(binding_data,0x14,(uint32_t)jump_fixture_selection);Write32(binding_data,0x1C,kind%2);
+        ptr(hud_data,0xC18,binding_data);ptr(roles[0],profile.active_offset,NULL);Combat_Reset();
+        g_intent.layer=LAYER_SKILL;g_intent.pressed=KEY(PAD_A);g_intent.held=0;g_intent.lx=g_intent.ly=0;
+        int rt_before=releases;Game_Update();CHECK(releases==rt_before+1);int rt_method=arg1;
+        ptr(roles[0],profile.active_offset,NULL);Combat_Reset();Feedback_End();g_intent.layer=LAYER_GAME;
+        ptr(roles[0],profile.active_offset,NULL);Write32(roles[0],0x73,1);Combat_Reset();
+        Write32(roles[0],0x73,0x0B);g_input.now=100;g_intent.lx=1;g_intent.ly=0;g_intent.pressed=g_intent.held=KEY(PAD_B);
+        int before=releases;unsigned old_moves=move_requests;Game_Update();POINT first,last;
+        CHECK(Game_JumpAnchor(&first) && releases==before && move_requests==old_moves && Read32(roles[0],0x73)==1);
+        int selection,icon;CHECK(Feedback_Selection(&selection,&icon) && selection==jump_fixture_selection);
+        g_intent.pressed=0;g_input.now=100+(unsigned)duration/2;test_aim_ms=duration==10000 ? 100:10000;
+        Game_Update();CHECK(Game_JumpAnchor(&last) && last.x==34 && last.y==0); /* 当前预览固定原耗时 */
+        g_input.now=100+(unsigned)duration;Game_Update();CHECK(Game_JumpAnchor(&last));POINT maximum=last;
+        g_input.now=200+(unsigned)duration*2;Game_Update();CHECK(Game_JumpAnchor(&last) && last.x==maximum.x && last.y==maximum.y);
+        /* 松键当帧故意改杆方向和时钟，提交必须仍是最后显示的落点。 */
+        WorldPoint shown;jump_projection(jump_camera,&shown,maximum.x,maximum.y);
+        g_intent.held=0;g_intent.lx=-1;g_input.now=9000;Game_Update();CHECK(!Game_JumpAnchor(&last) && releases==before+1);
+        CHECK(last_opcode==10 && arg1==rt_method && last_target==NULL);
+        CHECK(arg2==shown.x && arg3==shown.y);
+        CHECK(Feedback_Selection(&selection,&icon) && selection==jump_fixture_selection);
+        ptr(roles[0],profile.active_offset,NULL);Feedback_RuntimeEnded();animation_done=true;++engine_tick;
+        CHECK(!Feedback_Selection(&selection,&icon));animation_done=false;
+    }
+    jump_builtin=false;test_aim_ms=1000;
+    /* 预览时切组合层、失焦或世界失效，取消而非自动补跳；B菜单用途不受影响。 */
+    ptr(roles[0],profile.active_offset,NULL);g_intent.pressed=g_intent.held=KEY(PAD_B);g_input.now=5000;
+    Game_Update();int before=releases;g_intent.layer=LAYER_DUAL;g_intent.pressed=0;Game_Update();
+    POINT point;CHECK(!Game_JumpAnchor(&point) && releases==before);
+    Game_Release();g_intent.layer=LAYER_GAME;jump_fixture_selection=0xFFFF;Write32(binding_data,0x14,0xFFFF);g_intent.pressed=KEY(PAD_B);Game_Update();CHECK(!Game_JumpAnchor(&point));
+    jump_fixture_selection=111;Write32(binding_data,0x14,111);g_intent.pressed=0;g_intent.held=0;Game_Update();
+    record_actions=false;g_intent.lx=g_intent.ly=0;Combat_Reset();Game_Release();
+}
+int main(int argc,char **argv)
+{
+    if(argc>1 && (!strcmp(argv[1],"--jump") || !strcmp(argv[1],"--jump-zero"))){jump_zero_range=!strcmp(argv[1],"--jump-zero");jump_regression(false);jump_regression(true);printf("两作基础跳跃映射、预览/松开/取消与既有图标回放通过：%u项\n",checks);return 0;}
 #ifndef EDSLASH_REAL_CONFIG
     new_combat_regression(false);new_combat_regression(true);
 #endif

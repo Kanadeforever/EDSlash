@@ -53,6 +53,6 @@ echo [失败] 找不到Python 3，请安装并加入PATH。
 goto :failed
 
 :failed
-echo [失败] 构建或测试未通过；诊断保留在source\.build。  
+echo [失败] 构建或测试未通过；诊断保留在根目录.build。  
 if not defined NO_PAUSE pause
 exit /b 1

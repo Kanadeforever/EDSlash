@@ -246,10 +246,10 @@ static void __attribute__((fastcall)) end_hook(void *original,void *unused)
 
 static void initialize_runtime(void)
 {
-    /* 此时已经离开 DllMain 的 Loader 锁，允许文件散列、配置与 SDL 动态加载。
+    /* 此时已经离开 DllMain 的 Loader 锁，允许文件散列、配置与 SDL 初始化。
        先置失败状态；只有所有验证和安装成功才改成可运行，递归也不会重复初始化。 */
     runtime_state = -1;
-    Log_Write("[Controller] 统一模块启动，战斗保留dev9动作协议，菜单使用独立焦点与原生入口。");
+    Log_Write("[Controller] 统一模块启动，战斗复用原生动作协议，菜单使用独立焦点与原生入口。");
     if (!Profile_Select() || !Profile_Verify()) {
         Log_Write("[停止] Controller基线或机器码不匹配，撤回采样入口，其他模块继续。");
         if (*(void **)g_profile->keyboard_iat==(void *)keyboard_hook)

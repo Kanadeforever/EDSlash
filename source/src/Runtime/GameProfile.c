@@ -7,7 +7,7 @@
 /*
  * 两个已确认游戏的 PE32 基本身份。
  *
- * 为什么 v0.1-dev1 先用 SizeOfImage + EntryPoint：
+ * SizeOfImage + EntryPoint 用于最早期身份筛选：
  *   - Steam / 非 Steam 样本这两个值一致；
  *   - 历史宽屏改版只改游戏代码立即数，不改变 PE 入口和映像尺寸；
  *   - 这一步发生在任何 Profile 专用 IAT 地址被访问之前，所以必须完全不依赖 Win32 API。

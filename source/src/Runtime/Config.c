@@ -45,7 +45,10 @@ static const ConfigDescriptor fields[CONFIG_COUNT]={
      CONFIG_BOOL,0,0,1,1,NULL,NULL,CONFIG_APPLY_FRAME},
     {CONFIG_COMBO_SWITCH,"controller.combat","combo_switch_input","新模式连招切换输入",
      "仅single_trigger_ultimate=false时生效：face为LT+Y/B/A/X切1/2/3/4，dpad为LT+上/右/下/左；旧模式固定dpad。",
-     CONFIG_CHOICE,0,0,1,1,NULL,"face|dpad",CONFIG_APPLY_FRAME}
+     CONFIG_CHOICE,0,0,1,1,NULL,"face|dpad",CONFIG_APPLY_FRAME},
+    N(CONFIG_AIM_EXPAND_MS,"controller.skill_aim","expand_time_ms","技能落点扩散耗时",
+      "从最短距离扩到原技能最远落点的毫秒数；越小越快，范围100～10000，默认1000。每次按B固定本次值，下次预览使用新设置。",
+      1000,100,10000,50,CONFIG_APPLY_FRAME)
 };
 #undef B
 #undef N

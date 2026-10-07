@@ -44,6 +44,10 @@ int wmain(void)
     swprintf(path,1200,L"%ls\\EDSlash.toml",dir);
     CHECK(RuntimeConfig_OpenPath(path));
     CHECK(!RuntimeConfig_HasPending());
+    CHECK(RuntimeConfig_GetInt(CONFIG_AIM_EXPAND_MS)==1000);
+    CHECK(RuntimeConfig_SetInt(CONFIG_AIM_EXPAND_MS,250));
+    CHECK(!RuntimeConfig_SetInt(CONFIG_AIM_EXPAND_MS,99) && !RuntimeConfig_SetInt(CONFIG_AIM_EXPAND_MS,10001));
+    CHECK(RuntimeConfig_ApplyFrame(0) && RuntimeConfig_GetInt(CONFIG_AIM_EXPAND_MS)==250);
     CHECK(RuntimeConfig_GetInt(CONFIG_PICKUP_MODE)==2 && RuntimeConfig_GetInt(CONFIG_DODGE_DISTANCE)==128);
     /* 新模式缺项即false/face；真实配置保存服务校验二选一，并在输入边界应用。 */
     CHECK(RuntimeConfig_GetInt(CONFIG_LEGACY_ULTIMATE)==0 && RuntimeConfig_GetInt(CONFIG_COMBO_SWITCH)==0);

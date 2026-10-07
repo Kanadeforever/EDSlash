@@ -1,4 +1,4 @@
-"""四份真实EXE只读输入，派生件仅在.workspace临时目录生成并核对。"""
+"""四份真实EXE只读输入，派生件仅在.build临时目录生成并核对。"""
 from pathlib import Path
 import hashlib
 import importlib.util
@@ -23,7 +23,7 @@ class FontFixTests(unittest.TestCase):
         paths = list(BASE.glob("ComeOn-*.exe"))
         if len(paths) != 4:
             self.skipTest("未提供完整四官方EXE，不能宣称四样本字体验证通过")
-        workspace = ROOT / ".workspace"
+        workspace = ROOT / ".build"
         workspace.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=workspace) as temporary:
             for index, path in enumerate(sorted(paths)):

@@ -50,7 +50,7 @@ static int __attribute__((thiscall)) talk_picker(void *root) {CHECK(root==menu_r
 static int __attribute__((thiscall)) talk_select(void *root) {CHECK(root==menu_roots[5]);talk_selected=Read32(ReadPtr(root,0xA8),0xC4);return 1;}
 static int __attribute__((thiscall)) talk_cancel(void *root,int e,int x,void *y) {CHECK(root==menu_roots[5] && !e && !x && !y);++talk_cancelled;Write32(root,0x64,0);ptr(ui_data,0x3C,NULL);return 1;}
 static int __attribute__((thiscall)) text_next(void *root) {CHECK(root==menu_roots[6]);++text_next_count;Write32(root,0x64,0);ptr(ui_data,0x3C,NULL);return 1;}
-static BYTE load_nodes[12][12],load_data[12][0x40],cursor_code[24];
+static BYTE load_nodes[12][12],load_data[12][0x40],cursor_code[32];
 static uintptr_t cursor_position_pointer;
 static int cursor_x,cursor_y;
 /* 故障只注入自己的fixture写槽，验证安装中途失败可以逐槽退回原函数。 */
@@ -272,6 +272,7 @@ static void record_focus(int x,int y,int width,int height);
 static int __attribute__((thiscall)) cursor_sprite(void *self,void *surface,int x,int y,int frame,int shade,int flags)
 {
     if(self==focus_sprites+5*32) {CHECK(surface==focus_surface && !frame && !shade && !flags);record_focus(x,y,26,26);return 6;}
+    if(self==menu_sprites[8][0] && surface==focus_surface) {CHECK(frame==0 && shade==-1 && !flags);++cursor_draws;return 6;}
     CHECK(self==menu_sprites[0][0] && surface==(void *)0x246 && frame==0 && shade==-1 && flags==0);
     ++cursor_draws;cursor_x=x;cursor_y=y;return 6;
 }
@@ -319,21 +320,35 @@ static int __attribute__((thiscall)) native_drop(void *container,int item)
     return 1;
 }
 static void emit_focus(void)
-{CHECK(cursor_draw_callback);cursor_draw_callback(RUNTIME_EVENT_UI_DRAW_END,ui_data,(unsigned long)(uintptr_t)focus_surface,0,NULL);}
+{
+    CHECK(cursor_draw_callback && cursor_begin_callback);cursor_begin_callback(RUNTIME_EVENT_UI_DRAW_BEGIN,ui_data,0,0,NULL);
+    RuntimeFocusRequest request={0};
+    RECT r;unsigned reason;void *root=Menu_Context(&reason);
+    if(g_intent.layer!=LAYER_NATIVE && g_intent.layer!=LAYER_MOUSE && (ActionMenu_FocusFrame(&r) || (Read32(root,0)==g_profile->menu_skill_vtable && Menu_FocusFrame(&r)))) {
+        request.rectangle=(RuntimeFocusRect){r.left,r.top,r.right,r.bottom};
+        typedef int (__attribute__((thiscall)) *DrawIcon)(void *,void *,int,int,int,int,int);
+        ((DrawIcon)patched_callee(g_profile->icon_focus_call))(menu_sprites[8][0],focus_surface,
+            request.rectangle.left-1,request.rectangle.top-1,0,-1,0);
+        unsigned before=focus_draws;
+        /* 原图标后的框已经画完；END不能重画到随后原说明文字上。 */
+        cursor_draw_callback(RUNTIME_EVENT_UI_DRAW_END,ui_data,(unsigned long)(uintptr_t)focus_surface,0,NULL);CHECK(focus_draws==before);
+    } else cursor_draw_callback(RUNTIME_EVENT_UI_DRAW_END,ui_data,(unsigned long)(uintptr_t)focus_surface,0,NULL);
+}
 static void cursor_fixture(Profile *profile)
 {
     memset(cursor_code,0x90,sizeof cursor_code);cursor_position_pointer=(uintptr_t)cursor_position;
     cursor_code[0]=0xFF;cursor_code[1]=0x15;uintptr_t iat=(uintptr_t)&cursor_position_pointer;
-    memcpy(cursor_code+2,&iat,4);make_call(cursor_code+8,(uintptr_t)cursor_sprite);make_call(cursor_code+16,(uintptr_t)cursor_sprite);
+    memcpy(cursor_code+2,&iat,4);make_call(cursor_code+8,(uintptr_t)cursor_sprite);make_call(cursor_code+16,(uintptr_t)cursor_sprite);make_call(cursor_code+24,(uintptr_t)cursor_sprite);
     profile->cursor_position_call=(uintptr_t)cursor_code;profile->cursor_position_iat=iat;
     profile->cursor_sprite_call1=(uintptr_t)(cursor_code+8);profile->cursor_sprite_call2=(uintptr_t)(cursor_code+16);
+    profile->icon_focus_call=(uintptr_t)(cursor_code+24);
     profile->cursor_sprite_draw=(uintptr_t)cursor_sprite;profile->focus_rect_draw=(uintptr_t)scaled_focus;
     profile->menu_item_drop=(uintptr_t)native_drop;profile->focus_frame_get=(uintptr_t)focus_frame_get;
     profile->focus_image_get=(uintptr_t)focus_image_get;
     backend=(FocusBackend){.hud_global=(uintptr_t)profile->skill_global,.hud_vtable=profile->menu_hud_vtable,
         .sprite_draw=(uintptr_t)cursor_sprite,.rect_draw=(uintptr_t)scaled_focus,
         .frame_get=(uintptr_t)focus_frame_get,.image_get=(uintptr_t)focus_image_get};ready=true;
-    if(!subscribed) {CHECK(Runtime_Subscribe(RUNTIME_EVENT_UI_DRAW_END,draw,NULL));subscribed=true;}
+    if(!subscribed) {CHECK(Runtime_Subscribe(RUNTIME_EVENT_UI_DRAW_END,draw,NULL));CHECK(Runtime_Subscribe(RUNTIME_EVENT_UI_DRAW_BEGIN,draw,NULL));subscribed=true;}
     CHECK(Cursor_Initialize());cursor_draws=focus_draws=drop_requests=0;
     ptr(hud_data,0x48,focus_sprites);Write32(hud_data,0x44,6);
     memset(focus_description,0,sizeof focus_description);ptr(focus_description,8,focus_bank);Write32(focus_description,4,0);ptr(focus_bank,4,focus_entries);
@@ -1163,6 +1178,11 @@ static void skill_visual_regression(bool expansion,const char *scenario)
         Write32(node,0x1C,44);Write32(node,0x20,48);Write32(node,0x64,1);
     }
     Write32(menu_children[8][15],0x64,0);
+    if(!strcmp(scenario,"default")) {
+        /* 学习页业务编号84故意放在右边，验收必须按视觉左上而非编号。 */
+        Write32(menu_children[8][3],0x14,400);activate_page(8);neutral_menu();CHECK(focus_id(8)==0x85);
+        Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);return;
+    }
     activate_page(8);neutral_menu();menu_step(KEY(PAD_RB),0,0);neutral_menu();CHECK(focus_id(8)==0x84);
     if(!strcmp(scenario,"navigation")) {
         menu_step(KEY(PAD_DOWN),0,0);neutral_menu();menu_step(KEY(PAD_DOWN),0,0);neutral_menu();CHECK(focus_id(8)==0x8C);

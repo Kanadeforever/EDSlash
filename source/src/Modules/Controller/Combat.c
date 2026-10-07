@@ -49,6 +49,38 @@ void Combat_RequestPoint(int selection,const WorldPoint *point)
     /* 可破坏静态对象沿原基础技能解析，目标是独立世界点，不伪造鼠标或怪物身份。 */
     Combat_Request(selection,ACTION_LEFT,true);combat.point_request=true;combat.requested_point=*point;
 }
+void Combat_RequestSkillPoint(int selection,bool left_style,const WorldPoint *point)
+{
+    if(!point || selection<0)return;
+    /* 原快捷请求负责来源、缓冲及角色身份，本接口只增加目标点。 */
+    Combat_Request(selection,ACTION_SKILL,left_style);combat.point_request=true;combat.requested_point=*point;
+}
+static bool resolve_request(void *role,int selection,const WorldPoint *point,const ActionHistory *history,
+                            bool restart,ResolvedSkill *out)
+{
+    if(Skill_Resolve(role,selection,point,history,out))return true;
+    if(!restart)return false;
+    /* 快捷施放允许按自己的起手解析；预览和正式请求必须共享这项规则。 */
+    ActionHistory first={0};return Skill_Resolve(role,selection,point,&first,out);
+}
+static bool first_usable(void *role,const ResolvedSkill *resolved,void **record)
+{
+    *record=NULL;
+    if(resolved->sequence || resolved->method>=10000)return true;
+    *record=(void *)(uintptr_t)((This1)g_profile->role_method)(role,resolved->method);
+    return *record && ((This1)g_profile->method_usable)(role,(int)(uintptr_t)*record);
+}
+bool Combat_PreviewSkill(void *role,int selection,const WorldPoint *point,ResolvedSkill *out)
+{
+    if(!role || !point || !out || selection<0)return false;
+    ActionHistory history={0};
+    if(combat.actor==Read32(role,0x14) && combat.world==world())history=combat.history;
+    /* 预览不修改历史；已结束并过期的历史和正式Update一样不参与解析。 */
+    uint32_t timeout=Read32((void *)g_profile->combo_timeout,0);
+    if(history.count && history.ended && tick()-history.end_tick>timeout)memset(&history,0,sizeof history);
+    void *record;
+    return resolve_request(role,selection,point,&history,true,out) && first_usable(role,out,&record);
+}
 void Combat_SelectCombo(unsigned index)
 {
     if (index>=4) return;
@@ -287,16 +319,12 @@ void Combat_Update(void *role,uint32_t candidate)
     }
     WorldPoint point=aim_point(role);
     ResolvedSkill resolved;
-    bool parsed=Skill_Resolve(role,combat.selection,&point,&combat.history,&resolved);
-    if (!parsed && (combat.source==ACTION_SKILL || combat.source==ACTION_THROW || combat.source==ACTION_ULTIMATE)) {
-        /* 换快捷技能不要求先凑齐旧套组的序列前缀；尝试它自己的起手招。
-         * 只换解析上下文，后面的原生硬直/消耗/执行资格依然完整检查。 */
-        ActionHistory first={0};parsed=Skill_Resolve(role,combat.selection,&point,&first,&resolved);
-    }
+    bool parsed=resolve_request(role,combat.selection,&point,&combat.history,
+        combat.source==ACTION_SKILL || combat.source==ACTION_THROW || combat.source==ACTION_ULTIMATE,&resolved);
     if (!parsed) {
         if (combat.history.count && combat.history.ended) {
-            /* 原版 SkillRelease 失败且历史已有结束标记时会清历史，再让缓冲下一次按首招解析。
-               dev4 漏掉了这条分支，导致跨招式一直失败直到整段历史超时。 */
+            /* 原解析失败且历史已有结束标记时清历史，再让缓冲按起手解析；
+             * 不能让旧序列持续阻止其它快捷技能。 */
             Log_Write("[战斗恢复] 旧序列不匹配选择=%d，清理已结束历史 %u 项后重试。",combat.selection,combat.history.count);
             memset(&combat.history,0,sizeof combat.history);
         }
@@ -305,14 +333,10 @@ void Combat_Update(void *role,uint32_t candidate)
     }
     combat.pending=false;
     /* 首动作和原版一致保留执行资格预检，后续 Runtime 仍会执行自己的完整校验。 */
-    if (!resolved.sequence && resolved.method<10000) {
-        void *record=(void *)(uintptr_t)((This1)g_profile->role_method)(role,resolved.method);
-        if (!record || !((This1)g_profile->method_usable)(role,(int)(uintptr_t)record)) {
-            /* 原生缓冲的重试在资格暂时失败时仍保留剩余次数；不能在动作刚结束的
-               恢复窗口里，把已经排队的输入提前丢掉。不存在的记录则不继续等待。 */
-            combat.pending=record && combat.retries!=0;
-            return;
-        }
+    void *record;
+    if(!first_usable(role,&resolved,&record)) {
+        /* 和既有快捷请求一样，资格暂时失败时保留有期限的重试，不提前取消在途动作。 */
+        combat.pending=record && combat.retries!=0;return;
     }
     WorldPoint origin={(int)Read32(role,0x2C),(int)Read32(role,0x30)};
     if (!active && Read32(role,0x73)==1)

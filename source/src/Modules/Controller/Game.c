@@ -21,6 +21,13 @@ static unsigned scan_count,eligible_count;
 static bool move_goal_valid,move_goal_run;
 static int move_goal_x,move_goal_y,move_lead;
 static DWORD last_move_submit;
+/* B的落点预览只保存世界身份、句柄和整数坐标，不把鼠标或角色坐标当输出缓存。 */
+static struct {bool active,left_style;void *world;uint32_t actor,started,preview_elapsed,expand_ms;int selector,maximum;float dx,dy;WorldPoint point;} jump;
+static void jump_cancel(void)
+{
+    if(jump.active)Feedback_End();
+    memset(&jump,0,sizeof jump);
+}
 
 static void *global(uintptr_t address) { return ReadPtr((void *)address, 0); }
 static void *world(void) { return global(g_profile->world_global); }
@@ -141,16 +148,16 @@ void Game_Diagnose(void)
     if (reason==previous_reason && context_id==previous_id &&
         (!requested || g_input.now-previous_time<1000)) return;
     previous_reason=reason;previous_id=context_id;previous_time=g_input.now;
-    Log_Write("[输入链] 层=%d 门=%u 界面=%02X 对象=%08lx 玩家=%08lx 鼠标玩家=%08lx 句柄=%08lx 世界58=%08lx 原生帧=%u 按键=%04lx 摇杆=%.2f,%.2f 状态=%lu 活动动作=%08lx。",
+    Log_Write("[输入链] 层=%d 门=%u 界面=%02X 对象=%08lx 玩家=%08lx 鼠标玩家=%08lx 句柄=%08lx 世界58=%08lx 原生帧=%u 按键=%04lx 有效持键=%04lx 新按=%04lx 摇杆=%.2f,%.2f 状态=%lu 活动动作=%08lx。",
         g_intent.layer,reason,context_id,(unsigned long)context_object,(unsigned long)(uintptr_t)player(),
         (unsigned long)Read32(mouse(),0x38),(unsigned long)Read32(manager(),0x0C),
-        (unsigned long)Read32(world(),0x58),native_frames,(unsigned long)g_input.buttons,g_input.lx,g_input.ly,
+        (unsigned long)Read32(world(),0x58),native_frames,(unsigned long)g_input.buttons,(unsigned long)g_intent.held,(unsigned long)g_intent.pressed,g_input.lx,g_input.ly,
         (unsigned long)Read32(player(),0x73),(unsigned long)Read32(player(),g_profile->active_offset));
 }
 
 void Game_Release(void)
 {
-    Guard_Reset();Inspect_Reset();
+    Guard_Reset();Inspect_Reset();jump_cancel();
     if (!g_profile) return;
     /* 只终止本插件启动的移动，而且必须仍是同一世界、同一句柄的移动状态。
        技能追敌、其它地图复用的内存、鼠标自己发起的移动都不能被盲目停掉。 */
@@ -222,6 +229,29 @@ static void *choose_target(void *me)
     RuntimePerf_End(PERF_TARGET,perf);return target;
 }
 
+/* 技能快捷和B落点预览共用选择码读取：只读原绑定，不注入Q等键盘事件。
+ * user_binding用于RT的自定义槽；B固定动作取原第一槽，避免MOD改绑RT+A后改变B含义。 */
+static bool skill_choice(unsigned slot,bool user_binding,int *selection,bool *left_style)
+{
+    static const int keys[]={'Q','W','E','R','T','Y','U','I','O','A','S','D',0,0};
+    if(slot>=14 || !selection || !left_style)return false;
+    if(user_binding) {
+        ConfigBinding binding=RuntimeConfig_GetBinding(Runtime_GetContext()->profile->game_id,
+            Read32(Game_Player(),0x348),slot+1);
+        if(binding.custom){*selection=binding.selector;*left_style=binding.right==0;return binding.selector>=0;}
+    }
+    if(!keys[slot])return false;
+    void *hud=global(g_profile->skill_global),*record=ReadPtr(hud,0xC18);
+    for(unsigned n=0;record && n<128;++n) {
+        if(!Memory_Readable(record,0x20))break;
+        if((int)Read32(record,0x18)==keys[slot]) {
+            *selection=(int)Read32(record,0x14);*left_style=Read32(record,0x1C)!=0;return *selection>=0;
+        }
+        void *next=ReadPtr(record,8);if(next==record)break;record=next;
+    }
+    return false;
+}
+
 static void shortcuts(void)
 {
     void *hud = global(g_profile->skill_global);
@@ -263,31 +293,100 @@ static void shortcuts(void)
     }
     if (g_intent.layer != LAYER_SKILL) return;
     static const int buttons[] = {PAD_A,PAD_B,PAD_X,PAD_Y,PAD_UP,PAD_DOWN,PAD_LEFT,PAD_RIGHT,PAD_LB,PAD_RB,PAD_BACK,PAD_START,PAD_L3,PAD_R3};
-    static const int defaults[] = {'Q','W','E','R','T','Y','U','I','O','A','S','D',0,0};
-    for (int i=0;i<14;++i) if (g_intent.pressed & KEY(buttons[i])) {
-        /* 自定义保存稳定技能selector；未自定义时使用原游戏当前角色绑定，默认操作不增加设置步骤。 */
-        ConfigBinding binding=RuntimeConfig_GetBinding(
-            Runtime_GetContext()->profile->game_id,Read32(Game_Player(),0x348),(unsigned)i+1);
-        if (binding.custom) {
-            /* Config的right为右手标志，Combat第三参数则是left_style，必须取反。 */
-            Combat_Request(binding.selector,ACTION_SKILL,binding.right==0);continue;
-        }
-        int vk=defaults[i];
-        if (!vk) {Log_Write("[技能] 槽%d尚未配置技能。",i+1);continue;}
-        void *record=ReadPtr(hud,0xC18);
-        bool found=false;
-        for (unsigned n=0;record && n<128;++n) {
-            if (!Memory_Readable(record,0x20)) break;
-            if ((int)Read32(record,0x18)==vk) {
-                Combat_Request((int)Read32(record,0x14),ACTION_SKILL,Read32(record,0x1C)!=0);
-                found=true;break;
-            }
-            record=ReadPtr(record,8);
-        }
-        Log_Write("[技能] 槽 %d，原版热键 %d，%s。",i+1,vk,found ? "已请求施放" : "角色尚无该绑定");
+    for (unsigned i=0;i<14;++i) if (g_intent.pressed & KEY(buttons[i])) {
+        int selection;bool left_style;
+        if(skill_choice(i,true,&selection,&left_style)) {
+            Combat_Request(selection,ACTION_SKILL,left_style);
+            Log_Write("[技能] 槽%u请求选择=%d。",i+1,selection);
+        } else Log_Write("[技能] 槽%u尚无有效绑定。",i+1);
     }
-    /* 四套切换已经归入 LT+十字键，RT 右摇杆不再改写 Y 的套组。 */
+    /* 单LT按配置用面键或十字切套，RT快捷及右杆不改变长期连招选择。 */
 
+}
+
+/* B是原第一技能快捷的落点前端。解析/资格/缓冲/动作/图标全部复用快捷技能，
+ * 不读取玩家init记录，不另设Method选择或跳跃执行分支。 */
+static bool jump_update(void *role)
+{
+    if(g_intent.layer!=LAYER_GAME){jump_cancel();return false;}
+    if(jump.active && (jump.world!=world() || jump.actor!=Read32(role,0x14)))jump_cancel();
+    if(!jump.active && (g_intent.pressed&KEY(PAD_B))) {
+        if(Read32(role,g_profile->active_offset)) {Log_Write("[技能预览拒绝] 当前有原活动动作，等待新的B输入。");return true;}
+        int selector;bool left_style;
+        if(!skill_choice(0,false,&selector,&left_style)) {
+            Log_Write("[技能预览拒绝] 原第一技能快捷绑定未就绪。");return true;
+        }
+        WorldPoint origin={(int)Read32(role,0x2C),(int)Read32(role,0x30)};
+        ResolvedSkill resolved;
+        /* B只提供落点预览，动作选择仍交给已经用于RT快捷施放的同一解析及资格链。 */
+        if(selector==0xFFFF || !Combat_PreviewSkill(role,selector,&origin,&resolved)) {
+            Log_Write("[技能预览拒绝] 原基础选择=%d，不存在或快捷技能解析/资格拒绝。",selector);return true;
+        }
+        int method=resolved.method;
+        void *record=(void *)(uintptr_t)((This1)g_profile->lookup)((void *)g_profile->methods,method);
+        if(!Memory_Readable(record,0x32)) {Log_Write("[技能预览拒绝] 实际Method=%d记录不可读。",method);return true;}
+        /* 原坐标Runtime使用距离档×64，裸距离0也可能对应有效的缓存档。
+         * getter已在四原EXE核对，不以随意固定距离绕过原游戏的上限。 */
+        int tier=((This1)g_profile->method_range)(role,method);
+        if(tier<=0 || tier>1024) {Log_Write("[跳跃拒绝] 技能组=%d Method=%d 原距离档=%d无效。",selector,method,tier);return true;}
+        int maximum=tier*64;
+        /* 清理此前本插件的走路请求后才建立预览，不能边走边改变起点。 */
+        Game_Release();Combat_Suspend();
+        /* B是明确的新操作，也应停止刚从物理来源接管的普通走路；不取消活动技能。 */
+        if(Read32(role,0x73)==0x0B)((This4)g_profile->install_state)(role,1,0,0,0);
+        jump.active=true;jump.world=world();jump.actor=Read32(role,0x14);
+        jump.started=g_input.now;jump.expand_ms=(uint32_t)RuntimeConfig_GetInt(CONFIG_AIM_EXPAND_MS);jump.selector=selector;jump.left_style=left_style;jump.maximum=maximum;
+        jump.dx=0;jump.dy=1;
+        unsigned count=Read32(role,0x2BF)==16 ? 16:8;
+        for(unsigned i=0;i<count;++i) {
+            float angle=(float)i*6.28318530718f/count;
+            WorldPoint probe={origin.x+(int)lroundf(cosf(angle)*256),origin.y+(int)lroundf(sinf(angle)*256)};
+            if((unsigned)((This2)g_profile->facing_direction)(role,(int)(uintptr_t)&probe,(int)(uintptr_t)&origin)==Read32(role,0x14B)) {
+                jump.dx=cosf(angle);jump.dy=sinf(angle);break;
+            }
+        }
+        Feedback_HoldSkill(selector);
+        Log_Write("[跳跃] 开始预览技能组=%d Method=%d 原距离档=%d 最大距离=%d 扩散耗时=%lu毫秒；不改左右手槽位。",selector,method,tier,maximum,(unsigned long)jump.expand_ms);
+    }
+    if(!jump.active)return false;
+    /* 受击/原活动动作接管时取消预览，不能在硬直结束后自动补一个旧跳跃。 */
+    if(Read32(role,g_profile->active_offset)){jump_cancel();return true;}
+    /* 松键消费上次预览的缓存点，不能在这一帧根据新杆方向或新时钟重算落点。 */
+    if(!(g_intent.held&KEY(PAD_B))) {
+        int selector=jump.selector;bool left_style=jump.left_style;WorldPoint point=jump.point;
+        unsigned elapsed=jump.preview_elapsed;jump_cancel();
+        Combat_RequestSkillPoint(selector,left_style,&point);Combat_Update(role,0);
+        Log_Write("[技能落点] 松B请求选择=%d 落点=%d,%d 按住=%u毫秒；复用快捷技能路径。",selector,point.x,point.y,elapsed);
+        return true;
+    }
+    if(g_intent.lx || g_intent.ly)Control_WorldDirection(g_intent.lx,g_intent.ly,&jump.dx,&jump.dy);
+    unsigned elapsed=g_input.now-jump.started;if(elapsed>jump.expand_ms)elapsed=jump.expand_ms;jump.preview_elapsed=elapsed;
+    /* 按本次开始时保存的扩散耗时匀速到原上限，途中配置变化不改已有预览。 */
+    int minimum=jump.maximum<32 ? jump.maximum:32;
+    int distance=minimum+(int)((int64_t)(jump.maximum-minimum)*elapsed/jump.expand_ms);
+    int64_t goal_x=(int)Read32(role,0x2C)+(int64_t)lroundf(jump.dx*distance);
+    int64_t goal_y=(int)Read32(role,0x30)+(int64_t)lroundf(jump.dy*distance);
+    if(goal_x<INT32_MIN || goal_x>INT32_MAX || goal_y<INT32_MIN || goal_y>INT32_MAX){jump_cancel();return true;}
+    jump.point=(WorldPoint){(int)goal_x,(int)goal_y};
+    return true; /* 预览及释放当帧都不走摇杆移动/普攻/调查。 */
+}
+bool Game_JumpAnchor(POINT *point)
+{
+    if(!point || !jump.active || !g_profile || g_intent.layer!=LAYER_GAME ||
+        !g_input.connected || !g_input.focused || jump.world!=world() ||
+        !Game_Player() || jump.actor!=Read32(Game_Player(),0x14))return false;
+    if(!g_profile->projection || !Memory_Readable((void *)g_profile->projection_global,0x14))return false;
+    /* 使用原投影函数求屏幕0点与两条基向量，再解二维方程；相机/滚屏字段由原函数读取。
+     * 不写MouseManager。屏幕指示与正式交回的世界落点使用同一个point。 */
+    typedef int (__attribute__((thiscall)) *Projection)(void *,WorldPoint *,int,int);
+    Projection project=(Projection)g_profile->projection;void *camera=(void *)g_profile->projection_global;
+    WorldPoint base,xaxis,yaxis;project(camera,&base,0,0);project(camera,&xaxis,1,0);project(camera,&yaxis,0,1);
+    double a=xaxis.x-base.x,b=yaxis.x-base.x,c=xaxis.y-base.y,d=yaxis.y-base.y;
+    double determinant=a*d-b*c;if(fabs(determinant)<0.01)return false;
+    double x=jump.point.x-base.x,y=jump.point.y-base.y;
+    double sx=(x*d-y*b)/determinant,sy=(a*y-c*x)/determinant;
+    if(sx<-65536 || sx>65536 || sy<-65536 || sy>65536)return false;
+    point->x=(LONG)lround(sx);point->y=(LONG)lround(sy);return true;
 }
 
 void Game_Update(void)
@@ -313,6 +412,7 @@ void Game_Update(void)
     if (owned_world && owned_world!=world()) Game_Release();
     if (g_intent.lx!=0 || g_intent.ly!=0) { facing_x=g_intent.lx; facing_y=g_intent.ly; }
     owned_world=world();
+    if(jump_update(me))return;
     shortcuts();
     bool entering=Inspect_Update(me);
     if (g_intent.layer==LAYER_GAME && (g_intent.pressed & KEY(PAD_A))) {
@@ -392,7 +492,7 @@ void Game_Keyboard(BYTE *keys)
         static const int keys_vk[]={'C','V','N','B'};
         for (unsigned i=0;i<4;++i) if (g_intent.pressed & KEY(buttons[i])) keys[keys_vk[i]]|=0x80;
     } else if (g_intent.layer==LAYER_MENU) {
-        /* 首版只桥接原版已经支持的键盘导航；格子与几何 Focus 不在此处伪装成已完成。 */
+        /* 未接通页面仅桥接原版已有的键盘导航，不推测鼠标确认业务。 */
         /* Enter 在游戏内会打开控制台。没有确认当前页面的原生确认事件前，A 不注入键盘。 */
         if (g_intent.pressed & KEY(PAD_B)) keys[VK_ESCAPE]|=0x80;
         static const int buttons[]={PAD_UP,PAD_DOWN,PAD_LEFT,PAD_RIGHT};

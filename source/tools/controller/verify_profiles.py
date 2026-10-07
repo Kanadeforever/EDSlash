@@ -141,7 +141,7 @@ def verify_baselines(data):
         assert end_call.hex()==profile['end_call_bytes'] and end_call[0]==0xe8
         assert profile['addresses']['end_call']+5+struct.unpack_from('<i',end_call,1)[0]==profile['addresses']['end_record']
         # 新CALL包装也必须解码回真实目标；只验证函数头不能证明调用点选对。
-        for call_key,callee_key in [('right_icon_call','icon_draw'),('dodge_init_call','dodge_init'),('dodge_motion_call','dodge_motion'),('inspect_hover_call','inspect_hover'),('menu_talk_picker_call','menu_talk_picker'),('cursor_sprite_call1','cursor_sprite_draw'),('cursor_sprite_call2','cursor_sprite_draw')]:
+        for call_key,callee_key in [('icon_focus_call','cursor_sprite_draw'),('right_icon_call','icon_draw'),('dodge_init_call','dodge_init'),('dodge_motion_call','dodge_motion'),('inspect_hover_call','inspect_hover'),('menu_talk_picker_call','menu_talk_picker'),('cursor_sprite_call1','cursor_sprite_draw'),('cursor_sprite_call2','cursor_sprite_draw')]:
             call=pe.read(profile['addresses'][call_key],5)
             assert call[0]==0xE8 and profile['addresses'][call_key]+5+struct.unpack_from('<i',call,1)[0]==profile['addresses'][callee_key]
         assert struct.unpack('<I',pe.read(profile['addresses']['menu_system_vtable']+0x24,4))[0]==profile['addresses']['menu_system_primary']
@@ -169,6 +169,17 @@ def verify_baselines(data):
         for key in ('menu_shop_position_call1','menu_shop_position_call2','menu_inlay_position_call'):
             call=pe.read(profile['addresses'][key],6)
             assert call[:2]==b'\xff\x15' and struct.unpack('<I',call[2:])[0]==profile['addresses']['cursor_position_iat']
+        # 原屏幕投影生产点的ECX对象与基础JM83的资源21,1取值链，两作分别从原EXE验证。
+        projection_call=0x474533 if profile['game_id']==1 else 0x482DB3
+        assert pe.read(projection_call-5,5)==b'\xB9'+struct.pack('<I',profile['addresses']['projection_global'])
+        primary=profile['addresses']['menu_skill_primary']
+        assert pe.read(primary+9,5)==b'\xB9'+struct.pack('<I',profile['addresses']['inventory_root'])
+        player_call=pe.read(primary+14,5)
+        assert player_call[0]==0xE8 and primary+19+struct.unpack('<i',player_call[1:])[0]==profile['addresses']['inventory_get']
+        basic=profile['addresses']['menu_skill_primary']+0x376
+        assert pe.read(basic,10)==bytes.fromhex('8b8d080300006a016a21')
+        basic_call=pe.read(basic+10,5)
+        assert basic_call[0]==0xE8 and basic+15+struct.unpack('<i',basic_call[1:])[0]==profile['addresses']['template_value']
         assert pe.read(profile['addresses']['projection'],0x45).hex() == profile['projection_bytes']
         assert pe.read(profile['addresses']['world_to_grid'],0x35).hex() == profile['grid_bytes']
         print(f'{profile["name"]}：散列、函数签名、静态地图来源、输入调用点和坐标转换通过')

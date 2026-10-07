@@ -787,7 +787,7 @@ void Menu_Update(void)
     for (unsigned i=0;i<count;++i) if (list[i].id==state.id) {selected=i;found=true;break;}
     if (!found) {
         /* 默认项用业务ID而非鼠标位置，危险按钮不会因为光标停留而成为默认选择。 */
-        unsigned preferred=kind==0 ? 0x22:kind==1 ? 0x2E:kind==4 ? 0x200:kind==SKILL_KIND ? 0x84:
+        unsigned preferred=kind==0 ? 0x22:kind==1 ? 0x2E:kind==4 ? 0x200:kind==SKILL_KIND ? (Read32(root,0xC0)==0x7F ? list[0].id:0x84):
             kind>=BAG_KIND && !state.grid_buttons ? (kind<=SHOP_KIND ? GRID_CELL_BASE:slot_first[kind-BAG_KIND])+state.grid_slot[kind-BAG_KIND]:0x9A;
         for (unsigned i=0;i<count;++i) if (list[i].id==preferred) selected=i;
         /* 上方连招编号代表位置：删除中间项后后继已经补到原位置；只有删末项才失效。

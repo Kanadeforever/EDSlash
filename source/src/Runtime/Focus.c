@@ -15,12 +15,18 @@ typedef struct FocusBackend {
 } FocusBackend;
 #include "FocusData.h"
 static FocusBackend backend;
-static bool ready,subscribed;
+static bool ready,subscribed,begin_subscribed;
 static RuntimeModuleId drawn_owner;
 static struct {RuntimeFocusProvider callback;void *user;} providers[RUNTIME_MODULE_COUNT];
+/* 每个UI帧只询问一次提供者，不能每画一个技能图标就重新遍历整页控件。
+ * 缓存仅含本帧矩形/编号，不保存游戏对象；BEGIN及登记变化立即失效。 */
+static bool snapshot_valid;
+static RuntimeFocusRequest snapshot;
+static RuntimeModuleId snapshot_owner;
 static const char *stage;
 static void set_stage(const char *value){stage=value;}
 const char *RuntimeFocus_Stage(void){return stage;}
+void RuntimeFocus_DrawIcon(unsigned long surface,int x,int y);
 static bool focus_readable(const void *p,size_t bytes)
 {return p && bytes && bytes<=UINT32_MAX && RuntimeWin32_IsReadable((unsigned long)(uintptr_t)p,(unsigned long)bytes);}
 static uint32_t focus_read32(const void *p,unsigned offset)
@@ -71,10 +77,13 @@ static bool valid_rectangle(const RuntimeFocusRect *r)
 }
 static void focus_render(RuntimeEventId event,void *subject,unsigned long surface,unsigned long value,void *user)
 {
-    (void)subject;(void)value;(void)user;drawn_owner=RUNTIME_MODULE_NONE;
+    (void)value;
+    (void)subject;bool icon_pass=user!=NULL;int *position=user;
+    if(event==RUNTIME_EVENT_UI_DRAW_BEGIN){drawn_owner=RUNTIME_MODULE_NONE;snapshot_valid=false;return;}
     if (event!=RUNTIME_EVENT_UI_DRAW_END || !ready || !surface) return;
     RuntimeFocusRequest selected={0};RuntimeModuleId owner=RUNTIME_MODULE_NONE;
-    for(unsigned i=1;i<RUNTIME_MODULE_COUNT;++i) if(providers[i].callback) {
+    if(snapshot_valid){selected=snapshot;owner=snapshot_owner;}
+    else for(unsigned i=1;i<RUNTIME_MODULE_COUNT;++i) if(providers[i].callback) {
         RuntimeFocusRequest candidate={0};
         /* 提供者每帧重新验证当前页面，Runtime不持有CJm/Slot等业务对象。 */
         RuntimeFocusProvider callback=providers[i].callback;void *data=providers[i].user;
@@ -82,7 +91,11 @@ static void focus_render(RuntimeEventId event,void *subject,unsigned long surfac
            valid_rectangle(&candidate.rectangle) &&
            (owner==RUNTIME_MODULE_NONE || candidate.priority>selected.priority)) {selected=candidate;owner=(RuntimeModuleId)i;}
     }
+    snapshot=selected;snapshot_owner=owner;snapshot_valid=true;
     if(owner==RUNTIME_MODULE_NONE)return;
+    /* 先在全部提供者中选最高优先级，再判断阶段；模态不会因绘制阶段不同被低优先级抢走。 */
+    if(icon_pass ? !selected.icon_phase || !position || selected.rectangle.left!=position[0]+1 ||
+        selected.rectangle.top!=position[1]+1 : selected.icon_phase)return;
     RuntimeFocusRect rectangle=selected.rectangle;
     void *hud=focus_readptr((void *)backend.hud_global,0);unsigned count=focus_read32(hud,0x44);
     BYTE *sprites=focus_readptr(hud,0x48);
@@ -124,6 +137,11 @@ static void focus_render(RuntimeEventId event,void *subject,unsigned long surfac
     if(border(frame,(void *)(uintptr_t)surface,&rectangle,sw,sh,(int)focus_read32(hud,0x58),(int)focus_read32(hud,0x5C)))drawn_owner=owner;
     set_stage(NULL);
 }
+void RuntimeFocus_DrawIcon(unsigned long surface,int x,int y)
+{
+    /* 原图标先完成，随后画它自己的框，再由原函数继续画说明。END不重复画此类框。 */
+    int position[2]={x,y};focus_render(RUNTIME_EVENT_UI_DRAW_END,(void *)1,surface,0,position);stage=NULL;
+}
 static void draw(RuntimeEventId event,void *subject,unsigned long surface,unsigned long value,void *user)
 {
     focus_render(event,subject,surface,value,user);stage=NULL;
@@ -138,6 +156,11 @@ int RuntimeFocus_Initialize(const RuntimeContext *runtime)
         BYTE actual[12];
         if(!RuntimeWin32_Read((unsigned long)addresses[i],actual,12) || memcmp(actual,candidate.signatures[i],12))return 0;
     }
+    /* 两阶段分别记成功，END订阅失败后重试不会重复占用BEGIN订阅槽。 */
+    if(!begin_subscribed) {
+        if(!Runtime_Subscribe(RUNTIME_EVENT_UI_DRAW_BEGIN,draw,NULL))return 0;
+        begin_subscribed=true;
+    }
     if(!subscribed) {
         if(!Runtime_Subscribe(RUNTIME_EVENT_UI_DRAW_END,draw,NULL))return 0;
         subscribed=true;
@@ -148,12 +171,12 @@ int RuntimeFocus_Register(RuntimeModuleId owner,RuntimeFocusProvider callback,vo
 {
     if((unsigned)owner==RUNTIME_MODULE_NONE || (unsigned)owner>=RUNTIME_MODULE_COUNT || !callback)return 0;
     if(providers[owner].callback && (providers[owner].callback!=callback || providers[owner].user!=user))return 0;
-    providers[owner].callback=callback;providers[owner].user=user;return 1;
+    providers[owner].callback=callback;providers[owner].user=user;snapshot_valid=false;return 1;
 }
 void RuntimeFocus_Unregister(RuntimeModuleId owner)
 {
     if((unsigned)owner==RUNTIME_MODULE_NONE || (unsigned)owner>=RUNTIME_MODULE_COUNT)return;
-    memset(&providers[owner],0,sizeof providers[owner]);if(drawn_owner==owner)drawn_owner=RUNTIME_MODULE_NONE;
+    snapshot_valid=false;memset(&providers[owner],0,sizeof providers[owner]);if(drawn_owner==owner)drawn_owner=RUNTIME_MODULE_NONE;
 }
 int RuntimeFocus_WasDrawn(RuntimeModuleId owner)
 {return ready && owner!=RUNTIME_MODULE_NONE && drawn_owner==owner;}

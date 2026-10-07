@@ -85,6 +85,10 @@ single_trigger_ultimate = false
 # 新模式连招切换输入：仅single_trigger_ultimate=false时生效：face为LT+Y/B/A/X切1/2/3/4，dpad为LT+上/右/下/左；旧模式固定dpad。
 combo_switch_input = "face"
 
+[controller.skill_aim]
+# 技能落点扩散耗时：从最短距离扩到原技能最远落点的毫秒数；越小越快，范围100～10000，默认1000。每次按B固定本次值，下次预览使用新设置。
+expand_time_ms = 1000
+
 [controller.bindings]
 # game跟随原游戏当前角色快捷绑定；自定义技能按游戏、角色、槽位分别保存。
 default = "game"

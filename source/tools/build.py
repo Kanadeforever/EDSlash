@@ -7,6 +7,9 @@ import os
 import shutil
 import subprocess
 import sys
+# 构建不在源码旁生成Python字节缓存，子进程也遵循同一约束。
+sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 from toolchain import compiler, program
 from controller.verify_profiles import verify_baselines
 from verify_build import verify, verify_variants, verify_debug_info
@@ -14,7 +17,7 @@ from sync_config import plan as config_plan, apply as config_apply
 
 SOURCE = Path(__file__).resolve().parents[1]
 ROOT = SOURCE.parent
-BUILD = SOURCE / ".build"
+BUILD = ROOT / ".build"
 RELEASE = ROOT / "release"
 
 
@@ -27,6 +30,21 @@ def prepare_package(directory, notices):
     """目录配置已经在发布前同步，此处只补随包许可。"""
     directory.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(notices, directory / "第三方许可.txt")
+
+
+def cleanup_legacy_cache():
+    """只清理源码内过时编译缓存，当前根.build保留供增量构建和诊断。"""
+    legacy = SOURCE / '.build'
+    # 删除前验证最终位置；不允许符号链接把清理指向源码之外。
+    if legacy.exists():
+        if legacy.is_symlink() or legacy.resolve() != SOURCE.resolve() / '.build':
+            raise RuntimeError('旧构建目录位置异常，拒绝清理')
+        shutil.rmtree(legacy)
+    for cache in list(SOURCE.rglob('__pycache__')):
+        if cache.is_symlink() or not cache.resolve().is_relative_to(SOURCE.resolve()):
+            raise RuntimeError('源码字节缓存位置异常，拒绝清理')
+        shutil.rmtree(cache)
+    print('源码旧编译缓存已清理；当前缓存与诊断统一在根目录.build。')
 
 
 def main():
@@ -129,6 +147,7 @@ def main():
     evidence["范围"] = "四官方准确EXE；双扳机动作菜单/快捷格/360度交互响应、分帧拾取与既有完整回归"
     evidence["验收边界"] = "原EXE静态及宿主回归不能证明GUI、脚本、设备、地图或Steam DLL全部通过"
     if args.checks_only:
+        cleanup_legacy_cache()
         print("发行件／完整版及全部离线检查通过；未更新发布目录。")
         return
 
@@ -159,6 +178,7 @@ def main():
     report = json.dumps(evidence, ensure_ascii=False, indent=2) + "\n"
     (RELEASE / "统一构建验证.json").write_bytes(report.replace("\n", "\r\n").encode("utf-8"))
     shutil.copyfile(config, SOURCE / "config/EDSlash.toml")
+    cleanup_legacy_cache()
     print(f"双产物完成：{RELEASE / 'EDSlash.asi'} 与 {debug_directory / debug_asi.name}")
     print("两者优化代码相同，发行件去符号，_debug保留源码调试信息；无需SDL3.dll。")
 

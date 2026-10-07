@@ -2,9 +2,9 @@
 #define BLADESWORD_QOL_HOOK_MANAGER_H
 
 /*
- * HookManager 在 v0.1-dev1 先建立“谁拥有哪个物理 Hook”的规则。
+ * HookManager 管理“谁拥有哪个物理 Hook”的规则。
  * DisplayFix 后端为了降低重构风险，暂时仍负责安装它已经实机验证过的具体 Hook；
- * 但它必须先登记为唯一提供者。以后其它模块不能再直接占用同一个 Hook ID，应该订阅 Runtime 事件。
+ * 但它必须先登记为唯一提供者。其它模块不能直接占用同一个 Hook ID，应该订阅 Runtime 事件。
  */
 
 typedef enum SharedHookId {

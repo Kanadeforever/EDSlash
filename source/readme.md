@@ -29,7 +29,7 @@ python source/tools/build.py --upx
 
 两件运行代码和优化级别相同；Debug不等于-O0，完整信息仅留在_debug。运行时配置／日志仍叫EDSlash.toml／EDSlash.log，不能同时安装两件。
 
-中间目录固定source/.build；SDL在其SDL子目录构建，上游源码保持原样。失败保留诊断。无需读取参考资料中的旧SDL ZIP；未携带完整四份游戏EXE时明确跳过样本复核，源码仍可构建，不能称本次四样本验证通过。
+中间目录固定.build；SDL在其SDL子目录构建，上游源码保持原样。失败保留诊断。无需读取参考资料中的旧SDL ZIP；未携带完整四份游戏EXE时明确跳过样本复核，源码仍可构建，不能称本次四样本验证通过。
 
 ## 产物与配置
 
@@ -56,7 +56,7 @@ python source/tools/build.py --upx
 
 ## 工具与许可
 
-自有构建／验证工具都在tools；详细使用、输入输出和限制见[工具说明](../docs/工具说明.md)。旧run_runtime_checks.py和run_notice_checks.py已统一到CTest，不恢复独立构建别名。
+自有构建／验证工具都在tools；详细使用、输入输出和限制见[工具说明](tools/工具说明.md)。旧run_runtime_checks.py和run_notice_checks.py已统一到CTest，不恢复独立构建别名。
 
 配置标量核心改编自Castle Reforge Runtime TOML v1，已纳入本项目，无外部项目路径依赖。SDL完整固定源码及原始许可保留，版权和实际编译器声明见[配置与SDL第三方许可](../docs/配置与SDL第三方许可.txt)。
 
@@ -64,3 +64,5 @@ python source/tools/build.py --upx
 Guard设置应用测试使用真实TOML与双版本运动回放；test_menu链接生产Control/Menu/Game和真实虚表包装，检查标题无玩家、独立焦点、页面/来源中立门、业务ABI及逐槽失败回滚。游戏内MOD设置界面仍后置，真实高亮/动画/设备时序必须两作实机确认。
 
 编译器发生随机内部错误时，可用`python tools/build.py --jobs 1`串行复核；默认并行数6，不改变生产O2或发行/debug同一次链接的规则。
+
+GCC16的SDL HID单元使用-fno-ipa-cp-clone，避免编译器丢失被函数表引用的静态包装函数；其余单元和完整上游源码／后端不改。构建成功后清理源码内旧.build及Python字节缓存，当前根.build保留增量产物／诊断。

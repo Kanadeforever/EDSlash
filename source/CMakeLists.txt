@@ -35,6 +35,14 @@ set(SDL_OPENGLES OFF CACHE BOOL "" FORCE)
 set(SDL_VULKAN OFF CACHE BOOL "" FORCE)
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/SDL-release-3.4.16"
                  "${CMAKE_CURRENT_BINARY_DIR}/SDL" EXCLUDE_FROM_ALL)
+# GCC16的IPA克隆可能丢失HID单元内被函数表引用的静态包装函数。
+# 仅该翻译单元关闭克隆；仍用完整上游CMake目标，源码及设备后端不改。
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 16
+   AND CMAKE_C_COMPILER_VERSION VERSION_LESS 17)
+    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/SDL-release-3.4.16/src/hidapi/SDL_hidapi.c"
+        DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/SDL-release-3.4.16"
+        PROPERTIES COMPILE_OPTIONS "-fno-ipa-cp-clone")
+endif()
 file(GLOB_RECURSE EDSLASH_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 add_library(EDSlash SHARED ${EDSLASH_SOURCES})
 set_target_properties(EDSlash PROPERTIES PREFIX "" SUFFIX ".asi" OUTPUT_NAME "EDSlash")
@@ -72,6 +80,9 @@ add_test(NAME test_focus_containment COMMAND test_menu --containment)
 add_test(NAME test_skill_visual_navigation COMMAND test_menu --skill-focus navigation)
 add_test(NAME test_skill_action_frame COMMAND test_menu --skill-focus frame)
 add_test(NAME test_skill_y_focus COMMAND test_menu --skill-focus preserve)
+add_test(NAME test_skill_default_focus COMMAND test_menu --skill-focus default)
+add_test(NAME test_jump COMMAND test_game --jump)
+add_test(NAME test_jump_zero_distance COMMAND test_game --jump-zero)
 # 调查回放使用真实地图格/句柄与原事件包装，不读取游戏进程或真实资源脚本。
 edslash_test(test_inspect src/Modules/Controller/Control.c src/Modules/Controller/Game.c
     src/Modules/Controller/Combat.c src/Modules/Controller/SkillResolver.c

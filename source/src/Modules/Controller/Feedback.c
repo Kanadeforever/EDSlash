@@ -4,14 +4,18 @@
 /* 原版图标入口有九个栈参数，游戏自己清理36字节；fast call 包装保留ECX中的对象。 */
 typedef int (__attribute__((thiscall)) *NativeIconDraw)(void *,int,int,int,int,int,int,int,int,int);
 static BYTE saved_icon_call[5];
-static bool installed,show_action;
+static bool installed,show_action,held_preview;
 static void *action_world,*action_animation;
 static bool runtime_ended;
 static uint32_t action_actor,action_tick;
 static int action_selection;
 
 static void *hud(void) { return ReadPtr((void *)g_profile->skill_global,0); }
-void Feedback_End(void) { show_action=false; }
+void Feedback_End(void) { show_action=false;held_preview=false; }
+void Feedback_HoldSkill(int selection)
+{
+    Feedback_Start(selection,ACTION_SKILL);held_preview=show_action;
+}
 void Feedback_Start(int selection,ActionSource source)
 {
     if (source!=ACTION_SKILL && source!=ACTION_THROW && source!=ACTION_ULTIMATE) {
@@ -27,7 +31,7 @@ void Feedback_Start(int selection,ActionSource source)
     }
     action_selection=selection;action_actor=Read32(role,0x14);
     action_world=ReadPtr((void *)g_profile->world_global,0);
-    action_animation=NULL;runtime_ended=false;action_tick=Read32((void *)g_profile->game_tick,0);show_action=true;
+    action_animation=NULL;runtime_ended=false;held_preview=false;action_tick=Read32((void *)g_profile->game_tick,0);show_action=true;
     /* 必杀技真正建立动作后清掉原版准备态，结束后自然恢复此前右键选择。 */
     if (source==ACTION_ULTIMATE && (int)Read32(hud(),0xBF4)==selection)
         ((This1)g_profile->prepared_set)(hud(),-1);
@@ -51,7 +55,7 @@ bool Feedback_Selection(int *selection,int *icon)
     if (!selection || !icon || !role || !Memory_Readable(ui,0xBFC)) {Feedback_End();return false;}
     /* 先显示原版准备态。准备的有效时间由游戏HUD计数，不新增插件自己的倒计时。 */
     int prepared=(int)Read32(ui,0xBF4);
-    if (prepared>=0) {
+    if (prepared>=0 && !held_preview) {
         *selection=prepared;*icon=((This1)g_profile->icon_resolve)(ui,prepared);return true;
     }
     if (!show_action) return false;
@@ -60,6 +64,9 @@ bool Feedback_Selection(int *selection,int *icon)
     }
     void *runtime=ReadPtr(role,g_profile->active_offset);
     void *animation=(void *)(uintptr_t)((This0)g_profile->animation_get)(role);
+    if (held_preview) {
+        *selection=action_selection;*icon=((This1)g_profile->icon_resolve)(ui,action_selection);return true;
+    }
     if (runtime) {
         /* 同一技能的续段/派生Runtime可能换地址，继续沿用整次快捷动作图标。 */
         action_animation=animation;runtime_ended=false;

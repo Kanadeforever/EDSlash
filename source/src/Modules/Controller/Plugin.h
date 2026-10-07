@@ -21,6 +21,7 @@ typedef struct {
     uintptr_t ui_property;
     uintptr_t skill_groups, methods, game_tick, combo_timeout;
     uintptr_t lookup, skill_eligibility, role_method, method_usable, method_distance;
+    uintptr_t method_range; /* 原Runtime有效距离档getter，每档64世界单位；不是裸距离。 */
     uintptr_t facing_point, facing_direction, direction8, history_call, history_record;
     uintptr_t retry_call;
     uintptr_t end_call,end_record;
@@ -47,6 +48,8 @@ typedef struct {
     /* 读档页与原生软件光标绘制入口，不改世界鼠标采样或真实光标坐标。 */
     uintptr_t menu_load_vtable,menu_load_tick,menu_load_show,menu_load_hover;
     uintptr_t menu_load_select,menu_load_page,menu_load_submit,menu_load_primary,menu_sound;
+    uintptr_t projection_global; /* 原屏幕到世界投影对象，用其原函数反算预览屏幕坐标。 */
+    uintptr_t icon_focus_call; /* 原图标绘制之后、原说明绘制之前的CALL。 */
     uintptr_t cursor_position_call,cursor_position_iat,cursor_sprite_call1,cursor_sprite_call2,cursor_sprite_draw;
     uintptr_t inspect_hover_call,inspect_hover,inspect_portal_gate;
     uintptr_t menu_message_vtable,menu_message_global,menu_message_open,menu_message_text_lookup,menu_message_text_table;
@@ -112,6 +115,8 @@ bool Input_PhysicalDown(int key);
 bool Game_Menu(void);
 void Game_Update(void);
 void Game_Release(void);
+/* 只供软件指针绘制使用，不写MouseManager、真实鼠标或角色位置。 */
+bool Game_JumpAnchor(POINT *point);
 void Game_Keyboard(BYTE *keys);
 SHORT Game_Async(int key, SHORT native);
 void Game_Diagnose(void);

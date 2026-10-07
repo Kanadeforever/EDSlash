@@ -6,6 +6,7 @@
 typedef struct RuntimeFocusRect {int left,top,right,bottom;} RuntimeFocusRect;
 typedef struct RuntimeFocusRequest {
     RuntimeFocusRect rectangle;
+    int icon_phase; /* 方形动作图标要求在原图标之后、说明文字之前画框。 */
     unsigned priority; /* 真正模态/当前业务由提供者决定；多个模块只画最高优先级一项。 */
 } RuntimeFocusRequest;
 typedef int (*RuntimeFocusProvider)(RuntimeFocusRequest *request,void *user);
@@ -18,4 +19,6 @@ void RuntimeFocus_Unregister(RuntimeModuleId owner);
 int RuntimeFocus_WasDrawn(RuntimeModuleId owner);
 /* 供异常记录器查询当前共享绘制阶段；不在绘制中返回NULL。 */
 const char *RuntimeFocus_Stage(void);
+/* 原图标Draw返回后调用；仅绘制与原图标坐标匹配的候选，不移动或重新画文字。 */
+void RuntimeFocus_DrawIcon(unsigned long surface,int x,int y);
 #endif

@@ -97,9 +97,9 @@
           "字段": "mouse_global",
           "数值": "00557D1C",
           "源码使用": [
-            "Combat.c:140",
-            "Combat.c:165",
-            "Game.c:28"
+            "Combat.c:172",
+            "Combat.c:197",
+            "Game.c:35"
           ],
           "已有签名": false,
           "原片段引用": [
@@ -121,10 +121,10 @@
             "ActionMenu.c:80",
             "ActionMenu.c:100",
             "Combat.c:26",
-            "Feedback.c:29",
-            "Feedback.c:40",
-            "Feedback.c:58",
-            "Game.c:26",
+            "Feedback.c:33",
+            "Feedback.c:44",
+            "Feedback.c:62",
+            "Game.c:33",
             "Guard.c:110",
             "Guard.c:132",
             "Guard.c:204",
@@ -149,7 +149,7 @@
           "字段": "entities_global",
           "数值": "00558E4C",
           "源码使用": [
-            "Game.c:189",
+            "Game.c:196",
             "Inspect.c:149"
           ],
           "已有签名": false,
@@ -160,7 +160,7 @@
           "字段": "handles_global",
           "数值": "00558E50",
           "源码使用": [
-            "Game.c:40"
+            "Game.c:47"
           ],
           "已有签名": false,
           "原片段引用": [
@@ -198,13 +198,14 @@
           "数值": "0055BBB0",
           "源码使用": [
             "ActionMenu.c:42",
-            "Combat.c:57",
-            "Combat.c:107",
-            "Combat.c:145",
-            "Combat.c:260",
-            "Combat.c:328",
+            "Combat.c:89",
+            "Combat.c:139",
+            "Combat.c:177",
+            "Combat.c:292",
+            "Combat.c:352",
             "Feedback.c:13",
-            "Game.c:227",
+            "Game.c:244",
+            "Game.c:257",
             "Menu.c:65",
             "Menu.c:74",
             "Menu.c:103",
@@ -227,7 +228,7 @@
           "数值": "00477680",
           "源码使用": [
             "Combat.c:29",
-            "Game.c:66",
+            "Game.c:73",
             "Guard.c:309",
             "Inspect.c:105"
           ],
@@ -244,7 +245,8 @@
           "字段": "install_state",
           "数值": "004281B0",
           "源码使用": [
-            "Game.c:160",
+            "Game.c:167",
+            "Game.c:336",
             "Guard.c:280",
             "Guard.c:417"
           ],
@@ -274,7 +276,7 @@
           "字段": "left_get",
           "数值": "004C40D0",
           "源码使用": [
-            "Combat.c:272"
+            "Combat.c:304"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -294,7 +296,7 @@
           "字段": "right_set",
           "数值": "004C41F0",
           "源码使用": [
-            "Combat.c:58"
+            "Combat.c:90"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -320,7 +322,7 @@
           "字段": "relation",
           "数值": "0044F9C0",
           "源码使用": [
-            "Game.c:180"
+            "Game.c:187"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -332,7 +334,7 @@
           "字段": "template_value",
           "数值": "004D0230",
           "源码使用": [
-            "Game.c:177",
+            "Game.c:184",
             "Menu.c:210",
             "Menu.c:211",
             "Menu.c:224",
@@ -391,7 +393,7 @@
           "字段": "quick_use",
           "数值": "004C3CA0",
           "源码使用": [
-            "Game.c:232"
+            "Game.c:262"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -410,7 +412,10 @@
         {
           "字段": "projection",
           "数值": "004F1390",
-          "源码使用": [],
+          "源码使用": [
+            "Game.c:378",
+            "Game.c:382"
+          ],
           "已有签名": true,
           "原片段引用": [
             "resolver 00474533 call 0x4f1390"
@@ -421,8 +426,8 @@
           "字段": "world_to_grid",
           "数值": "0040B0E0",
           "源码使用": [
-            "Game.c:85",
-            "Game.c:93",
+            "Game.c:92",
+            "Game.c:100",
             "Guard.c:227",
             "Inspect.c:136",
             "Inspect.c:157",
@@ -440,8 +445,8 @@
           "字段": "ui_property",
           "数值": "004D0210",
           "源码使用": [
-            "Feedback.c:91",
-            "Feedback.c:95",
+            "Feedback.c:98",
+            "Feedback.c:102",
             "Menu.c:97",
             "SkillResolver.c:62",
             "SkillResolver.c:67"
@@ -463,8 +468,8 @@
           "字段": "skill_groups",
           "数值": "005486F8",
           "源码使用": [
-            "Combat.c:269",
-            "Feedback.c:96",
+            "Combat.c:301",
+            "Feedback.c:103",
             "SkillResolver.c:69"
           ],
           "已有签名": false,
@@ -483,6 +488,7 @@
           "字段": "methods",
           "数值": "00548C50",
           "源码使用": [
+            "Game.c:326",
             "SkillResolver.c:58",
             "SkillResolver.c:78",
             "SkillResolver.c:86"
@@ -498,8 +504,8 @@
           "数值": "005485BC",
           "源码使用": [
             "Combat.c:28",
-            "Feedback.c:30",
-            "Feedback.c:70",
+            "Feedback.c:34",
+            "Feedback.c:77",
             "Menu.c:833",
             "SkillResolver.c:24"
           ],
@@ -516,7 +522,8 @@
           "字段": "combo_timeout",
           "数值": "00544DA0",
           "源码使用": [
-            "Combat.c:226"
+            "Combat.c:79",
+            "Combat.c:258"
           ],
           "已有签名": false,
           "原片段引用": [
@@ -528,8 +535,9 @@
           "字段": "lookup",
           "数值": "004D2570",
           "源码使用": [
-            "Combat.c:269",
-            "Feedback.c:96",
+            "Combat.c:301",
+            "Feedback.c:103",
+            "Game.c:326",
             "SkillResolver.c:12"
           ],
           "已有签名": true,
@@ -549,7 +557,7 @@
           "字段": "skill_eligibility",
           "数值": "004231D0",
           "源码使用": [
-            "Feedback.c:100",
+            "Feedback.c:107",
             "SkillResolver.c:68"
           ],
           "已有签名": true,
@@ -562,7 +570,7 @@
           "字段": "role_method",
           "数值": "00420BE0",
           "源码使用": [
-            "Combat.c:309"
+            "Combat.c:70"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -574,7 +582,7 @@
           "字段": "method_usable",
           "数值": "004244C0",
           "源码使用": [
-            "Combat.c:310"
+            "Combat.c:71"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -586,7 +594,7 @@
           "字段": "method_distance",
           "数值": "00423E40",
           "源码使用": [
-            "Combat.c:336"
+            "Combat.c:360"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -598,7 +606,7 @@
           "字段": "facing_point",
           "数值": "00429D60",
           "源码使用": [
-            "Combat.c:319",
+            "Combat.c:343",
             "Guard.c:251",
             "Guard.c:311"
           ],
@@ -612,7 +620,8 @@
           "字段": "facing_direction",
           "数值": "00429CB0",
           "源码使用": [
-            "Combat.c:206",
+            "Combat.c:238",
+            "Game.c:344",
             "Guard.c:304",
             "Inspect.c:52"
           ],
@@ -657,7 +666,7 @@
           "字段": "history_record",
           "数值": "00475070",
           "源码使用": [
-            "Combat.c:149",
+            "Combat.c:181",
             "ControllerModule.c:222",
             "Profile.c:92"
           ],
@@ -715,8 +724,8 @@
           "字段": "history_clear",
           "数值": "00475010",
           "源码使用": [
-            "Combat.c:142",
-            "Combat.c:147"
+            "Combat.c:174",
+            "Combat.c:179"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -921,8 +930,8 @@
           "字段": "combo_get",
           "数值": "004C4A70",
           "源码使用": [
-            "Combat.c:70",
-            "Combat.c:71",
+            "Combat.c:102",
+            "Combat.c:103",
             "Menu.c:220",
             "Menu.c:986"
           ],
@@ -939,7 +948,7 @@
           "字段": "inventory_root",
           "数值": "005585C0",
           "源码使用": [
-            "Game.c:239",
+            "Game.c:269",
             "Menu.c:377"
           ],
           "已有签名": false,
@@ -957,7 +966,7 @@
           "字段": "inventory_get",
           "数值": "004892D0",
           "源码使用": [
-            "Game.c:239",
+            "Game.c:269",
             "Menu.c:377",
             "Menu.c:1106"
           ],
@@ -974,7 +983,7 @@
           "字段": "item_at",
           "数值": "0047F320",
           "源码使用": [
-            "Game.c:240",
+            "Game.c:270",
             "Menu.c:387",
             "Menu.c:408",
             "Menu.c:1106"
@@ -990,8 +999,8 @@
           "字段": "prepared_set",
           "数值": "004C41B0",
           "源码使用": [
-            "Feedback.c:33",
-            "Feedback.c:107"
+            "Feedback.c:37",
+            "Feedback.c:114"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -1001,8 +1010,9 @@
           "字段": "icon_resolve",
           "数值": "004C4080",
           "源码使用": [
-            "Feedback.c:55",
-            "Feedback.c:73"
+            "Feedback.c:59",
+            "Feedback.c:68",
+            "Feedback.c:80"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -1012,11 +1022,11 @@
           "字段": "right_icon_call",
           "数值": "004C35FE",
           "源码使用": [
-            "Feedback.c:118",
-            "Feedback.c:130",
-            "Feedback.c:133",
-            "Feedback.c:134",
-            "Feedback.c:135"
+            "Feedback.c:125",
+            "Feedback.c:137",
+            "Feedback.c:140",
+            "Feedback.c:141",
+            "Feedback.c:142"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -1026,8 +1036,8 @@
           "字段": "icon_draw",
           "数值": "004CA880",
           "源码使用": [
-            "Feedback.c:82",
-            "Feedback.c:122"
+            "Feedback.c:89",
+            "Feedback.c:129"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -1037,7 +1047,7 @@
           "字段": "throw_group",
           "数值": "00420C80",
           "源码使用": [
-            "Feedback.c:24"
+            "Feedback.c:28"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -1093,8 +1103,8 @@
           "字段": "map_bounds",
           "数值": "0040DB70",
           "源码使用": [
-            "Game.c:73",
-            "Game.c:85",
+            "Game.c:80",
+            "Game.c:92",
             "Guard.c:210"
           ],
           "已有签名": true,
@@ -1110,8 +1120,8 @@
           "字段": "cell_passable",
           "数值": "0042C130",
           "源码使用": [
-            "Game.c:78",
             "Game.c:85",
+            "Game.c:92",
             "Guard.c:219"
           ],
           "已有签名": true,
@@ -1148,8 +1158,8 @@
           "字段": "animation_get",
           "数值": "0042B1F0",
           "源码使用": [
-            "Feedback.c:44",
-            "Feedback.c:62"
+            "Feedback.c:48",
+            "Feedback.c:66"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -1159,7 +1169,7 @@
           "字段": "animation_finished",
           "数值": "004F4E30",
           "源码使用": [
-            "Feedback.c:69"
+            "Feedback.c:76"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -1461,7 +1471,7 @@
           "字段": "cursor_position_call",
           "数值": "004EDA3C",
           "源码使用": [
-            "Cursor.c:54"
+            "Cursor.c:64"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -1471,7 +1481,7 @@
           "字段": "cursor_sprite_call1",
           "数值": "004EDB46",
           "源码使用": [
-            "Cursor.c:54"
+            "Cursor.c:64"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -1481,7 +1491,7 @@
           "字段": "cursor_sprite_call2",
           "数值": "004EDB77",
           "源码使用": [
-            "Cursor.c:54"
+            "Cursor.c:64"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -1491,8 +1501,9 @@
           "字段": "cursor_sprite_draw",
           "数值": "004F4BE0",
           "源码使用": [
-            "Cursor.c:50",
-            "Cursor.c:87"
+            "Cursor.c:52",
+            "Cursor.c:58",
+            "Cursor.c:97"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -1532,7 +1543,7 @@
           "字段": "cursor_position_iat",
           "数值": "005283C8",
           "源码使用": [
-            "Cursor.c:83",
+            "Cursor.c:93",
             "Menu.c:1137"
           ],
           "已有签名": false,
@@ -1996,6 +2007,7 @@
           "字段": "menu_skill_vtable",
           "数值": "0052A118",
           "源码使用": [
+            "Cursor.c:25",
             "Menu.c:60",
             "Menu.c:1052"
           ],
@@ -2761,6 +2773,40 @@
           "已有签名": true,
           "原片段引用": [],
           "证据类型": "12字节签名及既有关系核对"
+        },
+        {
+          "字段": "icon_focus_call",
+          "数值": "004CA8D4",
+          "源码使用": [
+            "Cursor.c:64"
+          ],
+          "已有签名": false,
+          "原片段引用": [],
+          "证据类型": "地址字段，见原引用/专项检查"
+        },
+        {
+          "字段": "projection_global",
+          "数值": "005608F0",
+          "源码使用": [
+            "Game.c:378",
+            "Game.c:382"
+          ],
+          "已有签名": false,
+          "原片段引用": [
+            "resolver 0047452E mov ecx, 0x5608f0",
+            "原动态物件选择器 0044EDF7 mov ecx, 0x5608f0"
+          ],
+          "证据类型": "地址字段，见原引用/专项检查"
+        },
+        {
+          "字段": "method_range",
+          "数值": "00423F40",
+          "源码使用": [
+            "Game.c:330"
+          ],
+          "已有签名": true,
+          "原片段引用": [],
+          "证据类型": "12字节签名及既有关系核对"
         }
       ],
       "独立偏移证据": {
@@ -2871,6 +2917,16 @@
           "原返回": "004776D2 ret 0x10"
         },
         {
+          "字段": "role_method",
+          "栈字节": 4,
+          "原返回": "00420C25 ret 4"
+        },
+        {
+          "字段": "method_usable",
+          "栈字节": 4,
+          "原返回": "00424637 ret 4"
+        },
+        {
           "字段": "right_set",
           "栈字节": 4,
           "原返回": "004C422D ret 4"
@@ -2904,16 +2960,6 @@
           "字段": "left_get",
           "栈字节": 0,
           "原返回": "004C40D6 ret "
-        },
-        {
-          "字段": "role_method",
-          "栈字节": 4,
-          "原返回": "00420C25 ret 4"
-        },
-        {
-          "字段": "method_usable",
-          "栈字节": 4,
-          "原返回": "00424637 ret 4"
         },
         {
           "字段": "facing_point",
@@ -3009,6 +3055,11 @@
           "字段": "item_at",
           "栈字节": 4,
           "原返回": "0047F332 ret 4"
+        },
+        {
+          "字段": "method_range",
+          "栈字节": 4,
+          "原返回": "00423F71 ret 4"
         },
         {
           "字段": "guard_get",
@@ -3589,9 +3640,9 @@
           "字段": "mouse_global",
           "数值": "00588BA8",
           "源码使用": [
-            "Combat.c:140",
-            "Combat.c:165",
-            "Game.c:28"
+            "Combat.c:172",
+            "Combat.c:197",
+            "Game.c:35"
           ],
           "已有签名": false,
           "原片段引用": [
@@ -3613,10 +3664,10 @@
             "ActionMenu.c:80",
             "ActionMenu.c:100",
             "Combat.c:26",
-            "Feedback.c:29",
-            "Feedback.c:40",
-            "Feedback.c:58",
-            "Game.c:26",
+            "Feedback.c:33",
+            "Feedback.c:44",
+            "Feedback.c:62",
+            "Game.c:33",
             "Guard.c:110",
             "Guard.c:132",
             "Guard.c:204",
@@ -3641,7 +3692,7 @@
           "字段": "entities_global",
           "数值": "00589E34",
           "源码使用": [
-            "Game.c:189",
+            "Game.c:196",
             "Inspect.c:149"
           ],
           "已有签名": false,
@@ -3652,7 +3703,7 @@
           "字段": "handles_global",
           "数值": "00589E38",
           "源码使用": [
-            "Game.c:40"
+            "Game.c:47"
           ],
           "已有签名": false,
           "原片段引用": [
@@ -3690,13 +3741,14 @@
           "数值": "0058D164",
           "源码使用": [
             "ActionMenu.c:42",
-            "Combat.c:57",
-            "Combat.c:107",
-            "Combat.c:145",
-            "Combat.c:260",
-            "Combat.c:328",
+            "Combat.c:89",
+            "Combat.c:139",
+            "Combat.c:177",
+            "Combat.c:292",
+            "Combat.c:352",
             "Feedback.c:13",
-            "Game.c:227",
+            "Game.c:244",
+            "Game.c:257",
             "Menu.c:65",
             "Menu.c:74",
             "Menu.c:103",
@@ -3720,7 +3772,7 @@
           "数值": "00486090",
           "源码使用": [
             "Combat.c:29",
-            "Game.c:66",
+            "Game.c:73",
             "Guard.c:309",
             "Inspect.c:105"
           ],
@@ -3737,7 +3789,8 @@
           "字段": "install_state",
           "数值": "00431160",
           "源码使用": [
-            "Game.c:160",
+            "Game.c:167",
+            "Game.c:336",
             "Guard.c:280",
             "Guard.c:417"
           ],
@@ -3767,7 +3820,7 @@
           "字段": "left_get",
           "数值": "004D86B0",
           "源码使用": [
-            "Combat.c:272"
+            "Combat.c:304"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -3787,7 +3840,7 @@
           "字段": "right_set",
           "数值": "004D87D0",
           "源码使用": [
-            "Combat.c:58"
+            "Combat.c:90"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -3813,7 +3866,7 @@
           "字段": "relation",
           "数值": "0045B680",
           "源码使用": [
-            "Game.c:180"
+            "Game.c:187"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -3825,7 +3878,7 @@
           "字段": "template_value",
           "数值": "004E4F10",
           "源码使用": [
-            "Game.c:177",
+            "Game.c:184",
             "Menu.c:210",
             "Menu.c:211",
             "Menu.c:224",
@@ -3884,7 +3937,7 @@
           "字段": "quick_use",
           "数值": "004D8260",
           "源码使用": [
-            "Game.c:232"
+            "Game.c:262"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -3903,7 +3956,10 @@
         {
           "字段": "projection",
           "数值": "00507E60",
-          "源码使用": [],
+          "源码使用": [
+            "Game.c:378",
+            "Game.c:382"
+          ],
           "已有签名": true,
           "原片段引用": [
             "resolver 00482DB3 call 0x507e60"
@@ -3914,8 +3970,8 @@
           "字段": "world_to_grid",
           "数值": "004125B0",
           "源码使用": [
-            "Game.c:85",
-            "Game.c:93",
+            "Game.c:92",
+            "Game.c:100",
             "Guard.c:227",
             "Inspect.c:136",
             "Inspect.c:157",
@@ -3933,8 +3989,8 @@
           "字段": "ui_property",
           "数值": "004E4EF0",
           "源码使用": [
-            "Feedback.c:91",
-            "Feedback.c:95",
+            "Feedback.c:98",
+            "Feedback.c:102",
             "Menu.c:97",
             "SkillResolver.c:62",
             "SkillResolver.c:67"
@@ -3956,8 +4012,8 @@
           "字段": "skill_groups",
           "数值": "00578CB0",
           "源码使用": [
-            "Combat.c:269",
-            "Feedback.c:96",
+            "Combat.c:301",
+            "Feedback.c:103",
             "SkillResolver.c:69"
           ],
           "已有签名": false,
@@ -3976,6 +4032,7 @@
           "字段": "methods",
           "数值": "00579208",
           "源码使用": [
+            "Game.c:326",
             "SkillResolver.c:58",
             "SkillResolver.c:78",
             "SkillResolver.c:86"
@@ -3991,8 +4048,8 @@
           "数值": "00578B4C",
           "源码使用": [
             "Combat.c:28",
-            "Feedback.c:30",
-            "Feedback.c:70",
+            "Feedback.c:34",
+            "Feedback.c:77",
             "Menu.c:833",
             "SkillResolver.c:24"
           ],
@@ -4009,7 +4066,8 @@
           "字段": "combo_timeout",
           "数值": "005741CC",
           "源码使用": [
-            "Combat.c:226"
+            "Combat.c:79",
+            "Combat.c:258"
           ],
           "已有签名": false,
           "原片段引用": [
@@ -4021,8 +4079,9 @@
           "字段": "lookup",
           "数值": "004E74A0",
           "源码使用": [
-            "Combat.c:269",
-            "Feedback.c:96",
+            "Combat.c:301",
+            "Feedback.c:103",
+            "Game.c:326",
             "SkillResolver.c:12"
           ],
           "已有签名": true,
@@ -4042,7 +4101,7 @@
           "字段": "skill_eligibility",
           "数值": "0042BA10",
           "源码使用": [
-            "Feedback.c:100",
+            "Feedback.c:107",
             "SkillResolver.c:68"
           ],
           "已有签名": true,
@@ -4055,7 +4114,7 @@
           "字段": "role_method",
           "数值": "004291D0",
           "源码使用": [
-            "Combat.c:309"
+            "Combat.c:70"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -4067,7 +4126,7 @@
           "字段": "method_usable",
           "数值": "0042D120",
           "源码使用": [
-            "Combat.c:310"
+            "Combat.c:71"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -4079,7 +4138,7 @@
           "字段": "method_distance",
           "数值": "0042C9B0",
           "源码使用": [
-            "Combat.c:336"
+            "Combat.c:360"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -4091,7 +4150,7 @@
           "字段": "facing_point",
           "数值": "00432D60",
           "源码使用": [
-            "Combat.c:319",
+            "Combat.c:343",
             "Guard.c:251",
             "Guard.c:311"
           ],
@@ -4105,7 +4164,8 @@
           "字段": "facing_direction",
           "数值": "00432CB0",
           "源码使用": [
-            "Combat.c:206",
+            "Combat.c:238",
+            "Game.c:344",
             "Guard.c:304",
             "Inspect.c:52"
           ],
@@ -4150,7 +4210,7 @@
           "字段": "history_record",
           "数值": "004838F0",
           "源码使用": [
-            "Combat.c:149",
+            "Combat.c:181",
             "ControllerModule.c:222",
             "Profile.c:92"
           ],
@@ -4208,8 +4268,8 @@
           "字段": "history_clear",
           "数值": "00483890",
           "源码使用": [
-            "Combat.c:142",
-            "Combat.c:147"
+            "Combat.c:174",
+            "Combat.c:179"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -4414,8 +4474,8 @@
           "字段": "combo_get",
           "数值": "004D9050",
           "源码使用": [
-            "Combat.c:70",
-            "Combat.c:71",
+            "Combat.c:102",
+            "Combat.c:103",
             "Menu.c:220",
             "Menu.c:986"
           ],
@@ -4432,7 +4492,7 @@
           "字段": "inventory_root",
           "数值": "00589540",
           "源码使用": [
-            "Game.c:239",
+            "Game.c:269",
             "Menu.c:377"
           ],
           "已有签名": false,
@@ -4450,7 +4510,7 @@
           "字段": "inventory_get",
           "数值": "004987F0",
           "源码使用": [
-            "Game.c:239",
+            "Game.c:269",
             "Menu.c:377",
             "Menu.c:1106"
           ],
@@ -4467,7 +4527,7 @@
           "字段": "item_at",
           "数值": "0048E130",
           "源码使用": [
-            "Game.c:240",
+            "Game.c:270",
             "Menu.c:387",
             "Menu.c:408",
             "Menu.c:1106"
@@ -4483,8 +4543,8 @@
           "字段": "prepared_set",
           "数值": "004D8790",
           "源码使用": [
-            "Feedback.c:33",
-            "Feedback.c:107"
+            "Feedback.c:37",
+            "Feedback.c:114"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -4494,8 +4554,9 @@
           "字段": "icon_resolve",
           "数值": "004D8660",
           "源码使用": [
-            "Feedback.c:55",
-            "Feedback.c:73"
+            "Feedback.c:59",
+            "Feedback.c:68",
+            "Feedback.c:80"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -4505,11 +4566,11 @@
           "字段": "right_icon_call",
           "数值": "004D7BBE",
           "源码使用": [
-            "Feedback.c:118",
-            "Feedback.c:130",
-            "Feedback.c:133",
-            "Feedback.c:134",
-            "Feedback.c:135"
+            "Feedback.c:125",
+            "Feedback.c:137",
+            "Feedback.c:140",
+            "Feedback.c:141",
+            "Feedback.c:142"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -4519,8 +4580,8 @@
           "字段": "icon_draw",
           "数值": "004DF510",
           "源码使用": [
-            "Feedback.c:82",
-            "Feedback.c:122"
+            "Feedback.c:89",
+            "Feedback.c:129"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -4530,7 +4591,7 @@
           "字段": "throw_group",
           "数值": "00429270",
           "源码使用": [
-            "Feedback.c:24"
+            "Feedback.c:28"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -4586,8 +4647,8 @@
           "字段": "map_bounds",
           "数值": "00415450",
           "源码使用": [
-            "Game.c:73",
-            "Game.c:85",
+            "Game.c:80",
+            "Game.c:92",
             "Guard.c:210"
           ],
           "已有签名": true,
@@ -4603,8 +4664,8 @@
           "字段": "cell_passable",
           "数值": "00435340",
           "源码使用": [
-            "Game.c:78",
             "Game.c:85",
+            "Game.c:92",
             "Guard.c:219"
           ],
           "已有签名": true,
@@ -4641,8 +4702,8 @@
           "字段": "animation_get",
           "数值": "004342C0",
           "源码使用": [
-            "Feedback.c:44",
-            "Feedback.c:62"
+            "Feedback.c:48",
+            "Feedback.c:66"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -4652,7 +4713,7 @@
           "字段": "animation_finished",
           "数值": "0050BD10",
           "源码使用": [
-            "Feedback.c:69"
+            "Feedback.c:76"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -4953,7 +5014,7 @@
           "字段": "cursor_position_call",
           "数值": "0050409C",
           "源码使用": [
-            "Cursor.c:54"
+            "Cursor.c:64"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -4963,7 +5024,7 @@
           "字段": "cursor_sprite_call1",
           "数值": "005041A6",
           "源码使用": [
-            "Cursor.c:54"
+            "Cursor.c:64"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -4973,7 +5034,7 @@
           "字段": "cursor_sprite_call2",
           "数值": "005041D7",
           "源码使用": [
-            "Cursor.c:54"
+            "Cursor.c:64"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -4983,8 +5044,9 @@
           "字段": "cursor_sprite_draw",
           "数值": "0050BAC0",
           "源码使用": [
-            "Cursor.c:50",
-            "Cursor.c:87"
+            "Cursor.c:52",
+            "Cursor.c:58",
+            "Cursor.c:97"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -5024,7 +5086,7 @@
           "字段": "cursor_position_iat",
           "数值": "005513E4",
           "源码使用": [
-            "Cursor.c:83",
+            "Cursor.c:93",
             "Menu.c:1137"
           ],
           "已有签名": false,
@@ -5482,6 +5544,7 @@
           "字段": "menu_skill_vtable",
           "数值": "00553438",
           "源码使用": [
+            "Cursor.c:25",
             "Menu.c:60",
             "Menu.c:1052"
           ],
@@ -6247,6 +6310,40 @@
           "已有签名": true,
           "原片段引用": [],
           "证据类型": "12字节签名及既有关系核对"
+        },
+        {
+          "字段": "icon_focus_call",
+          "数值": "004DF564",
+          "源码使用": [
+            "Cursor.c:64"
+          ],
+          "已有签名": false,
+          "原片段引用": [],
+          "证据类型": "地址字段，见原引用/专项检查"
+        },
+        {
+          "字段": "projection_global",
+          "数值": "005920A8",
+          "源码使用": [
+            "Game.c:378",
+            "Game.c:382"
+          ],
+          "已有签名": false,
+          "原片段引用": [
+            "resolver 00482DAE mov ecx, 0x5920a8",
+            "原动态物件选择器 0045A716 mov ecx, 0x5920a8"
+          ],
+          "证据类型": "地址字段，见原引用/专项检查"
+        },
+        {
+          "字段": "method_range",
+          "数值": "0042CAB0",
+          "源码使用": [
+            "Game.c:330"
+          ],
+          "已有签名": true,
+          "原片段引用": [],
+          "证据类型": "12字节签名及既有关系核对"
         }
       ],
       "独立偏移证据": {
@@ -6357,6 +6454,16 @@
           "原返回": "004860E2 ret 0x10"
         },
         {
+          "字段": "role_method",
+          "栈字节": 4,
+          "原返回": "00429215 ret 4"
+        },
+        {
+          "字段": "method_usable",
+          "栈字节": 4,
+          "原返回": "0042D29B ret 4"
+        },
+        {
           "字段": "right_set",
           "栈字节": 4,
           "原返回": "004D880D ret 4"
@@ -6390,16 +6497,6 @@
           "字段": "left_get",
           "栈字节": 0,
           "原返回": "004D86B6 ret "
-        },
-        {
-          "字段": "role_method",
-          "栈字节": 4,
-          "原返回": "00429215 ret 4"
-        },
-        {
-          "字段": "method_usable",
-          "栈字节": 4,
-          "原返回": "0042D29B ret 4"
         },
         {
           "字段": "facing_point",
@@ -6495,6 +6592,11 @@
           "字段": "item_at",
           "栈字节": 4,
           "原返回": "0048E142 ret 4"
+        },
+        {
+          "字段": "method_range",
+          "栈字节": 4,
+          "原返回": "0042CAE1 ret 4"
         },
         {
           "字段": "guard_get",
@@ -7091,9 +7193,9 @@
           "字段": "mouse_global",
           "数值": "00557D1C",
           "源码使用": [
-            "Combat.c:140",
-            "Combat.c:165",
-            "Game.c:28"
+            "Combat.c:172",
+            "Combat.c:197",
+            "Game.c:35"
           ],
           "已有签名": false,
           "原片段引用": [
@@ -7115,10 +7217,10 @@
             "ActionMenu.c:80",
             "ActionMenu.c:100",
             "Combat.c:26",
-            "Feedback.c:29",
-            "Feedback.c:40",
-            "Feedback.c:58",
-            "Game.c:26",
+            "Feedback.c:33",
+            "Feedback.c:44",
+            "Feedback.c:62",
+            "Game.c:33",
             "Guard.c:110",
             "Guard.c:132",
             "Guard.c:204",
@@ -7143,7 +7245,7 @@
           "字段": "entities_global",
           "数值": "00558E4C",
           "源码使用": [
-            "Game.c:189",
+            "Game.c:196",
             "Inspect.c:149"
           ],
           "已有签名": false,
@@ -7154,7 +7256,7 @@
           "字段": "handles_global",
           "数值": "00558E50",
           "源码使用": [
-            "Game.c:40"
+            "Game.c:47"
           ],
           "已有签名": false,
           "原片段引用": [
@@ -7192,13 +7294,14 @@
           "数值": "0055BBB0",
           "源码使用": [
             "ActionMenu.c:42",
-            "Combat.c:57",
-            "Combat.c:107",
-            "Combat.c:145",
-            "Combat.c:260",
-            "Combat.c:328",
+            "Combat.c:89",
+            "Combat.c:139",
+            "Combat.c:177",
+            "Combat.c:292",
+            "Combat.c:352",
             "Feedback.c:13",
-            "Game.c:227",
+            "Game.c:244",
+            "Game.c:257",
             "Menu.c:65",
             "Menu.c:74",
             "Menu.c:103",
@@ -7221,7 +7324,7 @@
           "数值": "00477680",
           "源码使用": [
             "Combat.c:29",
-            "Game.c:66",
+            "Game.c:73",
             "Guard.c:309",
             "Inspect.c:105"
           ],
@@ -7238,7 +7341,8 @@
           "字段": "install_state",
           "数值": "004281B0",
           "源码使用": [
-            "Game.c:160",
+            "Game.c:167",
+            "Game.c:336",
             "Guard.c:280",
             "Guard.c:417"
           ],
@@ -7268,7 +7372,7 @@
           "字段": "left_get",
           "数值": "004C40D0",
           "源码使用": [
-            "Combat.c:272"
+            "Combat.c:304"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -7288,7 +7392,7 @@
           "字段": "right_set",
           "数值": "004C41F0",
           "源码使用": [
-            "Combat.c:58"
+            "Combat.c:90"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -7314,7 +7418,7 @@
           "字段": "relation",
           "数值": "0044F9C0",
           "源码使用": [
-            "Game.c:180"
+            "Game.c:187"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -7326,7 +7430,7 @@
           "字段": "template_value",
           "数值": "004D0230",
           "源码使用": [
-            "Game.c:177",
+            "Game.c:184",
             "Menu.c:210",
             "Menu.c:211",
             "Menu.c:224",
@@ -7385,7 +7489,7 @@
           "字段": "quick_use",
           "数值": "004C3CA0",
           "源码使用": [
-            "Game.c:232"
+            "Game.c:262"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -7404,7 +7508,10 @@
         {
           "字段": "projection",
           "数值": "004F1390",
-          "源码使用": [],
+          "源码使用": [
+            "Game.c:378",
+            "Game.c:382"
+          ],
           "已有签名": true,
           "原片段引用": [
             "resolver 00474533 call 0x4f1390"
@@ -7415,8 +7522,8 @@
           "字段": "world_to_grid",
           "数值": "0040B0E0",
           "源码使用": [
-            "Game.c:85",
-            "Game.c:93",
+            "Game.c:92",
+            "Game.c:100",
             "Guard.c:227",
             "Inspect.c:136",
             "Inspect.c:157",
@@ -7434,8 +7541,8 @@
           "字段": "ui_property",
           "数值": "004D0210",
           "源码使用": [
-            "Feedback.c:91",
-            "Feedback.c:95",
+            "Feedback.c:98",
+            "Feedback.c:102",
             "Menu.c:97",
             "SkillResolver.c:62",
             "SkillResolver.c:67"
@@ -7457,8 +7564,8 @@
           "字段": "skill_groups",
           "数值": "005486F8",
           "源码使用": [
-            "Combat.c:269",
-            "Feedback.c:96",
+            "Combat.c:301",
+            "Feedback.c:103",
             "SkillResolver.c:69"
           ],
           "已有签名": false,
@@ -7477,6 +7584,7 @@
           "字段": "methods",
           "数值": "00548C50",
           "源码使用": [
+            "Game.c:326",
             "SkillResolver.c:58",
             "SkillResolver.c:78",
             "SkillResolver.c:86"
@@ -7492,8 +7600,8 @@
           "数值": "005485BC",
           "源码使用": [
             "Combat.c:28",
-            "Feedback.c:30",
-            "Feedback.c:70",
+            "Feedback.c:34",
+            "Feedback.c:77",
             "Menu.c:833",
             "SkillResolver.c:24"
           ],
@@ -7510,7 +7618,8 @@
           "字段": "combo_timeout",
           "数值": "00544DA0",
           "源码使用": [
-            "Combat.c:226"
+            "Combat.c:79",
+            "Combat.c:258"
           ],
           "已有签名": false,
           "原片段引用": [
@@ -7522,8 +7631,9 @@
           "字段": "lookup",
           "数值": "004D2570",
           "源码使用": [
-            "Combat.c:269",
-            "Feedback.c:96",
+            "Combat.c:301",
+            "Feedback.c:103",
+            "Game.c:326",
             "SkillResolver.c:12"
           ],
           "已有签名": true,
@@ -7543,7 +7653,7 @@
           "字段": "skill_eligibility",
           "数值": "004231D0",
           "源码使用": [
-            "Feedback.c:100",
+            "Feedback.c:107",
             "SkillResolver.c:68"
           ],
           "已有签名": true,
@@ -7556,7 +7666,7 @@
           "字段": "role_method",
           "数值": "00420BE0",
           "源码使用": [
-            "Combat.c:309"
+            "Combat.c:70"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -7568,7 +7678,7 @@
           "字段": "method_usable",
           "数值": "004244C0",
           "源码使用": [
-            "Combat.c:310"
+            "Combat.c:71"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -7580,7 +7690,7 @@
           "字段": "method_distance",
           "数值": "00423E40",
           "源码使用": [
-            "Combat.c:336"
+            "Combat.c:360"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -7592,7 +7702,7 @@
           "字段": "facing_point",
           "数值": "00429D60",
           "源码使用": [
-            "Combat.c:319",
+            "Combat.c:343",
             "Guard.c:251",
             "Guard.c:311"
           ],
@@ -7606,7 +7716,8 @@
           "字段": "facing_direction",
           "数值": "00429CB0",
           "源码使用": [
-            "Combat.c:206",
+            "Combat.c:238",
+            "Game.c:344",
             "Guard.c:304",
             "Inspect.c:52"
           ],
@@ -7651,7 +7762,7 @@
           "字段": "history_record",
           "数值": "00475070",
           "源码使用": [
-            "Combat.c:149",
+            "Combat.c:181",
             "ControllerModule.c:222",
             "Profile.c:92"
           ],
@@ -7709,8 +7820,8 @@
           "字段": "history_clear",
           "数值": "00475010",
           "源码使用": [
-            "Combat.c:142",
-            "Combat.c:147"
+            "Combat.c:174",
+            "Combat.c:179"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -7915,8 +8026,8 @@
           "字段": "combo_get",
           "数值": "004C4A70",
           "源码使用": [
-            "Combat.c:70",
-            "Combat.c:71",
+            "Combat.c:102",
+            "Combat.c:103",
             "Menu.c:220",
             "Menu.c:986"
           ],
@@ -7933,7 +8044,7 @@
           "字段": "inventory_root",
           "数值": "005585C0",
           "源码使用": [
-            "Game.c:239",
+            "Game.c:269",
             "Menu.c:377"
           ],
           "已有签名": false,
@@ -7951,7 +8062,7 @@
           "字段": "inventory_get",
           "数值": "004892D0",
           "源码使用": [
-            "Game.c:239",
+            "Game.c:269",
             "Menu.c:377",
             "Menu.c:1106"
           ],
@@ -7968,7 +8079,7 @@
           "字段": "item_at",
           "数值": "0047F320",
           "源码使用": [
-            "Game.c:240",
+            "Game.c:270",
             "Menu.c:387",
             "Menu.c:408",
             "Menu.c:1106"
@@ -7984,8 +8095,8 @@
           "字段": "prepared_set",
           "数值": "004C41B0",
           "源码使用": [
-            "Feedback.c:33",
-            "Feedback.c:107"
+            "Feedback.c:37",
+            "Feedback.c:114"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -7995,8 +8106,9 @@
           "字段": "icon_resolve",
           "数值": "004C4080",
           "源码使用": [
-            "Feedback.c:55",
-            "Feedback.c:73"
+            "Feedback.c:59",
+            "Feedback.c:68",
+            "Feedback.c:80"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -8006,11 +8118,11 @@
           "字段": "right_icon_call",
           "数值": "004C35FE",
           "源码使用": [
-            "Feedback.c:118",
-            "Feedback.c:130",
-            "Feedback.c:133",
-            "Feedback.c:134",
-            "Feedback.c:135"
+            "Feedback.c:125",
+            "Feedback.c:137",
+            "Feedback.c:140",
+            "Feedback.c:141",
+            "Feedback.c:142"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -8020,8 +8132,8 @@
           "字段": "icon_draw",
           "数值": "004CA880",
           "源码使用": [
-            "Feedback.c:82",
-            "Feedback.c:122"
+            "Feedback.c:89",
+            "Feedback.c:129"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -8031,7 +8143,7 @@
           "字段": "throw_group",
           "数值": "00420C80",
           "源码使用": [
-            "Feedback.c:24"
+            "Feedback.c:28"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -8087,8 +8199,8 @@
           "字段": "map_bounds",
           "数值": "0040DB70",
           "源码使用": [
-            "Game.c:73",
-            "Game.c:85",
+            "Game.c:80",
+            "Game.c:92",
             "Guard.c:210"
           ],
           "已有签名": true,
@@ -8104,8 +8216,8 @@
           "字段": "cell_passable",
           "数值": "0042C130",
           "源码使用": [
-            "Game.c:78",
             "Game.c:85",
+            "Game.c:92",
             "Guard.c:219"
           ],
           "已有签名": true,
@@ -8142,8 +8254,8 @@
           "字段": "animation_get",
           "数值": "0042B1F0",
           "源码使用": [
-            "Feedback.c:44",
-            "Feedback.c:62"
+            "Feedback.c:48",
+            "Feedback.c:66"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -8153,7 +8265,7 @@
           "字段": "animation_finished",
           "数值": "004F4E30",
           "源码使用": [
-            "Feedback.c:69"
+            "Feedback.c:76"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -8455,7 +8567,7 @@
           "字段": "cursor_position_call",
           "数值": "004EDA3C",
           "源码使用": [
-            "Cursor.c:54"
+            "Cursor.c:64"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -8465,7 +8577,7 @@
           "字段": "cursor_sprite_call1",
           "数值": "004EDB46",
           "源码使用": [
-            "Cursor.c:54"
+            "Cursor.c:64"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -8475,7 +8587,7 @@
           "字段": "cursor_sprite_call2",
           "数值": "004EDB77",
           "源码使用": [
-            "Cursor.c:54"
+            "Cursor.c:64"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -8485,8 +8597,9 @@
           "字段": "cursor_sprite_draw",
           "数值": "004F4BE0",
           "源码使用": [
-            "Cursor.c:50",
-            "Cursor.c:87"
+            "Cursor.c:52",
+            "Cursor.c:58",
+            "Cursor.c:97"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -8526,7 +8639,7 @@
           "字段": "cursor_position_iat",
           "数值": "005283C8",
           "源码使用": [
-            "Cursor.c:83",
+            "Cursor.c:93",
             "Menu.c:1137"
           ],
           "已有签名": false,
@@ -8990,6 +9103,7 @@
           "字段": "menu_skill_vtable",
           "数值": "0052A118",
           "源码使用": [
+            "Cursor.c:25",
             "Menu.c:60",
             "Menu.c:1052"
           ],
@@ -9755,6 +9869,40 @@
           "已有签名": true,
           "原片段引用": [],
           "证据类型": "12字节签名及既有关系核对"
+        },
+        {
+          "字段": "icon_focus_call",
+          "数值": "004CA8D4",
+          "源码使用": [
+            "Cursor.c:64"
+          ],
+          "已有签名": false,
+          "原片段引用": [],
+          "证据类型": "地址字段，见原引用/专项检查"
+        },
+        {
+          "字段": "projection_global",
+          "数值": "005608F0",
+          "源码使用": [
+            "Game.c:378",
+            "Game.c:382"
+          ],
+          "已有签名": false,
+          "原片段引用": [
+            "resolver 0047452E mov ecx, 0x5608f0",
+            "原动态物件选择器 0044EDF7 mov ecx, 0x5608f0"
+          ],
+          "证据类型": "地址字段，见原引用/专项检查"
+        },
+        {
+          "字段": "method_range",
+          "数值": "00423F40",
+          "源码使用": [
+            "Game.c:330"
+          ],
+          "已有签名": true,
+          "原片段引用": [],
+          "证据类型": "12字节签名及既有关系核对"
         }
       ],
       "独立偏移证据": {
@@ -9865,6 +10013,16 @@
           "原返回": "004776D2 ret 0x10"
         },
         {
+          "字段": "role_method",
+          "栈字节": 4,
+          "原返回": "00420C25 ret 4"
+        },
+        {
+          "字段": "method_usable",
+          "栈字节": 4,
+          "原返回": "00424637 ret 4"
+        },
+        {
           "字段": "right_set",
           "栈字节": 4,
           "原返回": "004C422D ret 4"
@@ -9898,16 +10056,6 @@
           "字段": "left_get",
           "栈字节": 0,
           "原返回": "004C40D6 ret "
-        },
-        {
-          "字段": "role_method",
-          "栈字节": 4,
-          "原返回": "00420C25 ret 4"
-        },
-        {
-          "字段": "method_usable",
-          "栈字节": 4,
-          "原返回": "00424637 ret 4"
         },
         {
           "字段": "facing_point",
@@ -10003,6 +10151,11 @@
           "字段": "item_at",
           "栈字节": 4,
           "原返回": "0047F332 ret 4"
+        },
+        {
+          "字段": "method_range",
+          "栈字节": 4,
+          "原返回": "00423F71 ret 4"
         },
         {
           "字段": "guard_get",
@@ -10583,9 +10736,9 @@
           "字段": "mouse_global",
           "数值": "00588BA8",
           "源码使用": [
-            "Combat.c:140",
-            "Combat.c:165",
-            "Game.c:28"
+            "Combat.c:172",
+            "Combat.c:197",
+            "Game.c:35"
           ],
           "已有签名": false,
           "原片段引用": [
@@ -10607,10 +10760,10 @@
             "ActionMenu.c:80",
             "ActionMenu.c:100",
             "Combat.c:26",
-            "Feedback.c:29",
-            "Feedback.c:40",
-            "Feedback.c:58",
-            "Game.c:26",
+            "Feedback.c:33",
+            "Feedback.c:44",
+            "Feedback.c:62",
+            "Game.c:33",
             "Guard.c:110",
             "Guard.c:132",
             "Guard.c:204",
@@ -10635,7 +10788,7 @@
           "字段": "entities_global",
           "数值": "00589E34",
           "源码使用": [
-            "Game.c:189",
+            "Game.c:196",
             "Inspect.c:149"
           ],
           "已有签名": false,
@@ -10646,7 +10799,7 @@
           "字段": "handles_global",
           "数值": "00589E38",
           "源码使用": [
-            "Game.c:40"
+            "Game.c:47"
           ],
           "已有签名": false,
           "原片段引用": [
@@ -10684,13 +10837,14 @@
           "数值": "0058D164",
           "源码使用": [
             "ActionMenu.c:42",
-            "Combat.c:57",
-            "Combat.c:107",
-            "Combat.c:145",
-            "Combat.c:260",
-            "Combat.c:328",
+            "Combat.c:89",
+            "Combat.c:139",
+            "Combat.c:177",
+            "Combat.c:292",
+            "Combat.c:352",
             "Feedback.c:13",
-            "Game.c:227",
+            "Game.c:244",
+            "Game.c:257",
             "Menu.c:65",
             "Menu.c:74",
             "Menu.c:103",
@@ -10714,7 +10868,7 @@
           "数值": "00486090",
           "源码使用": [
             "Combat.c:29",
-            "Game.c:66",
+            "Game.c:73",
             "Guard.c:309",
             "Inspect.c:105"
           ],
@@ -10731,7 +10885,8 @@
           "字段": "install_state",
           "数值": "00431160",
           "源码使用": [
-            "Game.c:160",
+            "Game.c:167",
+            "Game.c:336",
             "Guard.c:280",
             "Guard.c:417"
           ],
@@ -10761,7 +10916,7 @@
           "字段": "left_get",
           "数值": "004D86B0",
           "源码使用": [
-            "Combat.c:272"
+            "Combat.c:304"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -10781,7 +10936,7 @@
           "字段": "right_set",
           "数值": "004D87D0",
           "源码使用": [
-            "Combat.c:58"
+            "Combat.c:90"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -10807,7 +10962,7 @@
           "字段": "relation",
           "数值": "0045B680",
           "源码使用": [
-            "Game.c:180"
+            "Game.c:187"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -10819,7 +10974,7 @@
           "字段": "template_value",
           "数值": "004E4F10",
           "源码使用": [
-            "Game.c:177",
+            "Game.c:184",
             "Menu.c:210",
             "Menu.c:211",
             "Menu.c:224",
@@ -10878,7 +11033,7 @@
           "字段": "quick_use",
           "数值": "004D8260",
           "源码使用": [
-            "Game.c:232"
+            "Game.c:262"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -10897,7 +11052,10 @@
         {
           "字段": "projection",
           "数值": "00507E60",
-          "源码使用": [],
+          "源码使用": [
+            "Game.c:378",
+            "Game.c:382"
+          ],
           "已有签名": true,
           "原片段引用": [
             "resolver 00482DB3 call 0x507e60"
@@ -10908,8 +11066,8 @@
           "字段": "world_to_grid",
           "数值": "004125B0",
           "源码使用": [
-            "Game.c:85",
-            "Game.c:93",
+            "Game.c:92",
+            "Game.c:100",
             "Guard.c:227",
             "Inspect.c:136",
             "Inspect.c:157",
@@ -10927,8 +11085,8 @@
           "字段": "ui_property",
           "数值": "004E4EF0",
           "源码使用": [
-            "Feedback.c:91",
-            "Feedback.c:95",
+            "Feedback.c:98",
+            "Feedback.c:102",
             "Menu.c:97",
             "SkillResolver.c:62",
             "SkillResolver.c:67"
@@ -10950,8 +11108,8 @@
           "字段": "skill_groups",
           "数值": "00578CB0",
           "源码使用": [
-            "Combat.c:269",
-            "Feedback.c:96",
+            "Combat.c:301",
+            "Feedback.c:103",
             "SkillResolver.c:69"
           ],
           "已有签名": false,
@@ -10970,6 +11128,7 @@
           "字段": "methods",
           "数值": "00579208",
           "源码使用": [
+            "Game.c:326",
             "SkillResolver.c:58",
             "SkillResolver.c:78",
             "SkillResolver.c:86"
@@ -10985,8 +11144,8 @@
           "数值": "00578B4C",
           "源码使用": [
             "Combat.c:28",
-            "Feedback.c:30",
-            "Feedback.c:70",
+            "Feedback.c:34",
+            "Feedback.c:77",
             "Menu.c:833",
             "SkillResolver.c:24"
           ],
@@ -11003,7 +11162,8 @@
           "字段": "combo_timeout",
           "数值": "005741CC",
           "源码使用": [
-            "Combat.c:226"
+            "Combat.c:79",
+            "Combat.c:258"
           ],
           "已有签名": false,
           "原片段引用": [
@@ -11015,8 +11175,9 @@
           "字段": "lookup",
           "数值": "004E74A0",
           "源码使用": [
-            "Combat.c:269",
-            "Feedback.c:96",
+            "Combat.c:301",
+            "Feedback.c:103",
+            "Game.c:326",
             "SkillResolver.c:12"
           ],
           "已有签名": true,
@@ -11036,7 +11197,7 @@
           "字段": "skill_eligibility",
           "数值": "0042BA10",
           "源码使用": [
-            "Feedback.c:100",
+            "Feedback.c:107",
             "SkillResolver.c:68"
           ],
           "已有签名": true,
@@ -11049,7 +11210,7 @@
           "字段": "role_method",
           "数值": "004291D0",
           "源码使用": [
-            "Combat.c:309"
+            "Combat.c:70"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -11061,7 +11222,7 @@
           "字段": "method_usable",
           "数值": "0042D120",
           "源码使用": [
-            "Combat.c:310"
+            "Combat.c:71"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -11073,7 +11234,7 @@
           "字段": "method_distance",
           "数值": "0042C9B0",
           "源码使用": [
-            "Combat.c:336"
+            "Combat.c:360"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -11085,7 +11246,7 @@
           "字段": "facing_point",
           "数值": "00432D60",
           "源码使用": [
-            "Combat.c:319",
+            "Combat.c:343",
             "Guard.c:251",
             "Guard.c:311"
           ],
@@ -11099,7 +11260,8 @@
           "字段": "facing_direction",
           "数值": "00432CB0",
           "源码使用": [
-            "Combat.c:206",
+            "Combat.c:238",
+            "Game.c:344",
             "Guard.c:304",
             "Inspect.c:52"
           ],
@@ -11144,7 +11306,7 @@
           "字段": "history_record",
           "数值": "004838F0",
           "源码使用": [
-            "Combat.c:149",
+            "Combat.c:181",
             "ControllerModule.c:222",
             "Profile.c:92"
           ],
@@ -11202,8 +11364,8 @@
           "字段": "history_clear",
           "数值": "00483890",
           "源码使用": [
-            "Combat.c:142",
-            "Combat.c:147"
+            "Combat.c:174",
+            "Combat.c:179"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -11408,8 +11570,8 @@
           "字段": "combo_get",
           "数值": "004D9050",
           "源码使用": [
-            "Combat.c:70",
-            "Combat.c:71",
+            "Combat.c:102",
+            "Combat.c:103",
             "Menu.c:220",
             "Menu.c:986"
           ],
@@ -11426,7 +11588,7 @@
           "字段": "inventory_root",
           "数值": "00589540",
           "源码使用": [
-            "Game.c:239",
+            "Game.c:269",
             "Menu.c:377"
           ],
           "已有签名": false,
@@ -11444,7 +11606,7 @@
           "字段": "inventory_get",
           "数值": "004987F0",
           "源码使用": [
-            "Game.c:239",
+            "Game.c:269",
             "Menu.c:377",
             "Menu.c:1106"
           ],
@@ -11461,7 +11623,7 @@
           "字段": "item_at",
           "数值": "0048E130",
           "源码使用": [
-            "Game.c:240",
+            "Game.c:270",
             "Menu.c:387",
             "Menu.c:408",
             "Menu.c:1106"
@@ -11477,8 +11639,8 @@
           "字段": "prepared_set",
           "数值": "004D8790",
           "源码使用": [
-            "Feedback.c:33",
-            "Feedback.c:107"
+            "Feedback.c:37",
+            "Feedback.c:114"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -11488,8 +11650,9 @@
           "字段": "icon_resolve",
           "数值": "004D8660",
           "源码使用": [
-            "Feedback.c:55",
-            "Feedback.c:73"
+            "Feedback.c:59",
+            "Feedback.c:68",
+            "Feedback.c:80"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -11499,11 +11662,11 @@
           "字段": "right_icon_call",
           "数值": "004D7BBE",
           "源码使用": [
-            "Feedback.c:118",
-            "Feedback.c:130",
-            "Feedback.c:133",
-            "Feedback.c:134",
-            "Feedback.c:135"
+            "Feedback.c:125",
+            "Feedback.c:137",
+            "Feedback.c:140",
+            "Feedback.c:141",
+            "Feedback.c:142"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -11513,8 +11676,8 @@
           "字段": "icon_draw",
           "数值": "004DF510",
           "源码使用": [
-            "Feedback.c:82",
-            "Feedback.c:122"
+            "Feedback.c:89",
+            "Feedback.c:129"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -11524,7 +11687,7 @@
           "字段": "throw_group",
           "数值": "00429270",
           "源码使用": [
-            "Feedback.c:24"
+            "Feedback.c:28"
           ],
           "已有签名": true,
           "原片段引用": [
@@ -11580,8 +11743,8 @@
           "字段": "map_bounds",
           "数值": "00415450",
           "源码使用": [
-            "Game.c:73",
-            "Game.c:85",
+            "Game.c:80",
+            "Game.c:92",
             "Guard.c:210"
           ],
           "已有签名": true,
@@ -11597,8 +11760,8 @@
           "字段": "cell_passable",
           "数值": "00435340",
           "源码使用": [
-            "Game.c:78",
             "Game.c:85",
+            "Game.c:92",
             "Guard.c:219"
           ],
           "已有签名": true,
@@ -11635,8 +11798,8 @@
           "字段": "animation_get",
           "数值": "004342C0",
           "源码使用": [
-            "Feedback.c:44",
-            "Feedback.c:62"
+            "Feedback.c:48",
+            "Feedback.c:66"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -11646,7 +11809,7 @@
           "字段": "animation_finished",
           "数值": "0050BD10",
           "源码使用": [
-            "Feedback.c:69"
+            "Feedback.c:76"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -11947,7 +12110,7 @@
           "字段": "cursor_position_call",
           "数值": "0050409C",
           "源码使用": [
-            "Cursor.c:54"
+            "Cursor.c:64"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -11957,7 +12120,7 @@
           "字段": "cursor_sprite_call1",
           "数值": "005041A6",
           "源码使用": [
-            "Cursor.c:54"
+            "Cursor.c:64"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -11967,7 +12130,7 @@
           "字段": "cursor_sprite_call2",
           "数值": "005041D7",
           "源码使用": [
-            "Cursor.c:54"
+            "Cursor.c:64"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -11977,8 +12140,9 @@
           "字段": "cursor_sprite_draw",
           "数值": "0050BAC0",
           "源码使用": [
-            "Cursor.c:50",
-            "Cursor.c:87"
+            "Cursor.c:52",
+            "Cursor.c:58",
+            "Cursor.c:97"
           ],
           "已有签名": true,
           "原片段引用": [],
@@ -12018,7 +12182,7 @@
           "字段": "cursor_position_iat",
           "数值": "005513E4",
           "源码使用": [
-            "Cursor.c:83",
+            "Cursor.c:93",
             "Menu.c:1137"
           ],
           "已有签名": false,
@@ -12476,6 +12640,7 @@
           "字段": "menu_skill_vtable",
           "数值": "00553438",
           "源码使用": [
+            "Cursor.c:25",
             "Menu.c:60",
             "Menu.c:1052"
           ],
@@ -13241,6 +13406,40 @@
           "已有签名": true,
           "原片段引用": [],
           "证据类型": "12字节签名及既有关系核对"
+        },
+        {
+          "字段": "icon_focus_call",
+          "数值": "004DF564",
+          "源码使用": [
+            "Cursor.c:64"
+          ],
+          "已有签名": false,
+          "原片段引用": [],
+          "证据类型": "地址字段，见原引用/专项检查"
+        },
+        {
+          "字段": "projection_global",
+          "数值": "005920A8",
+          "源码使用": [
+            "Game.c:378",
+            "Game.c:382"
+          ],
+          "已有签名": false,
+          "原片段引用": [
+            "resolver 00482DAE mov ecx, 0x5920a8",
+            "原动态物件选择器 0045A716 mov ecx, 0x5920a8"
+          ],
+          "证据类型": "地址字段，见原引用/专项检查"
+        },
+        {
+          "字段": "method_range",
+          "数值": "0042CAB0",
+          "源码使用": [
+            "Game.c:330"
+          ],
+          "已有签名": true,
+          "原片段引用": [],
+          "证据类型": "12字节签名及既有关系核对"
         }
       ],
       "独立偏移证据": {
@@ -13351,6 +13550,16 @@
           "原返回": "004860E2 ret 0x10"
         },
         {
+          "字段": "role_method",
+          "栈字节": 4,
+          "原返回": "00429215 ret 4"
+        },
+        {
+          "字段": "method_usable",
+          "栈字节": 4,
+          "原返回": "0042D29B ret 4"
+        },
+        {
           "字段": "right_set",
           "栈字节": 4,
           "原返回": "004D880D ret 4"
@@ -13384,16 +13593,6 @@
           "字段": "left_get",
           "栈字节": 0,
           "原返回": "004D86B6 ret "
-        },
-        {
-          "字段": "role_method",
-          "栈字节": 4,
-          "原返回": "00429215 ret 4"
-        },
-        {
-          "字段": "method_usable",
-          "栈字节": 4,
-          "原返回": "0042D29B ret 4"
         },
         {
           "字段": "facing_point",
@@ -13489,6 +13688,11 @@
           "字段": "item_at",
           "栈字节": 4,
           "原返回": "0048E142 ret 4"
+        },
+        {
+          "字段": "method_range",
+          "栈字节": 4,
+          "原返回": "0042CAE1 ret 4"
         },
         {
           "字段": "guard_get",

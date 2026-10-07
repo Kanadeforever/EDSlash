@@ -44,7 +44,7 @@ class SyncConfigTests(unittest.TestCase):
         self.assertEqual(doc['controller']['interaction']['max_distance'],80)
 
     def test_files_and_concurrent_change(self):
-        scratch = Path(__file__).resolve().parents[1] / '.build'
+        scratch = Path(__file__).resolve().parents[2] / '.build'
         scratch.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=scratch) as directory:
             path = Path(directory) / 'EDSlash.toml'
