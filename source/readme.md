@@ -52,13 +52,13 @@ python source/tools/build.py --upx
 
 当前静态SDL保留Windows Video公共代码以满足上游DirectInput构建依赖；初始化仅SDL_INIT_GAMEPAD，不初始化VIDEO／AUDIO。音频、GPU／渲染、摄像头、对话／托盘及OpenGL系列关闭。完整选项见CMakeLists.txt与构建报告。
 
-编译／宿主／虚拟设备不能替代真实设备、两作实机和多敌人性能测试。功能、配置、角色selector、时序和性能摘要解释见[统一配置与基础迁移说明](../docs/统一配置与基础迁移说明.md)，独立接档见[完整接档说明](../docs/完整接档说明.md)。
+编译／宿主／虚拟设备不能替代真实设备、两作实机和多敌人性能测试。功能、配置、角色selector、时序和性能摘要解释见[统一配置与模组设置说明](../docs/统一配置与模组设置说明.md)，独立接档见[完整接档说明](../docs/完整接档说明.md)。
 
 ## 工具与许可
 
 自有构建／验证工具都在tools；详细使用、输入输出和限制见[工具说明](tools/工具说明.md)。旧run_runtime_checks.py和run_notice_checks.py已统一到CTest，不恢复独立构建别名。
 
-配置标量核心改编自Castle Reforge Runtime TOML v1，已纳入本项目，无外部项目路径依赖。SDL完整固定源码及原始许可保留，版权和实际编译器声明见[配置与SDL第三方许可](../docs/配置与SDL第三方许可.txt)。
+配置标量核心改编自Castle Reforge Runtime TOML v1，已纳入本项目，无外部项目路径依赖。SDL完整固定源码及原始许可保留，版权和实际编译器声明见[配置与SDL第三方许可](../docs/第三方许可/配置与SDL第三方许可.txt)。
 
 
 Guard设置应用测试使用真实TOML与双版本运动回放；test_menu链接生产Control/Menu/Game和真实虚表包装，检查标题无玩家、独立焦点、页面/来源中立门、业务ABI及逐槽失败回滚。游戏内MOD设置界面已接通原暂停、输入与绘制；真实高亮/动画/热应用和设备时序必须两作实机确认。

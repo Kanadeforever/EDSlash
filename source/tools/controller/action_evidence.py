@@ -37,7 +37,7 @@ def main():
         lines.append(f'[原HUD槽更新 {address:08X} 窗口256字节]')
         for instruction in decoder.disasm(pe.read(address,256),address):
             lines.append(f'{instruction.address:08X} {instruction.bytes.hex():24} {instruction.mnemonic:8} {instruction.op_str}'.rstrip())
-    output=ROOT/'docs/手柄动作菜单与快捷格原始证据.txt'
+    output=ROOT/'docs/证据/逆向分析/手柄动作菜单与快捷格原始证据.txt'
     output.write_bytes(('\n'.join(lines)+'\n').replace('\n','\r\n').encode('utf-8'))
     print('四份原始证据已写入',output)
 if __name__=='__main__':

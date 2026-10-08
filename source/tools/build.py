@@ -84,7 +84,7 @@ def main():
     upstream = ROOT / "thirdparty/SDL-release-3.4.16"
     if not (upstream / "CMakeLists.txt").is_file():
         raise RuntimeError("缺少固定SDL 3.4.16完整源码，请从完整项目包恢复thirdparty。")
-    notices = ROOT / "docs/配置与SDL第三方许可.txt"
+    notices = ROOT / "docs/第三方许可/配置与SDL第三方许可.txt"
     if not notices.is_file():
         raise RuntimeError("缺少第三方许可文档，请从完整项目包恢复docs。")
     BUILD.mkdir(parents=True, exist_ok=True)
