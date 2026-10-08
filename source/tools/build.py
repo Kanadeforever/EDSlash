@@ -123,7 +123,7 @@ def main():
     evidence["构建身份"] = {"源码与构建输入SHA256": build_id, "架构": "单ASI、统一TOML及日志、官方静态SDL3.4.16"}
     # 脚本只产生离线证据；历史用户反馈不附到新产物。
     evidence["本轮验证"] = {"宿主回归": "CTest全部通过", "双产物加载": "非游戏进程通过",
-                            "实机": "待用户测试；历史分项反馈见docs/版本与更新记录.md"}
+                            "实机": "待用户测试；历史分项反馈见docs/文档/版本与更新记录.md"}
     selected = {}
     for line in (BUILD / "CMakeCache.txt").read_text(encoding="utf-8").splitlines():
         if line.startswith(("SDL_VIDEO:", "SDL_DIRECTX:", "SDL_AUDIO:", "SDL_JOYSTICK:",
