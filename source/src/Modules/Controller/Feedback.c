@@ -84,8 +84,11 @@ static int __attribute__((fastcall)) right_icon_hook(void *self,void *unused,
     int context,int icon,int selection,int x,int y,int shade,int alpha,int bindings,int side)
 {
     (void)unused;
-    /* 只改图标及选择码；坐标、透明度、明暗和快捷提示全部保留原版绘制参数。 */
-    Feedback_Selection(&selection,&icon);
+    /* 原HUD先按长期右键槽计算灰色模式；临时快捷动作可能来自另一技能。
+     * 已经通过施放资格的临时动作不能继承空套组的灰色/半透明参数。
+     * 仅当前快捷动作/落点预览覆盖这两项，结束后完整恢复原槽的绘制。 */
+    bool temporary=Feedback_Selection(&selection,&icon);
+    if (temporary && show_action && selection==action_selection) {shade=0;alpha=-1;}
     return ((NativeIconDraw)g_profile->icon_draw)(self,context,icon,selection,x,y,shade,alpha,bindings,side);
 }
 

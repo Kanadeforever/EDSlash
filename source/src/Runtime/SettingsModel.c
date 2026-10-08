@@ -66,6 +66,21 @@ int SettingsModel_SetBinding(SettingsModel *m,unsigned slot,ConfigBinding b)
         (b.custom!=0 && b.custom!=1) || (b.right!=0 && b.right!=1))return 0;
     m->draft_bindings[slot-1]=b;return 1;
 }
+void SettingsModel_ResetItem(SettingsModel *m,unsigned index)
+{
+    if(!m || index>=SettingsModel_Count(m->page))return;
+    if(m->page==2){m->draft_bindings[index]=(ConfigBinding){0,0,0};return;}
+    ConfigId id=SettingsModel_Field(m->page,index);const ConfigDescriptor *f=RuntimeConfig_Descriptor(id);
+    if(!f)return;
+    if(f->type==CONFIG_TEXT)strcpy(m->draft.aspect_ratio,f->default_text);
+    else m->draft.values[id]=f->default_value;
+}
+void SettingsModel_ResetPage(SettingsModel *m)
+{
+    if(!m)return;
+    /* 范围限定当前分类；技能页只清当前角色的十四个RT位置。 */
+    for(unsigned i=0;i<SettingsModel_Count(m->page);++i)SettingsModel_ResetItem(m,i);
+}
 int SettingsModel_Dirty(const SettingsModel *m)
 {
     if(!m)return 0;

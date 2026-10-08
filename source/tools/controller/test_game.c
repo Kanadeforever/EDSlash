@@ -219,11 +219,12 @@ static int __cdecl native_dir8(const WorldPoint *point,const WorldPoint *origin)
 static int __attribute__((thiscall)) native_facing(void *self,int point,int origin)
 { CHECK(self==roles[0]);return native_dir8((WorldPoint *)(uintptr_t)point,(WorldPoint *)(uintptr_t)origin); }
 
+static int empty_preset=-1;
 static BYTE preset_heads[4][16],preset_nodes[4][3][12];
 static int __attribute__((thiscall)) native_combo(void *self,int index)
 {
     CHECK(self==hud_data && index>=0 && index<4);
-    unsigned count=emulate_combo ? 3:1;
+    unsigned count=index==empty_preset ? 0:emulate_combo ? 3:1;
     Write32(preset_heads[index],0,count);ptr(preset_heads[index],4,preset_nodes[index][0]);
     for(unsigned i=0;i<count;++i) {
         ptr(preset_nodes[index][i],0,i+1<count ? preset_nodes[index][i+1]:NULL);
@@ -859,12 +860,12 @@ static void quick_cast_regression(bool expansion)
     Combat_Reset();Game_Release();
 }
 
-static int icon_seen,selection_seen,icon_draw_calls;
+static int icon_seen,selection_seen,icon_draw_calls,shade_seen,alpha_seen;
 static int __attribute__((thiscall)) native_icon_draw(void *self,int context,int icon,int selection,
     int x,int y,int shade,int alpha,int bindings,int side)
 {
     CHECK(self==hud_data && context==123 && x==456 && y==789 && bindings==1 && side==0);
-    (void)shade;(void)alpha;icon_seen=icon;selection_seen=selection;++icon_draw_calls;return 17;
+    shade_seen=shade;alpha_seen=alpha;icon_seen=icon;selection_seen=selection;++icon_draw_calls;return 17;
 }
 static void feedback_regression(bool expansion)
 {
@@ -885,7 +886,7 @@ static void feedback_regression(bool expansion)
     CHECK(Feedback_Selection(&selection,&icon) && selection==222);
     typedef int (__attribute__((thiscall)) *IconCall)(void *,int,int,int,int,int,int,int,int,int);
     CHECK(((IconCall)patched_callee(profile.right_icon_call))(hud_data,123,0,-1,456,789,4,32,1,0)==17);
-    CHECK(icon_seen==4222 && selection_seen==222);
+    CHECK(icon_seen==4222 && selection_seen==222 && shade_seen==0 && alpha_seen==-1);
     /* Runtime结束时动画还在收尾，不能把图标立即恢复；真正末帧完成才恢复。 */
     ptr(roles[0],profile.active_offset,NULL);engine_tick++;Combat_End();
     CHECK(Feedback_Selection(&selection,&icon) && selection==222);
@@ -967,6 +968,7 @@ static void new_combat_regression(bool expansion)
             selected=0;g_intent.pressed=KEY(mode==0 ? PAD_UP:PAD_Y);Game_Update();CHECK(selected==0);
         }
     }
+    empty_preset=2;selected=77;Combat_SelectCombo(2);CHECK(selected==77);empty_preset=-1;
     test_single_trigger=0;test_combo_switch=0;
     Write32(groups_data[0],0x32,1000);Write32(groups_data[1],0x32,1001);
     Write32(hud_data,0xBF4,UINT32_MAX);selected=77;releases=0;g_intent.layer=LAYER_DUAL;

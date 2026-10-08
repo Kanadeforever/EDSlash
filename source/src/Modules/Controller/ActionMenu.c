@@ -1,4 +1,5 @@
 #include "Menu.h"
+#include "Combat.h"
 #include <math.h>
 #include <string.h>
 
@@ -22,7 +23,9 @@ static unsigned nodes(void *root,ActionNode *list)
     for (unsigned n=0;node && n<128;++n) {
         if (!Memory_Readable(node,0x40)) break;
         int w=(int)Read32(node,0x1C),h=(int)Read32(node,0x20);
-        if (w>0 && h>0) list[count++]=(ActionNode){node,(int)Read32(node,0x28),
+        int selector=(int)Read32(node,0x28);
+        bool populated=selector>-1 || selector<-4 || Combat_ComboAvailable((unsigned)(-1-selector));
+        if (w>0 && h>0 && populated) list[count++]=(ActionNode){node,(int)Read32(node,0x28),
             (int)Read32(node,0x14)+w/2.0,(int)Read32(node,0x18)+h/2.0};
         void *next=ReadPtr(node,8);if (next==node) break;node=next;
     }

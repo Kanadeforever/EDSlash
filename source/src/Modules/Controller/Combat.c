@@ -81,12 +81,21 @@ bool Combat_PreviewSkill(void *role,int selection,const WorldPoint *point,Resolv
     void *record;
     return resolve_request(role,selection,point,&history,true,out) && first_usable(role,out,&record);
 }
+bool Combat_ComboAvailable(unsigned index)
+{
+    if (index>=4 || !g_profile || !g_profile->combo_get) return false;
+    void *hud=ReadPtr((void *)g_profile->skill_global,0);
+    void *sequence=Memory_Readable(hud,0x130) ? (void *)(uintptr_t)((This1)g_profile->combo_get)(hud,(int)index):NULL;
+    unsigned count=Read32(sequence,0);
+    return Memory_Readable(sequence,12) && count && count<=64 && Memory_Readable(ReadPtr(sequence,4),12);
+}
 void Combat_SelectCombo(unsigned index)
 {
-    if (index>=4) return;
+    /* 空组不改变已装备动作，也不提前改插件连招游标。 */
+    if (!Combat_ComboAvailable(index)) return;
+    void *hud=ReadPtr((void *)g_profile->skill_global,0);
     combat.combo_slot=index;combat.combo_cursor=-1;combat.combo_ready=true;++combat.combo_epoch;
     if (combat.pending && combat.source==ACTION_COMBO) combat.pending=false;
-    void *hud=ReadPtr((void *)g_profile->skill_global,0);
     if (Memory_Readable(hud,0x130)) ((This1)g_profile->right_set)(hud,-1-(int)index);
     Log_Write("[连招] 切换独立套组=%u，下一次 Y 从首项开始。",index+1);
 }

@@ -73,7 +73,7 @@ static int __attribute__((thiscall)) menu_property(void *self,int field)
 {
     if (self==nonroot_resource) return field==13 ? 0:field==2 ? 3:0;
     if (self!=menu_resource) return native_property(self,field);
-    return field==13 ? 1:field==2 ? 3:0;
+    return field==19 ? 111:field==13 ? 1:field==2 ? 3:0;
 }
 static int __attribute__((thiscall)) menu_show(void *self,int active,int mode)
 {
@@ -448,7 +448,7 @@ static void menu_fixture(Profile *profile,bool expansion)
         menu_tables[k][0x30/4]=(uintptr_t)menu_hover;
         menu_tables[k][0x24/4]=(uintptr_t)menu_primary;menu_tables[k][0x3C/4]=(uintptr_t)menu_confirm;
         for (unsigned j=0;j<16;++j) {
-            BYTE *c=menu_children[k][j];ptr(c,0xA4,menu_roots[k]);
+            BYTE *c=menu_children[k][j];ptr(c,0xA4,menu_roots[k]);ptr(c,0x50,menu_resource);
             ptr(c,8,j<15 ? menu_children[k][j+1]:NULL);
             unsigned id=j<6 ? ids[k][j]:0;
             if (k==12) id=j<7 ? 0x41+j:j==7 ? 0x3F:j==8 ? 0x40:0;
@@ -1259,6 +1259,13 @@ static void skill_visual_regression(bool expansion,const char *scenario)
     }
     Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
 }
+static void empty_skill_regression(bool expansion)
+{
+    Profile profile;menu_fixture(&profile,expansion);
+    Write32(menu_children[8][2],0x28,0x81);Write32(menu_roots[8],0xC0,0x80);
+    unavailable_skill=true;activate_page(8);neutral_menu();CHECK(focus_id(8)==0x81);
+    unavailable_skill=false;Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
+}
 static void settings_regression(bool expansion)
 {
     Profile profile;menu_fixture(&profile,expansion);
@@ -1269,7 +1276,10 @@ static void settings_regression(bool expansion)
     menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(settings_children[0],0xDC)==51 && settings_applies==1);
     menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(settings_children[0],0xDC)==51);
     g_input.now+=350;menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(settings_children[0],0xDC)==52);
-    neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(Read32(settings_children[0],0xDC)==52 && !settings_choices);
+    g_input.now+=2000;menu_step(KEY(PAD_RIGHT),0,0);
+    unsigned accelerated=Read32(settings_children[0],0xDC);
+    g_input.now+=40;menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(settings_children[0],0xDC)>accelerated);
+    unsigned value_after=Read32(settings_children[0],0xDC);neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(Read32(settings_children[0],0xDC)==value_after && !settings_choices);
     neutral_menu();Write32(settings_children[0],0xDC,100);menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(settings_children[0],0xDC)==100);
     neutral_menu();Write32(settings_children[0],0xDC,0);menu_step(KEY(PAD_LEFT),0,0);CHECK(Read32(settings_children[0],0xDC)==0);
     for(unsigned i=0;i<3;++i){neutral_menu();menu_step(KEY(PAD_DOWN),0,0);}
@@ -1304,6 +1314,7 @@ int main(int argc,char **argv)
         printf("两作技能视觉导航/动作框/Y焦点场景通过：%s\n",argv[2]);return 0;
     }
     if(argc>1 && !strcmp(argv[1],"--containment")) {unsigned limit=argc>2 && !strcmp(argv[2],"bag") ? 9:15;containment_regression(false,limit);containment_regression(true,limit);printf("两作最终绘制边界格内、动画偏移与非格子指针回放通过\n");return 0;}
+    empty_skill_regression(false);empty_skill_regression(true);
     settings_regression(false);settings_regression(true);
     shared_focus_regression(false);shared_focus_regression(true);
     discard_regression(false);discard_regression(true);

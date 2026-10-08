@@ -9,7 +9,7 @@ typedef struct {
     void *root;
     unsigned id;
     int direction;
-    uint32_t next_repeat;
+    uint32_t next_repeat,hold_since;
     bool barrier,owned;
     /* 0=下方可选技能，1=上方已编排连招；区域由业务类型识别，不按屏幕猜测。 */
     unsigned skill_region;
@@ -173,6 +173,7 @@ static bool allowed(int kind,unsigned id)
 static unsigned buttons(void *root,int kind,MenuButton *out)
 {
     unsigned count=0;
+    void *skill_role=kind==SKILL_KIND ? Game_Player():NULL;
     if (kind==QUICK_KIND) {
         /* 原12个嵌入槽以E4为步长，药/投掷分类由原主操作判断，插件不复制类别规则。 */
         if (!Memory_Readable(root,0xC20)) return 0;
@@ -195,6 +196,17 @@ static unsigned buttons(void *root,int kind,MenuButton *out)
         bool skill_allowed=kind!=SKILL_KIND ||
             (Read32(root,0xC0)==0x7F ? (id>=0x84 && id<=0x8F) || (id>=0xCF && id<=0xDA):
              Read32(root,0xC0)==0x80 && !state.skill_region && id>=0x81 && id<=0x8F);
+        if (kind==SKILL_KIND && id>=0x84 && id<=0x8F) {
+            /* 十二个技能占位控件即使没有技能也可能保留显示标志和矩形。
+             * 原页以资源字段19读取技能组；连招候选还必须通过当前角色已学资格。 */
+            void *resource=ReadPtr(node,0x50);
+            int selector=Memory_Readable(resource,12) ? ((This1)g_profile->ui_property)(resource,19):-1;
+            void *group=selector>=0 && selector<65535 ? (void *)(uintptr_t)((This1)g_profile->lookup)((void *)g_profile->skill_groups,selector):NULL;
+            if (!Memory_Readable(group,0x26)) skill_allowed=false;
+            else if (Read32(root,0xC0)==0x80) {
+                if (!skill_role || ((This1)g_profile->skill_eligibility)(skill_role,selector)==-1) skill_allowed=false;
+            }
+        }
         bool grid_allowed=!grid_kind(kind) || state.grid_buttons;
         bool special_slot=grid_kind(kind) && kind>=CRAFT_KIND && id>=slot_first[kind-BAG_KIND] &&
             id<slot_first[kind-BAG_KIND]+slot_count[kind-BAG_KIND] && !state.grid_buttons;
@@ -539,6 +551,7 @@ static void load_update(void *root)
     }
     if (state.barrier || neutral()) { state.direction=0;return; }
     int dir=direction();
+    if (dir!=state.direction) state.hold_since=g_input.now;
     if (dir && (dir!=state.direction || (int32_t)(g_input.now-state.next_repeat)>=0)) {
         int next=(int)selected+(dir==1 ? -1:dir==2 ? 1:0);
         unsigned before=Read32(root,0xD0);
@@ -730,7 +743,8 @@ static void settings_update(void *root)
                 if (horizontal && state.id!=id) ((This3)g_profile->menu_settings_primary)(root,0,0,NULL);
             }
         }
-        state.next_repeat=g_input.now+(dir==state.direction ? 110u:350u);
+        /* 两秒后提高频率，不增大每步数值，避免跨过想要的音量/明暗值。 */
+        state.next_repeat=g_input.now+(dir!=state.direction ? 350u:g_input.now-state.hold_since>=2000 ? 35u:110u);
     }
     state.direction=dir;
     if (g_intent.pressed & KEY(PAD_A)) {

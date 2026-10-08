@@ -233,7 +233,28 @@ int wmain(void)
     CHECK(model.draft.values[CONFIG_GUARD_PERCENT]==1);repeat_direction(4,2100,&old_dir,&started,&next);CHECK(next==2104);
     model.draft.values[CONFIG_GUARD_PERCENT]=10000;move(1);CHECK(model.draft.values[CONFIG_GUARD_PERCENT]==10000);
     model.draft.values[CONFIG_GUARD_PERCENT]=0;move(2);CHECK(model.draft.values[CONFIG_GUARD_PERCENT]==0);
-    editing=0;SettingsModel_Discard(&model);SettingsWindow_Close();
+    editing=0;footer=picker=0;barrier=0;model.page=1;model.focus[1]=0;
+    ConfigId current=SettingsModel_Field(1,0);const ConfigDescriptor *field=RuntimeConfig_Descriptor(current);
+    model.draft.values[current]=field->default_value+1;activate();
+    SettingsWindow_Pad(0,1u<<4,0,0,0,0,0,0,5000);
+    CHECK(editing && !confirm_reset && model.draft.values[current]==field->default_value);
+    editing=0;model.draft.values[current]=field->default_value+1;
+    SettingsWindow_Pad(0,1u<<4,0,0,0,0,0,0,5020);CHECK(confirm_reset && model.draft.values[current]!=field->default_value);
+    cancel();CHECK(!confirm_reset && model.draft.values[current]!=field->default_value);
+    int other=model.draft.values[CONFIG_CENTER_HUD];model.page=1;confirm_reset=1;activate();
+    CHECK(!confirm_reset && model.draft.values[current]==field->default_value && model.draft.values[CONFIG_CENTER_HUD]==other);
+    model.page=2;model.draft_bindings[0]=(ConfigBinding){1,123,1};model.focus[2]=0;picker=1;
+    SettingsWindow_Pad(0,1u<<4,0,0,0,0,0,0,5040);CHECK(!picker && !model.draft_bindings[0].custom);
+    model.page=2;model.focus[2]=0;activate();CHECK(picker);pick_focus=1;
+    SettingsWindow_Pad(0,1u<<6,0,0,0,0,0,0,5050);
+    CHECK(!picker && model.saved_bindings[0].custom && model.saved_bindings[0].selector==123 && strstr(message,"已保存"));
+    model.page=0;model.draft.values[CONFIG_CENTER_HUD]=!model.saved.values[CONFIG_CENTER_HUD];
+    SettingsWindow_Pad(0,1u<<6,0,0,0,0,0,0,5060);
+    CHECK(!SettingsModel_Dirty(&model) && model.help && strstr(message,"已保存"));
+    paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
+    snapshot_path="settings_saved_fixture.bmp";CHECK(snapshot(&info.bmiHeader,pixels));
+    confirm_reset=1;menu_swap=1;SettingsWindow_Pad(0,1u,0,0,0,0,0,0,5080);CHECK(!confirm_reset);
+    menu_swap=0;editing=0;SettingsModel_Discard(&model);SettingsWindow_Close();
     SelectObject(fixture_dc,previous_bitmap);DeleteObject(bitmap);DeleteDC(fixture_dc);
     if(font){DeleteObject(font);font=NULL;}
     if(help_font){DeleteObject(help_font);help_font=NULL;}

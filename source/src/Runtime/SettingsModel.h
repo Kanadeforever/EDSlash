@@ -16,6 +16,8 @@ void SettingsModel_Move(SettingsModel *model,int direction,unsigned visible_rows
 int SettingsModel_SetInt(SettingsModel *model,ConfigId id,int value);
 int SettingsModel_SetText(SettingsModel *model,const char *value);
 int SettingsModel_SetBinding(SettingsModel *model,unsigned slot,ConfigBinding value);
+void SettingsModel_ResetItem(SettingsModel *model,unsigned index);
+void SettingsModel_ResetPage(SettingsModel *model);
 int SettingsModel_Dirty(const SettingsModel *model);
 int SettingsModel_Save(SettingsModel *model);
 void SettingsModel_Discard(SettingsModel *model);

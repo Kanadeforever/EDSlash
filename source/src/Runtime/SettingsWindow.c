@@ -39,6 +39,7 @@ static uint32_t repeat_at,hold_since;static int previous_direction;
 static int pointer_mode;static POINT previous_pointer;
 static int previous_open_key,previous_left,previous_right,previous_escape;
 static char message[160];
+static int confirm_reset;
 /* 候选只保存整数选择和已转换名字；不缓存角色/技能资源裸指针。 */
 static struct {int selector,icon,kind;char name[128],description[2048];} skills[128];static unsigned skill_count;
 static unsigned skill_view[128],skill_view_count;
@@ -103,7 +104,7 @@ void SettingsWindow_Close(void)
     }
     old_draw=0;
     if(readable(root,0x68))((This2)backend.menu_system_show)(root,0,0);
-    active=editing=picker=confirm_discard=0;root=NULL;old_primary=0;message[0]=0;
+    active=editing=picker=confirm_discard=confirm_reset=0;root=NULL;old_primary=0;message[0]=0;
     RuntimeLog_Write("[模组设置] 关闭并释放原菜单捕获，原游戏恢复。");
 }
 int SettingsWindow_Active(void){return active;}
@@ -204,7 +205,7 @@ static int open_window(void)
     }
     /* 本次窗口固定使用打开时的确认布局，保存交换AB后不在半次编辑中改变含义。 */
     menu_swap=RuntimeConfig_GetInt(CONFIG_MENU_SWAP_AB);
-    active=1;barrier=1;editing=footer=picker=confirm_discard=error_modal=picker_footer=scroll_drag=0;previous_direction=0;message[0]=0;
+    active=1;barrier=1;editing=footer=picker=confirm_discard=confirm_reset=error_modal=picker_footer=scroll_drag=0;previous_direction=0;message[0]=0;
     clear_icon_cache();
     ((This2)backend.menu_system_show)(root,1,0);build_skills();
     RuntimeLog_Write("[模组设置] 打开并取得原系统菜单暂停/捕获，角色selector=%u。",selector);return 1;
@@ -286,16 +287,31 @@ static void scaled_icon(unsigned long context,void *icons,void *animation,int ic
 static void cancel(void)
 {
     if(error_modal){error_modal=0;return;}
+    if(confirm_reset){confirm_reset=0;return;}
     if(confirm_discard){confirm_discard=0;return;}
     if(picker){picker=0;return;}
     if(editing){model.draft.values[edit_id]=edit_before;strcpy(model.draft.aspect_ratio,edit_text_before);editing=0;return;}
     if(SettingsModel_Dirty(&model)){confirm_discard=1;return;}
     SettingsWindow_Close();
 }
+/* 所有保存入口共享反馈；成功后显示在说明区，不只藏在底部操作行。 */
+static void save_settings(void)
+{
+    if(SettingsModel_Save(&model)) {
+        strcpy(message,RuntimeConfig_NeedsRestart() ? "设置已保存。标有待重启的项目会在下次启动游戏时生效。":"设置已保存。修改会在对应操作安全结束后生效。");
+        editing=0;model.help=1;
+    } else {snprintf(message,sizeof message,"%s",RuntimeConfig_Error());error_modal=1;}
+}
+static void reset_item(void)
+{
+    SettingsModel_ResetItem(&model,model.focus[model.page]);
+    strcpy(message,"当前项目已恢复默认值。按START保存后生效。");
+}
 static void activate(void)
 {
     /* 确认由内到外处理：关闭询问、技能候选、底部按钮、当前设置项。
      * 所有编辑都先改草稿，只有“保存并应用”才能写配置文件。 */
+    if(confirm_reset){SettingsModel_ResetPage(&model);confirm_reset=0;strcpy(message,"本页已恢复默认设置。按START保存后生效。");model.help=1;return;}
     if(confirm_discard){SettingsModel_Discard(&model);SettingsWindow_Close();return;}
     if(error_modal){error_modal=0;return;}
     if(picker) {
@@ -308,10 +324,11 @@ static void activate(void)
     }
     if(footer) {
         if(footer==2){cancel();return;}
-        if(SettingsModel_Save(&model))strcpy(message,RuntimeConfig_NeedsRestart() ? "已保存；部分选项需要重启":"已保存；按各项安全边界应用");
-        else {snprintf(message,sizeof message,"%s",RuntimeConfig_Error());error_modal=1;}
+        if(footer==3){confirm_reset=1;return;}
+        save_settings();
         return;
     }
+    message[0]=0;
     if(model.page==2){picker=1;pick_focus=pick_scroll=picker_footer=0;model.help=0;
         ConfigBinding selected=effective_binding(model.focus[2]);picker_rebuild(selected.custom ? selected.selector:-1);
         return;}
@@ -325,7 +342,8 @@ static void move(int dir)
 {
     /* 相同方向在不同层有明确含义：技能候选逐项，数值编辑调值，普通列表按双列走。
      * 列表到最底部再向下才进入保存按钮，不在视觉上下边界斜跳到另一列。 */
-    if(confirm_discard || error_modal)return;
+    if(confirm_discard || confirm_reset || error_modal)return;
+    if(dir)message[0]=0;
     if(picker) {
         if(dir==1 && pick_focus)--pick_focus;
         if(dir==2){if((unsigned)(pick_focus+1)<skill_view_count)++pick_focus;}
@@ -351,8 +369,8 @@ static void move(int dir)
     }
     if(footer) {
         if(dir==1){footer=0;return;}
-        if(dir==3)footer=1;
-        if(dir==4)footer=2;
+        if(dir==3 && footer>1)--footer;
+        if(dir==4 && footer<3)++footer;
         return;
     }
     unsigned before=model.focus[model.page];SettingsModel_Move(&model,dir,6);
@@ -390,11 +408,18 @@ int SettingsWindow_Pad(uint32_t held,uint32_t pressed,int lt,int rt,float lx,flo
     if(pressed || fabsf(lx)>0.55f || fabsf(ly)>0.55f)pointer_mode=0;
     if(barrier) {if(!held && !lt && !rt && lx==0 && ly==0 && rx==0 && ry==0)barrier=0;return 1;}
     if(error_modal){if(pressed&3u)error_modal=0;return 1;}
-    if(confirm_discard){if(pressed&(1u<<(menu_swap ? 1:0)))activate();
+    if(confirm_discard || confirm_reset){if(pressed&(1u<<(menu_swap ? 1:0)))activate();
         else if(pressed&(1u<<(menu_swap ? 0:1)))cancel();
         return 1;}
-    if(pressed&(1u<<9)){editing=picker=footer=0;SettingsModel_Page(&model,-1);}
-    if(pressed&(1u<<10)){editing=picker=footer=0;SettingsModel_Page(&model,1);}
+    /* 已有模态确认优先，普通设置页BACK重置、START保存；不占用战斗键。 */
+    if(pressed&(1u<<6)){if(picker)activate();save_settings();return 1;}
+    if(pressed&(1u<<4)) {
+        if(editing || picker){reset_item();if(picker){picker=0;model.help=1;}}
+        else confirm_reset=1;
+        return 1;
+    }
+    if(pressed&(1u<<9)){editing=picker=footer=0;message[0]=0;SettingsModel_Page(&model,-1);}
+    if(pressed&(1u<<10)){editing=picker=footer=0;message[0]=0;SettingsModel_Page(&model,1);}
     if(!picker && (pressed&(1u<<3)))model.help=!model.help;
     if(pressed&(1u<<(menu_swap ? 1:0)))activate();
     if(pressed&(1u<<(menu_swap ? 0:1)))cancel();
@@ -528,10 +553,11 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         }
         text(dc,cx+(model.page==2 ? 54:8),cy+3,model.page==2 ? 218:264,18,label,RGB(222,205,172));text(dc,cx+(model.page==2 ? 54:8),cy+21,model.page==2 ? 218:264,18,value_text_buffer,dirty ? RGB(255,178,76):RGB(154,198,149));
     }
-    box(dc,x+16,y+378,184,30,RGB(45,36,24),footer==1 ? RGB(204,69,36):RGB(138,103,48));text(dc,x+24,y+384,160,22,"保存并应用",RGB(236,218,178));
-    box(dc,x+216,y+378,184,30,RGB(45,36,24),footer==2 ? RGB(204,69,36):RGB(138,103,48));text(dc,x+224,y+384,160,22,"关闭",RGB(236,218,178));
-    if(!picker){box(dc,x+416,y+378,176,30,RGB(45,36,24),RGB(138,103,48));text(dc,x+424,y+384,160,22,model.help ? "隐藏说明 (Y)":"显示说明 (Y)",RGB(236,218,178));}
-    text(dc,x+16,y+416,576,26,message[0] ? message:(editing ? "左右×1，上下×10，按住两秒加速；Y说明":"LB/RB分类，确认编辑，Y说明；橙色表示未保存"),RGB(207,188,154));
+    box(dc,x+16,y+378,136,30,RGB(45,36,24),footer==1 ? RGB(204,69,36):RGB(138,103,48));text(dc,x+24,y+384,120,22,"保存 (START)",RGB(236,218,178));
+    box(dc,x+160,y+378,136,30,RGB(45,36,24),footer==2 ? RGB(204,69,36):RGB(138,103,48));text(dc,x+168,y+384,120,22,"关闭",RGB(236,218,178));
+    box(dc,x+304,y+378,136,30,RGB(45,36,24),footer==3 ? RGB(204,69,36):RGB(138,103,48));text(dc,x+312,y+384,120,22,editing ? "当前默认(BACK)":"本页默认(BACK)",RGB(236,218,178));
+    if(!picker){box(dc,x+448,y+378,144,30,RGB(45,36,24),RGB(138,103,48));text(dc,x+456,y+384,128,22,model.help ? "隐藏说明 (Y)":"显示说明 (Y)",RGB(236,218,178));}
+    text(dc,x+16,y+416,576,26,message[0] ? message:(editing ? "左右×1，上下×10，长按加速；BACK默认，START保存":"LB/RB分类，BACK本页默认，START保存，Y说明"),RGB(207,188,154));
     paint_scrollbar(dc,x,y);
     if(picker) {
         box(dc,x+16,y+82,576,322,RGB(24,22,18),RGB(194,146,65));
@@ -559,10 +585,11 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         text(dc,x+172,y+314,124,24,menu_swap ? "取消 (A)":"取消 (B)",RGB(236,218,178));
         if(!model.help)text(dc,x+328,y+138,256,190,"左右调整最小单位，上下调整十倍。按住方向两秒后加快，百分比加速更快。\n\n完成只保留这次修改；返回主列表后，选择“保存并应用”才会保存。取消会恢复打开这个调整窗口前的值。\n\n按Y可查看本项的详细说明。",RGB(207,188,154));
     }
-    if((picker || model.help) && !confirm_discard && !error_modal) {
+    if((picker || model.help) && !confirm_discard && !confirm_reset && !error_modal) {
         const char *description;
         if(picker)description=pick_focus>0 && (unsigned)pick_focus<skill_view_count ? skills[skill_view[pick_focus]].description:"未设置任何技能。选择并保存后，按这个RT组合键不会发动技能。";
         else description=model.page==2 ? "先选择一个RT组合键位置并确认，再从已学会的技能中选择。保存后，按住RT并按这个组合键就会直接发动技能，不需要再按鼠标右键。每个角色分别保存。":RuntimeConfig_Descriptor(SettingsModel_Field(model.page,model.focus[model.page]))->description;
+        if(message[0] && !picker)description=message;
         RECT h=editing ? (RECT){328,122,584,362}:help_rectangle();
         box(dc,x+h.left,y+h.top,h.right-h.left,h.bottom-h.top,RGB(28,25,19),RGB(191,145,68));
         if(!help_font)help_font=CreateFontW(-14,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,GB2312_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,DEFAULT_QUALITY,DEFAULT_PITCH,L"宋体");
@@ -573,6 +600,12 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
     if(confirm_discard){box(dc,x+96,y+160,416,116,RGB(26,23,18),RGB(208,151,67));text(dc,x+112,y+176,384,40,menu_swap ? "有未保存修改。B丢弃并关闭，A继续编辑。":"有未保存修改。A丢弃并关闭，B继续编辑。",RGB(238,218,177));
         box(dc,x+112,y+232,176,28,RGB(45,36,24),RGB(164,124,59));text(dc,x+120,y+236,160,22,menu_swap ? "丢弃并关闭 (B)":"丢弃并关闭 (A)",RGB(238,218,177));
         box(dc,x+304,y+232,192,28,RGB(45,36,24),RGB(164,124,59));text(dc,x+312,y+236,176,22,menu_swap ? "继续编辑 (A)":"继续编辑 (B)",RGB(238,218,177));}
+    if(confirm_reset) {
+        box(dc,x+96,y+160,416,116,RGB(26,23,18),RGB(208,151,67));
+        text(dc,x+112,y+176,384,40,"将本页所有项目恢复默认？其它页面不变，保存后生效。",RGB(238,218,177));
+        text(dc,x+112,y+236,176,24,menu_swap ? "恢复默认 (B)":"恢复默认 (A)",RGB(238,218,177));
+        text(dc,x+304,y+236,176,24,menu_swap ? "继续编辑 (A)":"继续编辑 (B)",RGB(238,218,177));
+    }
     if(error_modal) {
         box(dc,x+96,y+138,416,190,RGB(26,23,18),RGB(208,151,67));
         text(dc,x+112,y+152,384,24,"无法保存设置",RGB(255,178,76));
@@ -583,7 +616,7 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
     if(previous)SelectObject(dc,previous);
     if(saved_dc)RestoreDC(dc,saved_dc);
     ((ReleaseDCFn)(uintptr_t)rd(table,0x68))(dd,dc);
-    if(!confirm_discard && !error_modal && !editing && model.page==2) {
+    if(!confirm_discard && !confirm_reset && !error_modal && !editing && model.page==2) {
         /* DC释放后补原图标；避开说明框，不能把后画的图标盖到说明文字上。 */
         void *icons=ptr((void *)backend.settings_icon_global,0),*hud=ptr((void *)backend.skill_global,0);
         unsigned icon_count=rd(icons,0x44);void *sprites=ptr(icons,0x48);
@@ -611,11 +644,11 @@ static void mouse_click(int x,int y)
 {
     /* 坐标已换算为面板坐标。先处理最上层，任何模态都不把点击漏给背后的设置。 */
     if(error_modal){if(x>=208 && x<400 && y>=286 && y<314)error_modal=0;return;}
-    if(confirm_discard){if(y>=232 && y<260){if(x>=112 && x<288)activate();else if(x>=304 && x<496)cancel();}return;}
+    if(confirm_discard || confirm_reset){if(y>=232 && y<260){if(x>=112 && x<288)activate();else if(x>=304 && x<496)cancel();}return;}
     if(editing) {
         if(y>=202 && y<238){if(x>=24 && x<152)move(3);else if(x>=164 && x<304)move(4);}
         if(y>=306 && y<342){if(x>=24 && x<152)activate();else if(x>=164 && x<304)cancel();}
-        if(y>=378 && y<408 && x>=416 && x<592)model.help=!model.help;
+        if(y>=378 && y<408){if(x>=448 && x<592)model.help=!model.help;else if(x>=304 && x<440)reset_item();else if(x>=16 && x<152)save_settings();}
         return;
     }
     unsigned total,visible,top;RECT track;scroll_metrics(&total,&visible,&top,&track);
@@ -631,14 +664,14 @@ static void mouse_click(int x,int y)
         if(item<SettingsModel_Count(model.page)){model.focus[model.page]=item;footer=0;activate();}return;
     }
     if(y>=378 && y<408) {
-        if(x>=416 && x<592)model.help=!model.help;
-        else {if(x>=16 && x<200)footer=1;else if(x>=216 && x<400)footer=2;else return;activate();}
+        if(x>=448 && x<592)model.help=!model.help;
+        else {if(x>=16 && x<152)footer=1;else if(x>=160 && x<296)footer=2;else if(x>=304 && x<440)footer=3;else return;activate();}
     }
 }
 static void mouse_hover(int x,int y)
 {
     /* 只在物理指针移动时更新焦点，静止的鼠标不能抢走手柄正在浏览的项目。 */
-    if(editing || confirm_discard || error_modal || scroll_drag)return;
+    if(editing || confirm_discard || confirm_reset || error_modal || scroll_drag)return;
     if(picker) {
         if(x>=24 && x<304 && y>=122 && y<362) {
             unsigned row=(unsigned)(y-122)/48+(unsigned)pick_scroll;

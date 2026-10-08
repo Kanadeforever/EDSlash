@@ -19,6 +19,7 @@ typedef struct {
 typedef enum { ACTION_LEFT,ACTION_COMBO,ACTION_SKILL,ACTION_THROW,ACTION_ULTIMATE,ACTION_RIGHT } ActionSource;
 /* 快捷请求直接携带选择和来源，不修改右手装备或伪造 Y/鼠标按键。 */
 void Combat_Request(int selection,ActionSource source,bool left_style);
+bool Combat_ComboAvailable(unsigned index);
 void Combat_SelectCombo(unsigned index);
 void Combat_RequestPoint(int selection,const WorldPoint *point);
 /* 和RT同一种快捷技能请求，仅追加显式世界点；不另设跳跃执行来源。 */
