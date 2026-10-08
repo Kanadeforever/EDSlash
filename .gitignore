@@ -7,6 +7,7 @@ pyghidra_mcp_projects/
 __pycache__/
 vendor/
 .build/
+.workspace/
 
 
 # Prerequisites
