@@ -20,6 +20,7 @@ static DWORD __stdcall fake_pid(HWND w,LPDWORD pid){(void)w;*pid=GetCurrentProce
 static unsigned checks,pauses,resumes,original_actions;
 static int fixture_write_result=1;
 #define CHECK(x) do{++checks;if(!(x)){fprintf(stderr,"设置窗口失败 行%d：%s\n",__LINE__,#x);return 1;}}while(0)
+static BYTE native_settings_root[0x300];static uintptr_t native_settings_table[26];static unsigned native_captions;
 static BYTE fake_world[0x100],fake_actor[0x500],fake_player[0x400],fake_root[0x300],fake_ui[0x80],fake_hud[0xD00],default_record[0x20];
 static void *world_ptr=fake_world,*hud_ptr=fake_hud;
 static uintptr_t table[32];
@@ -38,13 +39,15 @@ void RuntimeLog_Write(const char *format,...){(void)format;}
 static void wr(void *p,unsigned offset,uint32_t v){memcpy((BYTE *)p+offset,&v,4);}
 static int __attribute__((thiscall)) get_actor(void *manager){(void)manager;return (int)(uintptr_t)fake_actor;}
 static int __attribute__((thiscall)) get_player(void *manager){(void)manager;return (int)(uintptr_t)fake_player;}
-static int __attribute__((thiscall)) get_root(void *manager,int id){(void)manager;return id==0x2D ? (int)(uintptr_t)fake_root:0;}
+static int __attribute__((thiscall)) get_root(void *manager,int id){(void)manager;return id==0xAA ? (int)(uintptr_t)native_settings_root:id==0x2D ? (int)(uintptr_t)fake_root:0;}
 static int __attribute__((thiscall)) show_root(void *p,int show,int mode)
 {
     (void)mode;wr(p,0x64,(unsigned)show);wr(fake_ui,0x3C,show ? (uint32_t)(uintptr_t)p:0);
     if(show)++pauses;else ++resumes;return 1;
 }
 static int __attribute__((thiscall)) native_action(void *p,int e,int x,void *y){(void)p;(void)e;(void)x;(void)y;++original_actions;return 1;}
+static int __attribute__((thiscall)) native_caption(void *page,unsigned long context,const char *text,int x,int y,int mode)
+{CHECK(page==native_settings_root && context && !strncmp(text,"EDSlash",7) && x==412 && y==314 && !mode);++native_captions;return 1;}
 static BYTE fixture_record[0x40],fixture_choices[16];
 static int __attribute__((thiscall)) no_property(void *p,int i)
 {return p==fixture_record ? (i==2 ? 701:i==15 ? 11:0):p==fixture_choices ? (i==1 ? 1:i==2 ? 701:0):0;}
@@ -255,6 +258,17 @@ int wmain(void)
     snapshot_path="settings_saved_fixture.bmp";CHECK(snapshot(&info.bmiHeader,pixels));
     confirm_reset=1;menu_swap=1;SettingsWindow_Pad(0,1u,0,0,0,0,0,0,5080);CHECK(!confirm_reset);
     menu_swap=0;editing=0;SettingsModel_Discard(&model);SettingsWindow_Close();
+    backend.menu_settings_vtable=(uintptr_t)native_settings_table;backend.menu_settings_show=(uintptr_t)show_root;
+    backend.menu_settings_primary=(uintptr_t)native_action;backend.menu_native_text_draw=(uintptr_t)native_caption;
+    native_settings_table[0x24/4]=(uintptr_t)native_action;wr(native_settings_root,0,(uint32_t)(uintptr_t)native_settings_table);
+    wr(native_settings_root,0x28,0xAA);wr(native_settings_root,0x64,1);wr(fake_world,0x58,0);wr(fake_ui,0x3C,(uint32_t)(uintptr_t)native_settings_root);
+    RuntimeFocusRect entry;CHECK(SettingsWindow_NativeEntryRect(native_settings_root,&entry));
+    paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);CHECK(native_captions==1);
+    unsigned pause_before=pauses;CHECK(SettingsWindow_OpenNative(native_settings_root) && !model.role && pauses==pause_before);
+    model.page=2;activate();CHECK(!picker && strstr(message,"载入角色"));
+    CHECK(!SettingsModel_SetBinding(&model,1,(ConfigBinding){1,123,1}));
+    model.page=0;CHECK(SettingsModel_SetInt(&model,CONFIG_AIM_EXPAND_MS,700));save_settings();CHECK(!SettingsModel_Dirty(&model));
+    SettingsWindow_Close();CHECK(!active && rd(native_settings_root,0x64) && rd(fake_ui,0x3C)==(uint32_t)(uintptr_t)native_settings_root);
     SelectObject(fixture_dc,previous_bitmap);DeleteObject(bitmap);DeleteDC(fixture_dc);
     if(font){DeleteObject(font);font=NULL;}
     if(help_font){DeleteObject(help_font);help_font=NULL;}

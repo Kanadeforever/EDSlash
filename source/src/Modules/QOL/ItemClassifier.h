@@ -19,4 +19,6 @@ int ItemClassifier_IsGroundItem(unsigned long object_address);
 /* 读取原版物品记录的 Type 列并映射为自动拾取使用的语义类别。 */
 int ItemClassifier_GetPickupClass(unsigned long object_address, PickupItemClass* item_class);
 
+/* 取原拾取参数：定义编号来自记录列1，数量来自地面对象85，不写游戏。 */
+int ItemClassifier_GetPickupInfo(unsigned long object,unsigned long *item_id,unsigned long *quantity);
 #endif

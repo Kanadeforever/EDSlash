@@ -120,3 +120,6 @@ int main(void)
     printf("真实延后SHA/SDL/五主桥/Guard失败隔离、回滚及idle代数回归通过：%u项\n",checks);
     return 0;
 }
+
+/* 启动故障回归不创建名称窗口；新游戏随机请求由独立QOL适配回放验证。 */
+int QOLModule_RandomName(void *page){(void)page;return 0;}

@@ -49,9 +49,12 @@ static bool border(void *frame,void *surface,const RuntimeFocusRect *r,int sw,in
         ((SpriteDraw)backend.sprite_draw)(frame,surface,r->left,r->top,mode,shade,0);return true;
     }
     /* 较大的候选框按九块拼接：四角不变，四边重复原边缘片段，中央透明不画。
-     * 这不是拉伸或自制新素材，每段复制的尺寸均在原图内。最大128，绘制次数有界。 */
+     * 这不是拉伸或自制新素材，每段复制的尺寸均在原图内。宽度最大512、高度最大128，并限制拼接次数。 */
     const int b=2;int cw=sw-b*2,ch=sh-b*2;
-    if (cw<=0 || ch<=0 || width<b*2 || height<b*2 || width>128 || height>128) return false;
+    if (cw<=0 || ch<=0 || width<b*2 || height<b*2 || width>512 || height>128) return false;
+    /* 极窄源图可能需要过多重复段，超过96次则保留指针兜底。 */
+    int pieces=4+2*((width-2*b+cw-1)/cw)+2*((height-2*b+ch-1)/ch);
+    if(pieces>96)return false;
     tile(frame,surface,r->left,r->top,b,b,0,0,sw,sh,mode,shade);
     tile(frame,surface,r->right-b,r->top,b,b,sw-b,0,sw,sh,mode,shade);
     tile(frame,surface,r->left,r->bottom-b,b,b,0,sh-b,sw,sh,mode,shade);
@@ -72,7 +75,7 @@ static bool valid_rectangle(const RuntimeFocusRect *r)
 {
     /* 用64位做减法，模块传入坏尺寸也不能溢出为可用矩形。 */
     int64_t width=(int64_t)r->right-r->left,height=(int64_t)r->bottom-r->top;
-    return width>=4 && height>=4 && width<=128 && height<=128 && r->left>=-65536 && r->left<=65536 &&
+    return width>=4 && height>=4 && width<=512 && height<=128 && r->left>=-65536 && r->left<=65536 &&
            r->top>=-65536 && r->top<=65536;
 }
 static void focus_render(RuntimeEventId event,void *subject,unsigned long surface,unsigned long value,void *user)
@@ -99,8 +102,9 @@ static void focus_render(RuntimeEventId event,void *subject,unsigned long surfac
     RuntimeFocusRect rectangle=selected.rectangle;
     void *hud=focus_readptr((void *)backend.hud_global,0);unsigned count=focus_read32(hud,0x44);
     BYTE *sprites=focus_readptr(hud,0x48);
-    /* 资源缺少原框时拒绝，不把整张HUD背景精灵当成选择框。 */
-    if (focus_read32(hud,0)!=backend.hud_vtable || !focus_read32(hud,0x64) || count<=5 || count>64 || !focus_readable(sprites,count*32u)) return;
+    /* 当前可见页面由提供者验证，标题创建页也可借用已加载但隐藏的HUD框素材。
+     * 资源缺少原框时拒绝，不把整张HUD背景精灵当成选择框。 */
+    if (focus_read32(hud,0)!=backend.hud_vtable || count<=5 || count>64 || !focus_readable(sprites,count*32u)) return;
     void *frame=sprites+5*32u;unsigned frames=focus_read32(frame,8),index=focus_read32(frame,4);
     void *data=focus_readptr(frame,0);
     /* 一帧记录22字节。先检查动画表和当前下标，再调用原Frame getter，不让空精灵进原函数。 */

@@ -25,9 +25,9 @@ unsigned SettingsModel_Count(unsigned page)
 int SettingsModel_Open(SettingsModel *m,unsigned game,unsigned role)
 {
     const ConfigSnapshot *saved=RuntimeConfig_Saved();
-    if(!m || !saved || (game!=1 && game!=2) || role<1 || role>65535)return 0;
+    if(!m || !saved || (game!=1 && game!=2) || role>65535)return 0;
     memset(m,0,sizeof *m);m->game=game;m->role=role;m->saved=m->draft=*saved;
-    for(unsigned i=0;i<14;++i)m->saved_bindings[i]=m->draft_bindings[i]=RuntimeConfig_GetSavedBinding(game,role,i+1);
+    for(unsigned i=0;i<14;++i)m->saved_bindings[i]=m->draft_bindings[i]=role ? RuntimeConfig_GetSavedBinding(game,role,i+1):(ConfigBinding){0,0,0};
     return 1;
 }
 void SettingsModel_Page(SettingsModel *m,int delta)
@@ -62,14 +62,14 @@ int SettingsModel_SetText(SettingsModel *m,const char *value)
 }
 int SettingsModel_SetBinding(SettingsModel *m,unsigned slot,ConfigBinding b)
 {
-    if(!m || slot<1 || slot>14 || b.selector<0 || b.selector>65535 ||
+    if(!m || !m->role || slot<1 || slot>14 || b.selector<0 || b.selector>65535 ||
         (b.custom!=0 && b.custom!=1) || (b.right!=0 && b.right!=1))return 0;
     m->draft_bindings[slot-1]=b;return 1;
 }
 void SettingsModel_ResetItem(SettingsModel *m,unsigned index)
 {
     if(!m || index>=SettingsModel_Count(m->page))return;
-    if(m->page==2){m->draft_bindings[index]=(ConfigBinding){0,0,0};return;}
+    if(m->page==2){if(!m->role)return;m->draft_bindings[index]=(ConfigBinding){0,0,0};return;}
     ConfigId id=SettingsModel_Field(m->page,index);const ConfigDescriptor *f=RuntimeConfig_Descriptor(id);
     if(!f)return;
     if(f->type==CONFIG_TEXT)strcpy(m->draft.aspect_ratio,f->default_text);
@@ -103,7 +103,7 @@ int SettingsModel_Save(SettingsModel *m)
             m->saved.values[i]!=m->draft.values[i];
         if(changed)edits[n++]=(ConfigEdit){(ConfigId)i,m->draft.values[i],f->type==CONFIG_TEXT ? m->draft.aspect_ratio:NULL};
     }
-    for(unsigned i=0;i<14;++i)if(memcmp(&m->saved_bindings[i],&m->draft_bindings[i],sizeof(ConfigBinding)))
+    for(unsigned i=0;m->role && i<14;++i)if(memcmp(&m->saved_bindings[i],&m->draft_bindings[i],sizeof(ConfigBinding)))
         bindings[k++]=(ConfigBindingEdit){m->game,m->role,i+1,m->draft_bindings[i]};
     if(!RuntimeConfig_SaveBatch(edits,n,bindings,k))return 0;
     /* 只有整批成功才把候选标成保存；失败时保留全部草稿供继续修改。 */

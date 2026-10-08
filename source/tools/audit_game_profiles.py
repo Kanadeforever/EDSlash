@@ -156,14 +156,17 @@ def audit(path, profile, decoder, source_uses, this_uses):
 def audit_runtime_qol(profile, pe, image, imports):
     source=code_only(text(ROOT/'source/src/Runtime/GameProfile.c'))
     marker='PROFILE_DAOJIAN' if profile['game_id']==1 else 'PROFILE_WAIZHUAN'
-    values=integers(initializer(source,marker));assert len(values)==14
+    values=integers(initializer(source,marker));assert len(values)==17
     assert values[0]==image.OPTIONAL_HEADER.SizeOfImage and values[1]==image.OPTIONAL_HEADER.AddressOfEntryPoint
     for rva,name in zip(values[2:4],('GetModuleHandleA','GetProcAddress')):
         assert imports.get(0x400000+rva)==name,(marker,name)
     # QOL字段顺序来自当前头文件，再对应当前C初始化器，避免另外手写一份同样可能错的表。
     header=initializer(text(ROOT/'source/src/Runtime/GameProfile.h'),'typedef struct QolGameProfile')
-    fields=re.findall(r'unsigned long (\w+);',header);assert len(fields)==10
+    fields=re.findall(r'unsigned long (\w+);',header);assert len(fields)==13
     qol=dict(zip(fields,[v+0x400000 for v in values[4:]]));a=profile['addresses']
+    assert qol['inventory_stack_room_rva']==(0x47EDF0 if profile['game_id']==1 else 0x48DBE0)
+    assert pe.read(qol['inventory_stack_room_rva'],12)==bytes.fromhex('53 8B 5C 24 10 55 8B 6C 24 10 56 57')
+    assert qol['inventory_get_rva']==a['inventory_get'] and qol['inventory_root_rva']==a['inventory_root']
     assert qol['ground_manager_global_rva']==a['entities_global']
     assert qol['action_slot_table_global_rva']==a['handles_global']
     assert pe.read(qol['ground_item_update_rva'],7)==bytes.fromhex('83 EC 08 8D 54 24 00')

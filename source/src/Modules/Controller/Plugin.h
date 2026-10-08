@@ -40,6 +40,11 @@ typedef struct {
     uintptr_t player_class_global,player_class_probe;
     /* 菜单入口成对来自两份准确基线；虚表槽另核原函数，不能猜其它GUI的回调。 */
     /* 原版设置页：四版本分别核对原控件调值、实时应用和返回保存入口。 */
+    /* 新游戏两层只复用原角色提交和档案验证；名称由原EDIT/QOL独立处理。 */
+    uintptr_t menu_character_vtable,menu_character_tick,menu_character_show,menu_character_hover,menu_character_primary;
+    uintptr_t menu_newgame_vtable,menu_newgame_tick,menu_newgame_show,menu_newgame_hover,menu_newgame_primary,menu_newgame_cycle;
+    uintptr_t menu_name_vtable,menu_name_set;
+    uintptr_t menu_native_text_draw;
     uintptr_t menu_settings_vtable,menu_settings_tick,menu_settings_show,menu_settings_hover;
     uintptr_t menu_settings_primary,menu_settings_close,menu_settings_apply,menu_settings_slider_set;
     uintptr_t menu_title_vtable,menu_system_vtable,menu_confirm_vtable;

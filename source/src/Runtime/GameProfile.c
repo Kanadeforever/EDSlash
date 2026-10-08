@@ -34,7 +34,8 @@ static const GameProfile PROFILE_DAOJIAN = {
         0x00158E50ul,
         0x00128CD4ul,
         0x001288F8ul,
-        0x001496CCul
+        0x001496CCul,
+        0x000892D0ul,0x001585C0ul,0x0007EDF0ul
     }
 };
 
@@ -57,7 +58,8 @@ static const GameProfile PROFILE_WAIZHUAN = {
         0x00189E38ul,
         0x00151E2Cul,
         0x001519FCul,
-        0x00179DC4ul
+        0x00179DC4ul,
+        0x000987F0ul,0x00189540ul,0x0008DBE0ul
     }
 };
 

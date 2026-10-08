@@ -108,6 +108,8 @@ target_link_libraries(test_startup PRIVATE user32 gdi32 m)
 
 edslash_test(test_notice tools/qol/test_notice.c)
 edslash_test(test_autopickup tools/qol/test_autopickup.c)
+edslash_test(test_random_name_ui tools/qol/test_random_name_ui.c src/Modules/QOL/RandomName.c)
+target_link_libraries(test_random_name_ui PRIVATE user32 gdi32)
 edslash_test(test_runtime tools/test_runtime.c src/Runtime/X86Detour.c)
 # 探针链接真实管理器和事件总线，纳入正式回归。
 edslash_test(audit_runtime_contracts tools/audit_runtime_contracts.c src/Runtime/HookManager.c src/Runtime/EventBus.c)

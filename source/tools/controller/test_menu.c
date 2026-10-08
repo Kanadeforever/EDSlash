@@ -11,7 +11,9 @@
 
 static BYTE menu_roots[15][0x300],menu_children[15][16][0xE4],menu_sprites[15][16][4*32];
 static BYTE unknown_root[0xD0],menu_resource[16];
-static uintptr_t menu_tables[17][26];
+static uintptr_t menu_tables[19][26];
+static BYTE new_roots[2][0x300],new_children[2][3][0xE4];
+static unsigned character_requests,newgame_requests,difficulty_requests;
 static BYTE settings_root[0x300],settings_children[8][0xF0];
 static unsigned settings_applies,settings_choices,settings_closes;
 static ControlState menu_control;
@@ -64,6 +66,8 @@ bool Memory_Patch(void *target,const void *data,size_t bytes)
 
 static int root_kind(void *self)
 {
+    if(self==new_roots[0])return 17;
+    if(self==new_roots[1])return 18;
     if (self==settings_root) return 16;
     if (self==hud_data) return 15;
     for (int i=0;i<15;++i) if (self==menu_roots[i]) return i;
@@ -116,6 +120,9 @@ static int __attribute__((thiscall)) skill_base_tick(void *self)
 static int __attribute__((thiscall)) menu_get_jm(void *self,int id)
 {
     CHECK(self==ui_data);
+    if(id==0x1A)return (int)(uintptr_t)new_roots[0];
+    if(id==0x9C)return (int)(uintptr_t)new_roots[1];
+    if(id==0x9F)return (int)(uintptr_t)new_children[1][0];
     if (id==0xAA) return (int)(uintptr_t)settings_root;
     if (id==0x66) return (int)(uintptr_t)quest_list_data;
     for (unsigned i=0;i<15;++i) if (Read32(menu_roots[i],0x28)==(unsigned)id) return (int)(uintptr_t)menu_roots[i];
@@ -423,9 +430,47 @@ static void settings_fixture(Profile *profile)
     profile->menu_settings_apply=(uintptr_t)settings_apply;profile->menu_settings_slider_set=(uintptr_t)settings_slider;
     settings_applies=settings_choices=settings_closes=0;
 }
+static int __attribute__((thiscall)) character_primary(void *self,int e,int x,void *y)
+{
+    CHECK(self==new_roots[0] && !e && !x && !y);void *c=ReadPtr(self,0xA8);CHECK(ReadPtr(c,0xA4)==self);
+    ++character_requests;Write32(self,0xC0,Read32(c,0xC4));
+    ((This2)menu_tables[18][0x1C/4])(new_roots[1],1,0);
+    /* 原提交在Show第二层之后再读第一层A8和子资源，不能提前清空。 */
+    CHECK(ReadPtr(self,0xA8)==c && ReadPtr(c,0x50)!=NULL);
+    ((This2)menu_tables[17][0x1C/4])(self,0,0);ptr(ui_data,0x3C,new_roots[1]);return 1;
+}
+static int __attribute__((thiscall)) newgame_primary(void *self,int e,int x,void *y)
+{
+    CHECK(self==new_roots[1] && !e && !x && !y);unsigned id=Read32(ReadPtr(self,0xA8),0x28);CHECK(id==0xA0 || id==0xA1);
+    if(id==0xA1){((This2)menu_tables[17][0x1C/4])(new_roots[0],1,0);((This2)menu_tables[18][0x1C/4])(self,0,0);ptr(ui_data,0x3C,new_roots[0]);}
+    else ++newgame_requests; /* 替身代表原名称校验拒绝空名，不伪造进入世界。 */
+    return 1;
+}
+static int __attribute__((thiscall)) difficulty_cycle(void *self,int delta)
+{CHECK(self==new_roots[1] && (delta==1 || delta==-1));++difficulty_requests;Write32(new_children[1][0],0xC4,(Read32(new_children[1][0],0xC4)+3+delta)%3);return 1;}
+static void newgame_fixture(Profile *p)
+{
+    memset(new_roots,0,sizeof new_roots);memset(new_children,0,sizeof new_children);
+    character_requests=newgame_requests=difficulty_requests=random_name_requests=0;
+    for(unsigned k=0;k<2;++k) {
+        void *root=new_roots[k];ptr(root,0,menu_tables[17+k]);ptr(root,0x50,menu_resource);Write32(root,0x28,k ? 0x9C:0x1A);ptr(root,0x9C,new_children[k][0]);
+        for(unsigned j=0;j<3;++j) {
+            void *c=new_children[k][j];ptr(c,0xA4,root);ptr(c,0x50,menu_resource);ptr(c,8,j<2 ? new_children[k][j+1]:NULL);
+            Write32(c,0x28,k ? (j==0 ? 0x9F:j==1 ? 0xA0:0xA1):(j==0 ? 0x24:j==1 ? 0x25:0xA8));
+            Write32(c,0x64,1);Write32(c,0x14,k ? (j==2 ? 350:120):80+j*160);Write32(c,0x18,k ? (j ? 300:140):100);
+            Write32(c,0x1C,k ? 170:100);Write32(c,0x20,k ? 40:200);Write32(c,0xC4,k ? 1:j+4);
+        }
+        menu_tables[17+k][1]=(uintptr_t)menu_tick;menu_tables[17+k][0x1C/4]=(uintptr_t)menu_show;
+        menu_tables[17+k][0x30/4]=(uintptr_t)menu_hover;menu_tables[17+k][0x24/4]=k ? (uintptr_t)newgame_primary:(uintptr_t)character_primary;
+    }
+    p->menu_character_vtable=(uintptr_t)menu_tables[17];p->menu_character_tick=(uintptr_t)menu_tick;
+    p->menu_character_show=(uintptr_t)menu_show;p->menu_character_hover=(uintptr_t)menu_hover;p->menu_character_primary=(uintptr_t)character_primary;
+    p->menu_newgame_vtable=(uintptr_t)menu_tables[18];p->menu_newgame_tick=(uintptr_t)menu_tick;p->menu_newgame_show=(uintptr_t)menu_show;
+    p->menu_newgame_hover=(uintptr_t)menu_hover;p->menu_newgame_primary=(uintptr_t)newgame_primary;p->menu_newgame_cycle=(uintptr_t)difficulty_cycle;
+}
 static void menu_fixture(Profile *profile,bool expansion)
 {
-    configure(profile,expansion);expansion_case=expansion;
+    configure(profile,expansion);expansion_case=expansion;entry_enabled=0;entry_opened=0;
     memset(menu_roots,0,sizeof menu_roots);memset(menu_children,0,sizeof menu_children);
     memset(menu_tables,0,sizeof menu_tables);memset(unknown_root,0,sizeof unknown_root);
     memset(&menu_control,0,sizeof menu_control);pending_ticks=0;
@@ -566,7 +611,7 @@ static void menu_fixture(Profile *profile,bool expansion)
         Write32(slot,0x14,10+(i<6 ? i:i+2)*24);Write32(slot,0x18,350);
         Write32(slot,0x1C,24);Write32(slot,0x20,24);Write32(slot,0xCC,50+i);
     }
-    settings_fixture(profile);
+    settings_fixture(profile);newgame_fixture(profile);
     patch_attempt=patch_fail_at=0;CHECK(Menu_Initialize());cursor_fixture(profile);
 }
 static void menu_regression(bool expansion)
@@ -778,7 +823,7 @@ static void menu_regression(bool expansion)
     HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
     CHECK(!Menu_BlocksGameplay());
     /* 每个入口写失败都回滚，不能留下半套Tick/Show/hover。所有原槽先核对再允许重试。 */
-    for (unsigned fail=1;fail<=58;++fail) {
+    for (unsigned fail=1;fail<=64;++fail) {
         patch_attempt=0;patch_fail_at=fail;CHECK(!Menu_Initialize());
         for (unsigned k=0;k<15;++k) {
             CHECK(menu_tables[k][1]==(uintptr_t)menu_tick);
@@ -1259,6 +1304,27 @@ static void skill_visual_regression(bool expansion,const char *scenario)
     }
     Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
 }
+/* 类型说明和必杀说明是原有效控件，不要求已学习或能主动加点。 */
+static void skill_description_regression(bool expansion)
+{
+    const unsigned roles[]={4,30,40,0xDF,1};unsigned count=expansion ? 5:3;
+    for(unsigned group=0;group<count;++group) {
+        Profile p;menu_fixture(&p,expansion);p.game_id=expansion ? 2:1;Write32(grid_player,0x348,roles[group]);
+        unsigned category=(expansion ? 0xE3:0xCF)+group*4;
+        Write32(menu_roots[8],0xC0,0x7F);
+        for(unsigned j=0;j<16;++j)Write32(menu_children[8][j],0x64,0);
+        for(unsigned j=0;j<3;++j) {
+            void *node=menu_children[8][j];Write32(node,0x64,1);Write32(node,0x28,j==0 ? category:j==1 ? 0x84:0x90);
+            Write32(node,0x14,20+j*60);Write32(node,0x18,100);Write32(node,0x1C,44);Write32(node,0x20,48);
+        }
+        activate_page(8);neutral_menu();CHECK(focus_id(8)==0x84);
+        menu_step(KEY(PAD_LEFT),0,0);neutral_menu();RECT r;
+        CHECK(focus_id(8)==category && !Menu_FocusFrame(&r) && !Menu_HidesCursor());
+        menu_step(KEY(PAD_RIGHT),0,0);neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);neutral_menu();
+        CHECK(focus_id(8)==0x90 && Menu_FocusFrame(&r));
+        Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
+    }
+}
 static void empty_skill_regression(bool expansion)
 {
     Profile profile;menu_fixture(&profile,expansion);
@@ -1305,7 +1371,31 @@ static void settings_regression(bool expansion)
     neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(Read32(ReadPtr(settings_root,0xA8),0x28)==0xB2);
     neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(settings_closes==2 && !Read32(settings_root,0x64));
     ptr(ui_data,0x18,head);ptr(ui_data,0x1C,tail);
+    entry_enabled=1;ptr(ui_data,0x3C,settings_root);((This2)menu_tables[16][0x1C/4])(settings_root,1,0);neutral_menu();
+    for(unsigned i=0;i<4;++i){menu_step(KEY(PAD_DOWN),0,0);neutral_menu();}
+    CHECK(ReadPtr(settings_root,0xA8)==NULL && Menu_CursorAnchor(&anchor));
+    menu_step(KEY(PAD_A),0,0);CHECK(entry_opened==1);entry_enabled=0;ptr(ui_data,0x3C,NULL);
     Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
+}
+static void newgame_regression(bool expansion)
+{
+    Profile p;menu_fixture(&p,expansion);for(unsigned i=0;i<15;++i)Write32(menu_roots[i],0x64,0);
+    Write32(new_roots[0],0x64,1);ptr(ui_data,0x3C,new_roots[0]);neutral_menu();
+    CHECK(Read32(ReadPtr(new_roots[0],0xA8),0x28)==0x24);POINT pt;RECT r;CHECK(Menu_CursorAnchor(&pt) && !Menu_FocusFrame(&r));
+    menu_step(KEY(PAD_RIGHT),0,0);neutral_menu();CHECK(Read32(ReadPtr(new_roots[0],0xA8),0x28)==0x25);
+    menu_step(KEY(PAD_A),0,0);CHECK(character_requests==1 && Read32(new_roots[0],0xC0)==5);neutral_menu();
+    CHECK(Read32(ReadPtr(new_roots[1],0xA8),0x28)==0x9F && !Menu_FocusFrame(&r));
+    CHECK(Menu_CursorAnchor(&pt) && pt.x==284 && pt.y==174);
+    menu_step(KEY(PAD_Y)|KEY(PAD_A),0,0);CHECK(random_name_requests==1 && !newgame_requests);neutral_menu();
+    menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(new_children[1][0],0xC4)==2);neutral_menu();
+    menu_step(KEY(PAD_LEFT),0,0);CHECK(Read32(new_children[1][0],0xC4)==1);neutral_menu();
+    menu_step(KEY(PAD_DOWN),0,0);neutral_menu();CHECK(Read32(ReadPtr(new_roots[1],0xA8),0x28)==0xA0 && Menu_FocusFrame(&r));
+    Write32(hud_data,0x64,0);focus_draws=0;emit_focus();CHECK(focus_draws>0);Write32(hud_data,0x64,1);
+    menu_step(KEY(PAD_A),0,0);CHECK(newgame_requests==1 && Read32(new_roots[1],0x64));neutral_menu();
+    menu_step(KEY(PAD_RIGHT),0,0);neutral_menu();CHECK(Read32(ReadPtr(new_roots[1],0xA8),0x28)==0xA1 && Menu_FocusFrame(&r));
+    menu_step(KEY(PAD_B),0,0);neutral_menu();CHECK(Read32(new_roots[0],0x64) && !Read32(new_roots[1],0x64));
+    menu_step(KEY(PAD_B),0,0);CHECK(Read32(menu_roots[0],0x64) && !Read32(new_roots[0],0x64));
+    ptr(ui_data,0x3C,NULL);Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
 }
 int main(int argc,char **argv)
 {
@@ -1314,6 +1404,8 @@ int main(int argc,char **argv)
         printf("两作技能视觉导航/动作框/Y焦点场景通过：%s\n",argv[2]);return 0;
     }
     if(argc>1 && !strcmp(argv[1],"--containment")) {unsigned limit=argc>2 && !strcmp(argv[2],"bag") ? 9:15;containment_regression(false,limit);containment_regression(true,limit);printf("两作最终绘制边界格内、动画偏移与非格子指针回放通过\n");return 0;}
+    newgame_regression(false);newgame_regression(true);
+    skill_description_regression(false);skill_description_regression(true);
     empty_skill_regression(false);empty_skill_regression(true);
     settings_regression(false);settings_regression(true);
     shared_focus_regression(false);shared_focus_regression(true);

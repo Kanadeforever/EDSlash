@@ -4,11 +4,13 @@
 #define GAME_IMAGE_BASE 0x00400000ul
 #define GROUND_OBJECT_KIND_OFFSET 0x67ul
 #define GROUND_RECORD_OFFSET 0x81ul
+#define GROUND_QUANTITY_OFFSET 0x85ul
 #define GROUND_OBJECT_KIND 0x17ul
 
 #define RECORD_VALUE_COUNT_OFFSET 0x04ul
 #define RECORD_VALUES_OFFSET 0x08ul
 #define RECORD_ITEM_TYPE_COLUMN 2ul
+#define RECORD_ITEM_ID_COLUMN 1ul
 
 static const GameProfile* g_profile;
 
@@ -104,4 +106,14 @@ int ItemClassifier_GetPickupClass(unsigned long object_address, PickupItemClass*
     }
 
     return 1;
+}
+
+int ItemClassifier_GetPickupInfo(unsigned long object,unsigned long *item_id,unsigned long *quantity)
+{
+    /* 地面对象保存本堆数量，定义记录保存物品编号；两者是原入包函数的输入。 */
+    unsigned long record,count;signed long id;
+    if(!item_id || !quantity || !ItemClassifier_IsGroundItem(object) ||
+       !RuntimeWin32_Read(object+GROUND_RECORD_OFFSET,&record,4ul) || !read_record_column(record,RECORD_ITEM_ID_COLUMN,&id) || id<0 ||
+       !RuntimeWin32_Read(object+GROUND_QUANTITY_OFFSET,&count,4ul) || !count || count>0x7FFFFFFFul)return 0;
+    *item_id=(unsigned long)id;*quantity=count;return 1;
 }

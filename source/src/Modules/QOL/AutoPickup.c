@@ -152,6 +152,27 @@ static int policy_accepts(PickupItemClass item_class)
     return 0;
 }
 
+/* 每个候选读取实际当前库存；币种不占背包，堆叠资格沿原查询，不能只看空格。 */
+static int candidate_capacity(unsigned long object,PickupItemClass type)
+{
+    typedef unsigned long (__fastcall *InventoryGet)(void *,void *);
+    typedef int (__fastcall *StackRoom)(void *,void *,int,int,unsigned long *);
+    InventoryGet get=(InventoryGet)(uintptr_t)(GAME_IMAGE_BASE+g_profile->qol.inventory_get_rva);
+    unsigned long bag=get((void *)(GAME_IMAGE_BASE+g_profile->qol.inventory_root_rva),NULL),id,quantity;
+    if(!bag || !ItemClassifier_GetPickupInfo(object,&id,&quantity))return 0;
+    if(type==PICKUP_ITEM_MONEY) {
+        unsigned long money;if(!read_u32(bag+0x20ul,&money) || money>0x7FFFFFFFul)return 0;
+        /* 原加钱函数用有符号32位溢出拒绝整笔，近上限也要计入本堆金额。 */
+        return quantity<=0x7FFFFFFFul-money;
+    }
+    unsigned long items[50];if(!RuntimeWin32_Read(bag+0xA4ul,items,sizeof items))return 0;
+    for(unsigned i=0;i<50;++i)if(items[i]==0xFFFFFFFFul)return 1;
+    if(!g_profile->qol.inventory_stack_room_rva)return 0;
+    unsigned long fits=0;StackRoom find=(StackRoom)(uintptr_t)(GAME_IMAGE_BASE+g_profile->qol.inventory_stack_room_rva);
+    /* 原函数查询背包/快捷栏62槽及记录的可堆叠标志/9件上限，返回可合并数量。
+     * 它只查询，不合并；实际部分合并与剩余数量仍交原拾取业务处理。 */
+    return find((void *)bag,NULL,(int)id,(int)quantity,&fits)>=0 && fits>0;
+}
 static void run_native_pickup_scan(void)
 {
     unsigned long action;
@@ -260,15 +281,11 @@ int AutoPickup_AllowPickupCandidate(unsigned long ground_item)
         return 0;
     }
 
-    if (g_policy == AUTO_PICKUP_POLICY_ALL) {
-        return 1;
-    }
-
     if (!ItemClassifier_GetPickupClass(ground_item, &item_class)) {
         return 0;
     }
 
-    return policy_accepts(item_class);
+    return policy_accepts(item_class) && candidate_capacity(ground_item,item_class);
 }
 
 /* 切换模式只更新过滤策略；周期变化或由关闭启用时重新开始计时，不重装入口。 */

@@ -40,6 +40,9 @@ typedef struct QolGameProfile {
     unsigned long pickup_action_vtable_rva;
     unsigned long ground_item_vtable_rva;
     unsigned long drop_flight_tick_limit_rva;
+    unsigned long inventory_get_rva;
+    unsigned long inventory_root_rva;
+    unsigned long inventory_stack_room_rva;
 } QolGameProfile;
 
 typedef struct GameProfile {

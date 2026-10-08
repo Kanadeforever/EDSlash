@@ -33,7 +33,7 @@ def prepare_package(directory, notices):
 
 
 def cleanup_legacy_cache():
-    """只清理源码内过时编译缓存，当前根.build保留供增量构建和诊断。"""
+    """清理源码旁旧缓存；根目录缓存按发布/检查模式分别收尾。"""
     legacy = SOURCE / '.build'
     # 删除前验证最终位置；不允许符号链接把清理指向源码之外。
     if legacy.exists():
@@ -44,13 +44,30 @@ def cleanup_legacy_cache():
         if cache.is_symlink() or not cache.resolve().is_relative_to(SOURCE.resolve()):
             raise RuntimeError('源码字节缓存位置异常，拒绝清理')
         shutil.rmtree(cache)
-    print('源码旧编译缓存已清理；当前缓存与诊断统一在根目录.build。')
+    print('源码旧编译缓存已清理；本轮编译与诊断统一在根目录.build。')
+
+
+def cleanup_build_cache():
+    """产物/配置验证完成才清理临时目录；失败或检查模式保留诊断。"""
+    target=BUILD.resolve()
+    # Python 3.11没有Path.is_junction，使用Windows原始重解析点属性兼容检测。
+    def linked(path):
+        return path.is_symlink() or bool(getattr(path.lstat(),'st_file_attributes',0)&0x400)
+    if linked(BUILD) or target!=ROOT.resolve()/'.build':
+        raise RuntimeError('构建缓存目标异常，拒绝清理')
+    # 不允许链接把递归清理带到项目外；整个检查与删除在同一Python进程完成。
+    for item in BUILD.rglob('*'):
+        if linked(item) or not item.resolve().is_relative_to(target):
+            raise RuntimeError('构建缓存内有链接或越界路径，拒绝清理')
+    shutil.rmtree(target)
+    print('正式双产物与配置已保存，根.build临时缓存已清理。')
 
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="一次构建EDSlash发行件和_debug完整版，并验证全部回归。")
     parser.add_argument("--checks-only", action="store_true", help="完整构建验证，但不更新release或源码模板")
+    parser.add_argument("--keep-build", action="store_true", help="发布后保留构建缓存用于增量编译；默认完成后清理")
     parser.add_argument("--upx", action="store_true", help="另压缩发行副本，调试件始终保留完整")
     parser.add_argument("--jobs",type=int,default=6,help="并行编译数；编译器随机崩溃时可用1串行复核")
     args = parser.parse_args()
@@ -60,8 +77,10 @@ def main():
     run([sys.executable, SOURCE / 'tools/font_fix/test_font_fix.py'], os.environ.copy())
     # 真实原指令须能拒绝旧错误地图地址，不能把模拟对象回放当成档案地址正确的证据。
     run([sys.executable, SOURCE / 'tools/controller/test_profiles.py'], os.environ.copy())
+    run([sys.executable, SOURCE / 'tools/qol/test_random_name.py'], os.environ.copy())
     run([sys.executable, SOURCE / 'tools/generate_focus_profiles.py'], os.environ.copy())
     run([sys.executable, SOURCE / 'tools/generate_settings_profiles.py'], os.environ.copy())
+    run([sys.executable, SOURCE / 'tools/generate_random_name_profiles.py'], os.environ.copy())
     # 源码与构建输入摘要包含未提交内容，不以HEAD冒充当前产物。
     digest = hashlib.sha256()
     inputs = sorted(p for p in SOURCE.rglob("*") if p.is_file() and
@@ -145,7 +164,7 @@ def main():
         evidence["UPX"] = {"源": "已剥离发行件", "SHA256": hashlib.sha256(packed.read_bytes()).hexdigest(),
                            "字节数": packed.stat().st_size, "压缩完整性及非游戏加载": "通过",
                            "本轮新文件实机": "尚未单独复测"}
-    evidence["范围"] = "四官方准确EXE；原暂停模组设置/热应用/按键与技能绑定、双扳机动作菜单/快捷格/360度交互、分帧拾取与既有完整回归"
+    evidence["范围"] = "四官方准确EXE；新游戏两层/随机名称/设置入口/统一按钮/满包暂停，以及原暂停热应用/战斗/动作菜单/快捷格/360度交互完整回归"
     evidence["验收边界"] = "原EXE静态及宿主回归不能证明GUI、脚本、设备、地图或Steam DLL全部通过"
     if args.checks_only:
         cleanup_legacy_cache()
@@ -182,6 +201,7 @@ def main():
     cleanup_legacy_cache()
     print(f"双产物完成：{RELEASE / 'EDSlash.asi'} 与 {debug_directory / debug_asi.name}")
     print("两者优化代码相同，发行件去符号，_debug保留源码调试信息；无需SDL3.dll。")
+    if not args.keep_build:cleanup_build_cache()
 
 
 if __name__ == "__main__":

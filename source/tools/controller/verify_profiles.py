@@ -130,6 +130,30 @@ def verify_native_settings(pe, profile):
     assert pe.read(slider+0x21,6)==b'\x89\x8E\xDC\0\0\0'
 
 
+def verify_newgame_sources(pe,profile):
+    """从原提交与子控件实现核对角色/名称两层，不以相同函数头替代ABI事实。"""
+    a=profile['addresses'];main=profile['game_id']==1
+    for name,constructor in [('character',0x499CC0 if main else 0x4AA090),('newgame',0x4A2D10 if main else 0x4B4E80)]:
+        assert b'\xC7\x06'+struct.pack('<I',a[f'menu_{name}_vtable']) in pe.read(constructor,0x80)
+        for key,slot in [('tick',4),('show',0x1C),('hover',0x30),('primary',0x24)]:
+            assert struct.unpack('<I',pe.read(a[f'menu_{name}_vtable']+slot,4))[0]==a[f'menu_{name}_{key}']
+    primary=a['menu_character_primary']
+    assert pe.read(primary+3,6)==b'\x8B\x86\xA8\0\0\0'
+    assert pe.read(primary+0x3D,3)==b'\xFF\x50\x1C'
+    assert pe.read(primary+0x40,6)==b'\x8B\x8E\xA8\0\0\0'
+    def called(address):
+        b=pe.read(address,5);assert b[0]==0xE8
+        return address+5+struct.unpack('<i',b[1:])[0]
+    p=a['menu_newgame_primary'];extra=0 if main else 4
+    assert called(p+0x19+extra)==a['menu_newgame_cycle']
+    assert called(p+0x2D+extra)==a['menu_newgame_cycle']
+    setter=a['menu_name_set']
+    # 两作setter都同步CString D4与真实编辑框F4，但外传额外恢复光标选择。
+    code=pe.read(setter,0x70)
+    assert b'\xD4\0\0\0' in code and b'\xF4\0\0\0' in code
+    assert pe.read(a['menu_name_vtable']+0x48,4)==struct.pack('<I',0x4BBFD0 if main else 0x4CFD80)
+
+
 def verify_baselines(data):
     base = ROOT / '参考资料/刀剑封魔录系列反编译资料库_v0.31/基线程序'
     # 四份 EXE 必须同时存在才做本地证据检查。源码构建不携带游戏 EXE，也不下载游戏。
@@ -149,6 +173,7 @@ def verify_baselines(data):
         verify_action_sources(pe,profile)
         verify_focus_sources(pe,profile)
         verify_native_settings(pe,profile)
+        verify_newgame_sources(pe,profile)
         assert pe.read(profile['addresses']['resolver_call'], 5).hex() == profile['call_bytes']
         # 把调用点真正解码回目标，而不是只核对一串由同一数据源复制的字节。
         call = pe.read(profile['addresses']['resolver_call'], 5)

@@ -1,4 +1,5 @@
 #include "../../src/Runtime/Perf.h"
+#include "../../src/Runtime/SettingsWindow.h"
 #include "Plugin.h"
 #include "Combat.h"
 #include "Guard.h"
@@ -13,6 +14,11 @@
    这验证 this、参数值、功能路由及两个 Profile 偏移；不冒充真实游戏测试。 */
 int __attribute__((noinline,noclone)) SettingsWindow_Active(void){return 0;}
 int SettingsWindow_ShowPointer(void){return 0;}
+static int entry_enabled;static unsigned entry_opened;
+int SettingsWindow_NativeEntryRect(void *p,RuntimeFocusRect *r){if(!entry_enabled || !p || !r)return 0;*r=(RuntimeFocusRect){400,306,576,342};return 1;}
+int SettingsWindow_OpenNative(void *p){if(!p || !entry_enabled)return 0;++entry_opened;return 1;}
+static unsigned random_name_requests;
+int QOLModule_RandomName(void *p){if(p){++random_name_requests;return 1;}return 0;}
 const Profile *g_profile;
 Intent g_intent;
 PadInput g_input;

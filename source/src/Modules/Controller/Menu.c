@@ -1,4 +1,6 @@
 #include "Menu.h"
+#include "../../Runtime/SettingsWindow.h"
+#include "../QOL/QOLModule.h"
 #include <math.h>
 #include <string.h>
 
@@ -17,12 +19,14 @@ typedef struct {
     bool grid_buttons;
 } MenuState;
 static MenuState state;
+/* 原角色提交会在打开第二层后继续读取第一层A8，调用完成前不能清空。 */
+static void *character_submission;
 /* 模态确认暂时接管输入时，保存已核对的物品页及其格号。
  * 返回时必须再次验证原登记对象与显示状态，不能复用已销毁的指针。 */
 static MenuState resume_grid;
 static bool installed,frame_captured;
-enum { MENU_KINDS=17, QUEST_KIND=7, SKILL_KIND=8, BAG_KIND=9, STORAGE_KIND=10,
-       SHOP_KIND=11,CRAFT_KIND=12,INLAY_KIND=13,CHARM_KIND=14,QUICK_KIND=15, SETTINGS_KIND=16,
+enum { MENU_KINDS=19, QUEST_KIND=7, SKILL_KIND=8, BAG_KIND=9, STORAGE_KIND=10,
+       SHOP_KIND=11,CRAFT_KIND=12,INLAY_KIND=13,CHARM_KIND=14,QUICK_KIND=15, SETTINGS_KIND=16, CHARACTER_KIND=17, NEWGAME_KIND=18,
        COMBO_NODE_BASE=0x300, GRID_CELL_BASE=0x400, QUICK_CELL_BASE=0x500 };
 static struct {void *container;uint32_t item;int origin;} carried;
 static uintptr_t tables[MENU_KINDS],original[MENU_KINDS][3];
@@ -49,11 +53,11 @@ static int kind_of(void *root)
      * 只接纳明确核对过的owner虚表和编号，未知业务仍不调用其回调。 */
     void *owner=ReadPtr(root,0xCC);
     bool known_owner=!owner;
-    uintptr_t owner_tables[7]={g_profile->menu_load_vtable,g_profile->menu_bag_vtable,
+    uintptr_t owner_tables[9]={g_profile->menu_load_vtable,g_profile->menu_bag_vtable,
         g_profile->menu_storage_vtable,g_profile->menu_shop_vtable,g_profile->menu_craft_vtable,
-        g_profile->menu_inlay_vtable,g_profile->menu_charm_vtable};
-    unsigned owner_ids[7]={0x94,0x14,0xB4,0x56,0x3D,0x3E,0x5B};
-    for (unsigned i=0;i<7 && owner;++i)
+        g_profile->menu_inlay_vtable,g_profile->menu_charm_vtable,g_profile->menu_character_vtable,g_profile->menu_newgame_vtable};
+    unsigned owner_ids[9]={0x94,0x14,0xB4,0x56,0x3D,0x3E,0x5B,0x1A,0x9C};
+    for (unsigned i=0;i<9 && owner;++i)
         if (owner_tables[i] && Read32(owner,0)==owner_tables[i] && Read32(owner,0x28)==owner_ids[i]) known_owner=true;
     if (table && table==g_profile->menu_message_vtable && known_owner) return 4;
     if (table && table==g_profile->menu_talk_vtable) return 5;
@@ -66,6 +70,8 @@ static int kind_of(void *root)
     for (unsigned i=0;i<4;++i) if (table && table==extra[i] && Read32(root,0x28)==grid_ids[i+2]) return SHOP_KIND+(int)i;
     if (table && table==g_profile->menu_hud_vtable && root==ReadPtr((void *)g_profile->skill_global,0)) return QUICK_KIND;
     if (table && table==g_profile->menu_settings_vtable && Read32(root,0x28)==0xAA) return SETTINGS_KIND;
+    if(table && table==g_profile->menu_character_vtable && Read32(root,0x28)==0x1A)return CHARACTER_KIND;
+    if(table && table==g_profile->menu_newgame_vtable && Read32(root,0x28)==0x9C)return NEWGAME_KIND;
     return -1;
 }
 static void *grid_root(unsigned index)
@@ -95,7 +101,7 @@ static bool page(void *object,void *hud)
     void *resource=ReadPtr(object,0x50);
     int kind=kind_of(object);
     if (grid_kind(kind) && grid_root((unsigned)(kind-BAG_KIND))!=object) return false;
-    if (object!=hud && visible(object) && (kind==5 || kind==6 || kind==SETTINGS_KIND || grid_kind(kind))) return true;
+    if (object!=hud && visible(object) && (kind==5 || kind==6 || kind==SETTINGS_KIND || kind==CHARACTER_KIND || kind==NEWGAME_KIND || grid_kind(kind))) return true;
     return object!=hud && visible(object) && Memory_Readable(resource,12) &&
         ((This1)g_profile->ui_property)(resource,13)==1;
 }
@@ -157,11 +163,24 @@ void *Menu_Context(unsigned *reason)
     if (first) *reason=2;
     return first;
 }
+/* 学习页类型栏编号按两作原Tick规则分别取当前角色的四行，不借另一作编号。 */
+static bool skill_category(unsigned id)
+{
+    void *player=(void *)(uintptr_t)((This0)g_profile->inventory_get)((void *)g_profile->inventory_root);
+    if(!Memory_Readable(player,0x34C))return false;
+    unsigned role=Read32(player,0x348),group;
+    if(g_profile->game_id==1)group=role==30 ? 1:role==40 ? 2:0;
+    else if(role==4)group=0;else if(role==30)group=1;else if(role==40)group=2;else if(role==0xDF)group=3;else if(role==1)group=4;else return false;
+    unsigned first=(g_profile->game_id==1 ? 0xCF:0xE3)+group*4;
+    return id>=first && id<first+4;
+}
 static bool allowed(int kind,unsigned id)
 {
     if (kind==0) return (id>=0x1F && id<=0x23) || id==0xA7;
     if (kind==1) return id==0x2E || id==0x30 || id==0x31;
-    if (kind==SKILL_KIND) return (id>=0x7E && id<=0x93) || (id>=0xCF && id<=0xDA);
+    if (kind==SKILL_KIND) return (id>=0x7E && id<=0x93) || skill_category(id);
+    if(kind==CHARACTER_KIND)return id==0x24 || id==0x25 || id==0xA8 || (g_profile->game_id==2 && (id==0xE1 || id==0xE2));
+    if(kind==NEWGAME_KIND)return id==0x9F || id==0xA0 || id==0xA1;
     if (kind==SETTINGS_KIND) return id>=0xAB && id<=0xB2;
     if (kind==BAG_KIND) return id==0x15 || id==0x16 || id==0x17 || id==0x5A;
     if (kind==STORAGE_KIND) return id==0xB5 || id==0xB6;
@@ -194,7 +213,7 @@ static unsigned buttons(void *root,int kind,MenuButton *out)
         if (kind==5 && id==0x2A) id=Read32(node,0xC4);
         int width=(int)Read32(node,0x1C),height=(int)Read32(node,0x20);
         bool skill_allowed=kind!=SKILL_KIND ||
-            (Read32(root,0xC0)==0x7F ? (id>=0x84 && id<=0x8F) || (id>=0xCF && id<=0xDA):
+            (Read32(root,0xC0)==0x7F ? (id>=0x84 && id<=0x93) || skill_category(id):
              Read32(root,0xC0)==0x80 && !state.skill_region && id>=0x81 && id<=0x8F);
         if (kind==SKILL_KIND && id>=0x84 && id<=0x8F) {
             /* 十二个技能占位控件即使没有技能也可能保留显示标志和矩形。
@@ -248,7 +267,7 @@ static unsigned buttons(void *root,int kind,MenuButton *out)
             }
         }
     }
-    if (kind==5 || kind==SKILL_KIND || kind==SETTINGS_KIND || grid_kind(kind)) {
+    if (kind==5 || kind==SKILL_KIND || kind==SETTINGS_KIND || kind==CHARACTER_KIND || kind==NEWGAME_KIND || grid_kind(kind)) {
         /* 原子链从末尾倒走；按真实几何排序，默认最上方选项，不能误选最后一项。 */
         for (unsigned i=1;i<count;++i) {
             MenuButton value=out[i];unsigned j=i;
@@ -257,6 +276,9 @@ static unsigned buttons(void *root,int kind,MenuButton *out)
             }
             out[j]=value;
         }
+    }
+    if(kind==SETTINGS_KIND && count<64) {
+        RuntimeFocusRect r;if(SettingsWindow_NativeEntryRect(root,&r))out[count++]=(MenuButton){NULL,0x600,(r.left+r.right)/2.0,(r.top+r.bottom)/2.0};
     }
     return count;
 }
@@ -276,7 +298,7 @@ static void clear_focus(void)
 {
     if (!state.root || !g_profile || !visible(state.root)) return;
     int kind=kind_of(state.root);
-    if (kind<0) return;
+    if (kind<0 || (kind==CHARACTER_KIND && state.root==character_submission)) return;
     if (kind==0 && (int)Read32(state.root,0xC0)!=-1) return;
     MenuButton list[64];unsigned count=buttons(state.root,kind,list);
     for (unsigned i=0;i<count;++i) if (list[i].id==state.id) {
@@ -607,11 +629,12 @@ static void load_update(void *root)
 static bool frame_page(int kind)
 {
     /* 框仅属于物品格/特殊槽和技能图标区；按钮/确认项不是格子，保留原指针。 */
-    return (grid_kind(kind) && !state.grid_buttons) || kind==SKILL_KIND;
+    return (grid_kind(kind) && !state.grid_buttons) || kind==SKILL_KIND || (kind==NEWGAME_KIND && (state.id==0xA0 || state.id==0xA1));
 }
 bool Menu_HidesCursor(void)
 {
     if (ActionMenu_Active()) return true;
+    if(owns() && kind_of(state.root)==6)return true;
     RECT rectangle;
     if (owns() && Menu_FocusFrame(&rectangle)) {
         void *container=grid_container();
@@ -641,7 +664,7 @@ bool Menu_FocusFrame(RECT *rectangle)
         }
         void *slot=list[i].object;int x=(int)Read32(slot,0x14),y=(int)Read32(slot,0x18);
         int w=(int)Read32(slot,0x1C),h=(int)Read32(slot,0x20);
-        if(kind==SKILL_KIND && !((state.id>=0x81 && state.id<=0x8F) || (state.id>=0xCF && state.id<=0xDA)))return false;
+        if(kind==SKILL_KIND && !(state.id>=0x81 && state.id<=0x93))return false;
         /* 实物格/技能图标只画内框，不把关闭/页签/金额等按钮误判为方形格子。 */
         *rectangle=(RECT){x+1,y+1,x+w-1,y+h-1};return true;
     }
@@ -668,6 +691,18 @@ bool Menu_CursorAnchor(POINT *point)
         point->y=bottom<limit ? bottom:limit;
         return point->y>=(int)Read32(list,0x18);
     }
+    if(kind==NEWGAME_KIND && state.id==0x9F) {
+        void *difficulty=(void *)(uintptr_t)((This1)g_profile->get_jm)((void *)g_profile->ui,0x9F);
+        void *reverse=(void *)(uintptr_t)((This1)g_profile->get_jm)((void *)g_profile->ui,0xB3);
+        if(ReadPtr(difficulty,0xA4)!=state.root || !Read32(difficulty,0x64))return false;
+        int right=(int)Read32(difficulty,0x14)+(int)Read32(difficulty,0x1C);
+        int bottom=(int)Read32(difficulty,0x18)+(int)Read32(difficulty,0x20);
+        if(ReadPtr(reverse,0xA4)==state.root && Read32(reverse,0x64)) {
+            int edge=(int)Read32(reverse,0x14)+(int)Read32(reverse,0x1C);
+            if(edge>right)right=edge;
+        }
+        point->x=right-6;point->y=bottom-6;return true;
+    }
     if (kind==6) {
         int w=(int)Read32(state.root,0xDC),h=(int)Read32(state.root,0xE0);
         if (w<=0 || h<=0) return false;
@@ -685,6 +720,10 @@ bool Menu_CursorAnchor(POINT *point)
     }
     MenuButton list[64];unsigned count=buttons(state.root,kind,list);
     for (unsigned i=0;i<count;++i) if (list[i].id==state.id) {
+        if(kind==SETTINGS_KIND && state.id==0x600) {
+            RuntimeFocusRect r;if(!SettingsWindow_NativeEntryRect(state.root,&r))return false;
+            point->x=r.right-6;point->y=r.bottom-6;return true;
+        }
         if (!list[i].object && grid_kind(kind)) {
             void *container=grid_container();bool holding=container && Read32(container,0x2C4)!=UINT32_MAX;
             point->x=(LONG)list[i].x+(holding ? 0:6);point->y=(LONG)list[i].y+(holding ? 0:6);return true;
@@ -748,10 +787,45 @@ static void settings_update(void *root)
     }
     state.direction=dir;
     if (g_intent.pressed & KEY(PAD_A)) {
+        if(state.id==0x600){SettingsWindow_OpenNative(root);state.barrier=true;return;}
         /* 滑块由左右调值；A不把虚构的(0,0)当落点交给滑块。 */
         if (state.id>=0xAE && state.id<=0xB2) {
             project();((This3)g_profile->menu_settings_primary)(root,0,0,NULL);
         }
+        state.barrier=true;
+    }
+}
+static void newgame_update(void *root)
+{
+    MenuButton list[64];unsigned count=buttons(root,NEWGAME_KIND,list);if(!count || !Read32(root,0x64))return;
+    bool found=false;for(unsigned i=0;i<count;++i)if(list[i].id==state.id)found=true;
+    if(!found)state.id=list[0].id;
+    project();
+    if(state.barrier || neutral()){state.direction=0;return;}
+    if((g_intent.pressed & KEY(PAD_B)) || g_intent.menu_toggle) {
+        for(unsigned i=0;i<count;++i)if(list[i].id==0xA1){state.id=0xA1;project();((This3)g_profile->menu_newgame_primary)(root,0,0,NULL);break;}
+        state.barrier=true;return;
+    }
+    int dir=direction();
+    if(dir && (dir!=state.direction || (int32_t)(g_input.now-state.next_repeat)>=0)) {
+        if(dir<=2) {
+            unsigned preferred=dir==1 ? 0x9F:0xA0;
+            for(unsigned i=0;i<count;++i)if(list[i].id==preferred)state.id=preferred;
+        } else if(state.id==0x9F) {
+            /* 原9F点击传-1为向后档位，B3传1为反向；隐藏档位资格仍由原函数决定。 */
+            ((This1)g_profile->menu_newgame_cycle)(root,dir==4 ? 1:-1);
+        } else {
+            unsigned preferred=dir==3 ? 0xA0:0xA1;
+            for(unsigned i=0;i<count;++i)if(list[i].id==preferred)state.id=preferred;
+        }
+        state.next_repeat=g_input.now+(dir==state.direction ? 110u:350u);project();
+    }
+    state.direction=dir;
+    /* Y只请求QOL填写名字，不模拟R，也不会顺便提交创建。 */
+    if(g_intent.pressed & KEY(PAD_Y)){QOLModule_RandomName(root);state.barrier=true;return;}
+    if(g_intent.pressed & KEY(PAD_A)) {
+        /* 难度由左右调整；确定继续原名称/重复存档/非法名校验，不能绕过空名门。 */
+        if(state.id==0xA0 || state.id==0xA1){project();((This3)g_profile->menu_newgame_primary)(root,0,0,NULL);}
         state.barrier=true;
     }
 }
@@ -798,6 +872,7 @@ void Menu_Update(void)
     if (kind==3 && Read32(root,0x64)) { load_update(root);return; }
     if (kind==QUEST_KIND) {quest_update(root);return;}
     if (kind==SETTINGS_KIND) {settings_update(root);return;}
+    if (kind==NEWGAME_KIND) {newgame_update(root);return;}
     if (grid_kind(kind) && !state.barrier) {
         if ((g_intent.pressed & KEY(PAD_B)) || g_intent.menu_toggle) {
             if (!grid_cancel()) {if (kind==QUICK_KIND) grid_switch(root);else hide(root);}
@@ -858,6 +933,9 @@ void Menu_Update(void)
         /* 默认项用业务ID而非鼠标位置，危险按钮不会因为光标停留而成为默认选择。 */
         unsigned preferred=kind==0 ? 0x22:kind==1 ? 0x2E:kind==4 ? 0x200:kind==SKILL_KIND ? (Read32(root,0xC0)==0x7F ? list[0].id:0x84):
             grid_kind(kind) && !state.grid_buttons ? (kind<=SHOP_KIND ? GRID_CELL_BASE:slot_first[kind-BAG_KIND])+state.grid_slot[kind-BAG_KIND]:0x9A;
+        /* 类型说明栏可以查看，但学习页初始焦点仍取视觉左上的技能图标。 */
+        if(kind==SKILL_KIND && Read32(root,0xC0)==0x7F)
+            for(unsigned i=0;i<count;++i)if(list[i].id>=0x84 && list[i].id<=0x93){preferred=list[i].id;break;}
         for (unsigned i=0;i<count;++i) if (list[i].id==preferred) selected=i;
         /* 上方连招编号代表位置：删除中间项后后继已经补到原位置；只有删末项才失效。
          * 这时选新的末项，不走默认首项。空套组只有编号300的空位标记，仍可安全停留。 */
@@ -889,6 +967,10 @@ void Menu_Update(void)
                 Write32(root,0xA8,(uint32_t)(uintptr_t)list[i].object);
                 ((This3)g_profile->menu_message_primary)(root,0,0,NULL);break;
             }
+            state.barrier=true;
+        } else if(kind==CHARACTER_KIND) {
+            void *title=(void *)(uintptr_t)((This1)g_profile->get_jm)((void *)g_profile->ui,0x19);
+            if(kind_of(title)==0){((This2)(uintptr_t)Read32(ReadPtr(title,0),0x1C))(title,1,0);hide(root);}
             state.barrier=true;
         } else if (kind!=0) { hide(root);state.barrier=true; }
         return;
@@ -942,6 +1024,13 @@ void Menu_Update(void)
             if (total && !retained) state.id=remaining[total-1].id;
             project();
         }
+    } else if(kind==CHARACTER_KIND) {
+        project();void *selected=ReadPtr(root,0xA8),*previous=character_submission;
+        character_submission=root;
+        ((This3)g_profile->menu_character_primary)(root,0,0,NULL);
+        character_submission=previous;
+        /* 返回后才撤掉旧焦点；仍是同一页/同一选中对象才写，不能覆盖其它回调的新值。 */
+        if(character_submission!=root && kind_of(root)==CHARACTER_KIND && ReadPtr(root,0xA8)==selected)Write32(root,0xA8,0);
     } else if (kind==4) {
         project();((This3)g_profile->menu_message_primary)(root,0,0,NULL);
     } else if (kind==0) ((This1)g_profile->menu_title_activate)(root,(int)state.id);
@@ -958,6 +1047,7 @@ static int tick(void *self,unsigned kind)
 {
     /* 删除确认原Tick先做GetCursorPos命中再调base Tick。手柄只替换命中生产部分，
      * base仍完整更新显示/子控件，随后用自己的标签焦点决定原文字高亮。 */
+    if(kind==CHARACTER_KIND && self==state.root)project();
     int result=kind==4 && owns() && kind_of(self)==4 ?
         ((This0)g_profile->menu_message_base_tick)(self):((This0)original[kind][0])(self);
     /* 原版Tick可能因鼠标不在根页上而清A8；随后重新投影独立焦点，不改全局鼠标路由。 */
@@ -1017,6 +1107,8 @@ MENU_WRAPPERS(13)
 MENU_WRAPPERS(14)
 MENU_WRAPPERS(15)
 MENU_WRAPPERS(16)
+MENU_WRAPPERS(17)
+MENU_WRAPPERS(18)
 static uintptr_t replacement[MENU_KINDS][3];
 static BYTE saved_talk_picker[5];
 static bool picker_installed;
@@ -1122,7 +1214,7 @@ bool Menu_Initialize(void)
     tables[7]=g_profile->menu_quest_vtable;tables[8]=g_profile->menu_skill_vtable;
     tables[9]=g_profile->menu_bag_vtable;tables[10]=g_profile->menu_storage_vtable;
     tables[11]=g_profile->menu_shop_vtable;tables[12]=g_profile->menu_craft_vtable;
-    tables[13]=g_profile->menu_inlay_vtable;tables[14]=g_profile->menu_charm_vtable;tables[15]=g_profile->menu_hud_vtable;tables[16]=g_profile->menu_settings_vtable;
+    tables[13]=g_profile->menu_inlay_vtable;tables[14]=g_profile->menu_charm_vtable;tables[15]=g_profile->menu_hud_vtable;tables[16]=g_profile->menu_settings_vtable;tables[17]=g_profile->menu_character_vtable;tables[18]=g_profile->menu_newgame_vtable;
     uintptr_t expected[MENU_KINDS][3]={
         {g_profile->menu_title_tick,g_profile->menu_title_show,g_profile->menu_title_hover},
         {g_profile->menu_system_tick,g_profile->menu_system_show,g_profile->menu_system_hover},
@@ -1140,7 +1232,9 @@ bool Menu_Initialize(void)
         {g_profile->menu_inlay_tick,g_profile->menu_inlay_show,g_profile->menu_inlay_hover},
         {g_profile->menu_charm_tick,g_profile->menu_charm_show,g_profile->menu_charm_hover},
         {g_profile->menu_hud_tick,g_profile->menu_hud_show,g_profile->menu_hud_hover},
-        {g_profile->menu_settings_tick,g_profile->menu_settings_show,g_profile->menu_settings_hover}};
+        {g_profile->menu_settings_tick,g_profile->menu_settings_show,g_profile->menu_settings_hover},
+        {g_profile->menu_character_tick,g_profile->menu_character_show,g_profile->menu_character_hover},
+        {g_profile->menu_newgame_tick,g_profile->menu_newgame_show,g_profile->menu_newgame_hover}};
     uintptr_t hooks[MENU_KINDS][3]={{(uintptr_t)tick0,(uintptr_t)show0,(uintptr_t)hover0},
         {(uintptr_t)tick1,(uintptr_t)show1,(uintptr_t)hover1},
         {(uintptr_t)tick2,(uintptr_t)show2,(uintptr_t)hover2},
@@ -1157,7 +1251,9 @@ bool Menu_Initialize(void)
         {(uintptr_t)tick13,(uintptr_t)show13,(uintptr_t)hover13},
         {(uintptr_t)tick14,(uintptr_t)show14,(uintptr_t)hover14},
         {(uintptr_t)tick15,(uintptr_t)show15,(uintptr_t)hover15},
-        {(uintptr_t)tick16,(uintptr_t)show16,(uintptr_t)hover16}};
+        {(uintptr_t)tick16,(uintptr_t)show16,(uintptr_t)hover16},
+        {(uintptr_t)tick17,(uintptr_t)show17,(uintptr_t)hover17},
+        {(uintptr_t)tick18,(uintptr_t)show18,(uintptr_t)hover18}};
     memcpy(replacement,hooks,sizeof hooks);
     /* 全部槽先验证再写，拒绝被其它补丁替换的入口；不会占用DisplayFix的Draw/picker。 */
     for (unsigned i=0;i<MENU_KINDS;++i) for (unsigned j=0;j<3;++j) {
@@ -1178,6 +1274,8 @@ bool Menu_Initialize(void)
         !g_profile->inventory_get || !g_profile->item_at || !g_profile->menu_item_swap || !g_profile->menu_bag_empty) return false;
     if (!g_profile->menu_settings_primary || Read32((void *)tables[16],0x24)!=g_profile->menu_settings_primary ||
         !g_profile->menu_settings_close || !g_profile->menu_settings_apply || !g_profile->menu_settings_slider_set) return false;
+    if(Read32((void *)tables[17],0x24)!=g_profile->menu_character_primary ||
+        Read32((void *)tables[18],0x24)!=g_profile->menu_newgame_primary || !g_profile->menu_newgame_cycle)return false;
     uintptr_t primaries[4]={g_profile->menu_shop_primary,g_profile->menu_craft_primary,g_profile->menu_inlay_primary,g_profile->menu_charm_primary};
     for (unsigned i=0;i<4;++i) if (!primaries[i] || Read32((void *)tables[i+11],0x24)!=primaries[i]) return false;
     if (!HookManager_Claim(SHARED_HOOK_CONTROLLER_MENU,RUNTIME_MODULE_CONTROLLER)) return false;

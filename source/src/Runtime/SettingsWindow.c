@@ -21,7 +21,8 @@ typedef struct {
     uintptr_t settings_actor_get,settings_string_get,settings_icon_global;
     uintptr_t ui_property,skill_groups,methods,lookup,skill_eligibility,icon_resolve,icon_draw;
     uintptr_t settings_skill_name,settings_skill_description,settings_string_destroy,settings_query_skill,settings_empty_string,settings_text_get,settings_text_table,focus_frame_get,focus_image_get;
-    unsigned active_offset,invalid_offset;BYTE signatures[18][12];
+    unsigned active_offset,invalid_offset;uintptr_t menu_settings_vtable,menu_settings_show,menu_settings_primary,menu_native_text_draw;
+    BYTE signatures[21][12];
 } SettingsBackend;
 #include "SettingsData.h"
 static SettingsBackend backend;
@@ -30,7 +31,8 @@ static unsigned game;
 static int ready,active,editing,footer,confirm_discard,picker,pick_focus,pick_scroll,barrier;
 static int draw_subscribed,input_subscribed,menu_swap,error_modal,picker_footer,scroll_drag;
 static ConfigId edit_id;static int edit_before;static char edit_text_before[40];
-static void *root;static uintptr_t old_primary,old_draw;
+static void *root;static uintptr_t old_primary,old_draw,host_table,host_show;
+static int native_host;
 static void paint(RuntimeEventId,void *,unsigned long,unsigned long,void *);
 static void clear_icon_cache(void);
 static HFONT font,help_font;static int origin_x,origin_y,logical_width,logical_height;
@@ -88,22 +90,22 @@ void SettingsWindow_Close(void)
     if(!active)return;
     /* 撤回失败时保留窗口和旧调用链，不能清空回调后把原系统菜单永久吞掉。
      * 先还原Draw，随后还原输入；后者失败则补回窗口Draw，供用户再次关闭。 */
-    if(old_draw && rd((void *)backend.menu_system_vtable,8)==(unsigned)(uintptr_t)fallback_draw) {
-        int result=RuntimeWin32_WriteCode((unsigned long)(backend.menu_system_vtable+8),&old_draw,4);
-        if(result!=1 && rd((void *)backend.menu_system_vtable,8)==(unsigned)(uintptr_t)fallback_draw) {
+    if(old_draw && rd((void *)host_table,8)==(unsigned)(uintptr_t)fallback_draw) {
+        int result=RuntimeWin32_WriteCode((unsigned long)(host_table+8),&old_draw,4);
+        if(result!=1 && rd((void *)host_table,8)==(unsigned)(uintptr_t)fallback_draw) {
             strcpy(message,"原绘制入口恢复失败，请再次关闭。");return;
         }
     }
-    if(readable((void *)(backend.menu_system_vtable+0x24),4) &&
-        rd((void *)backend.menu_system_vtable,0x24)==(unsigned)(uintptr_t)capture_primary) {
-        int result=RuntimeWin32_WriteCode((unsigned long)(backend.menu_system_vtable+0x24),&old_primary,4);
-        if(result!=1 && rd((void *)backend.menu_system_vtable,0x24)==(unsigned)(uintptr_t)capture_primary) {
-            if(old_draw){uintptr_t hook=(uintptr_t)fallback_draw;RuntimeWin32_WriteCode((unsigned long)(backend.menu_system_vtable+8),&hook,4);}
+    if(readable((void *)(host_table+0x24),4) &&
+        rd((void *)host_table,0x24)==(unsigned)(uintptr_t)capture_primary) {
+        int result=RuntimeWin32_WriteCode((unsigned long)(host_table+0x24),&old_primary,4);
+        if(result!=1 && rd((void *)host_table,0x24)==(unsigned)(uintptr_t)capture_primary) {
+            if(old_draw){uintptr_t hook=(uintptr_t)fallback_draw;RuntimeWin32_WriteCode((unsigned long)(host_table+8),&hook,4);}
             strcpy(message,"原输入入口恢复失败，请再次关闭。");return;
         }
     }
     old_draw=0;
-    if(readable(root,0x68))((This2)backend.menu_system_show)(root,0,0);
+    if(!native_host && readable(root,0x68))((This2)host_show)(root,0,0);
     active=editing=picker=confirm_discard=confirm_reset=0;root=NULL;old_primary=0;message[0]=0;
     RuntimeLog_Write("[模组设置] 关闭并释放原菜单捕获，原游戏恢复。");
 }
@@ -169,46 +171,62 @@ static void build_skills(void)
     }
     memset(learned_records,0,sizeof learned_records);skill_player=NULL;
 }
-static int open_window(void)
+static int open_on(void *native_page)
 {
     /* 窗口不能在Loader锁内打开；这里只由游戏输入线程的组合键/反引号边沿调用。
      * 原Show负责暂停和捕获，本函数不写角色动作状态，也不创建自己的暂停计数。 */
     if(!ready || active || !foreground())return 0;
     /* 上一次失败回滚若仍留着自己的包装，不能再把自己当旧入口形成递归链。 */
-    if(rd((void *)backend.menu_system_vtable,0x24)==(unsigned)(uintptr_t)capture_primary ||
-        rd((void *)backend.menu_system_vtable,8)==(unsigned)(uintptr_t)fallback_draw)return 0;
+    if(rd((void *)host_table,0x24)==(unsigned)(uintptr_t)capture_primary ||
+        rd((void *)host_table,8)==(unsigned)(uintptr_t)fallback_draw)return 0;
     void *world=ptr((void *)backend.world_global,0),*role=actor();
-    if(!rd(world,0x58) || !readable(role,backend.invalid_offset+4) || rd(role,backend.invalid_offset))return 0;
+    if(!native_page && (!rd(world,0x58) || !readable(role,backend.invalid_offset+4) || rd(role,backend.invalid_offset)))return 0;
     /* 原捕获中的其它菜单不被自建窗口替换；战斗/走路不作为拒绝理由，由原暂停保护。 */
-    if(ptr((void *)backend.ui,0x3C))return 0;
+    void *capture=ptr((void *)backend.ui,0x3C);
+    if(capture && (!native_page || (capture!=native_page && ptr(capture,0xA4)!=native_page)))return 0;
     /* 普通菜单模块只包装Tick/Show/hover，主操作+24保留原版是正常状态。
      * 当前是否可开由场景和捕获判断，不能要求这个槽先被另一个模块改写。 */
-    root=(void *)(uintptr_t)((This1)backend.get_jm)((void *)backend.ui,0x2D);
-    void *data=(void *)(uintptr_t)((This0)backend.inventory_get)((void *)backend.inventory_root);
-    unsigned selector=readable(data,0x34C) ? rd(data,0x348):0;
-    if(!readable(root,0xC0) || rd(root,0)!=backend.menu_system_vtable || !SettingsModel_Open(&model,game,selector)){root=NULL;return 0;}
-    old_primary=rd((void *)backend.menu_system_vtable,0x24);uintptr_t replacement=(uintptr_t)capture_primary;
+    native_host=native_page!=NULL;host_table=native_host ? backend.menu_settings_vtable:backend.menu_system_vtable;
+    host_show=native_host ? backend.menu_settings_show:backend.menu_system_show;
+    root=native_page ? native_page:(void *)(uintptr_t)((This1)backend.get_jm)((void *)backend.ui,0x2D);
+    void *data=rd(world,0x58) ? (void *)(uintptr_t)((This0)backend.inventory_get)((void *)backend.inventory_root):NULL;
+    unsigned selector=rd(world,0x58) && readable(role,backend.invalid_offset+4) && !rd(role,backend.invalid_offset) && readable(data,0x34C) ? rd(data,0x348):0;
+    if(!readable(root,0xC0) || rd(root,0)!=host_table || !SettingsModel_Open(&model,game,selector)){root=NULL;return 0;}
+    old_primary=rd((void *)host_table,0x24);uintptr_t replacement=(uintptr_t)capture_primary;
     if(!old_primary)return 0;
-    int installed=RuntimeWin32_WriteCode((unsigned long)(backend.menu_system_vtable+0x24),&replacement,4);
+    int installed=RuntimeWin32_WriteCode((unsigned long)(host_table+0x24),&replacement,4);
     if(installed!=1) {
         /* 2代表内存已写入但系统收尾失败，必须还原；不能将其冒充完全成功。 */
-        if(installed==2)RuntimeWin32_WriteCode((unsigned long)(backend.menu_system_vtable+0x24),&old_primary,4);
+        if(installed==2)RuntimeWin32_WriteCode((unsigned long)(host_table+0x24),&old_primary,4);
         root=NULL;return 0;
     }
     if(!RuntimeConfig_GetInt(CONFIG_DISPLAY_ENABLED)) {
-        old_draw=rd((void *)backend.menu_system_vtable,8);uintptr_t hook=(uintptr_t)fallback_draw;
-        int draw_result=old_draw ? RuntimeWin32_WriteCode((unsigned long)(backend.menu_system_vtable+8),&hook,4):0;
+        old_draw=rd((void *)host_table,8);uintptr_t hook=(uintptr_t)fallback_draw;
+        int draw_result=old_draw ? RuntimeWin32_WriteCode((unsigned long)(host_table+8),&hook,4):0;
         if(draw_result!=1) {
-            if(draw_result==2)RuntimeWin32_WriteCode((unsigned long)(backend.menu_system_vtable+8),&old_draw,4);
-            RuntimeWin32_WriteCode((unsigned long)(backend.menu_system_vtable+0x24),&old_primary,4);root=NULL;return 0;
+            if(draw_result==2)RuntimeWin32_WriteCode((unsigned long)(host_table+8),&old_draw,4);
+            RuntimeWin32_WriteCode((unsigned long)(host_table+0x24),&old_primary,4);root=NULL;return 0;
         }
     }
     /* 本次窗口固定使用打开时的确认布局，保存交换AB后不在半次编辑中改变含义。 */
     menu_swap=RuntimeConfig_GetInt(CONFIG_MENU_SWAP_AB);
     active=1;barrier=1;editing=footer=picker=confirm_discard=confirm_reset=error_modal=picker_footer=scroll_drag=0;previous_direction=0;message[0]=0;
     clear_icon_cache();
-    ((This2)backend.menu_system_show)(root,1,0);build_skills();
+    if(!native_host)((This2)host_show)(root,1,0);
+    skill_count=skill_view_count=0;if(selector)build_skills();
     RuntimeLog_Write("[模组设置] 打开并取得原系统菜单暂停/捕获，角色selector=%u。",selector);return 1;
+}
+static int open_window(void) {return open_on(NULL);}
+int SettingsWindow_NativeEntryRect(void *page,RuntimeFocusRect *rectangle)
+{
+    if(!ready || active || !rectangle || !readable(page,0xC0) || rd(page,0)!=backend.menu_settings_vtable || rd(page,0x28)!=0xAA || !rd(page,0x64))return 0;
+    int x=(int)rd(page,0x14),y=(int)rd(page,0x18);
+    *rectangle=(RuntimeFocusRect){x+400,y+306,x+576,y+342};return 1;
+}
+int SettingsWindow_OpenNative(void *page)
+{
+    RuntimeFocusRect r;if(!SettingsWindow_NativeEntryRect(page,&r))return 0;
+    return open_on(page);
 }
 static ConfigBinding effective_binding(unsigned slot)
 {return model.draft_bindings[slot];}
@@ -329,7 +347,7 @@ static void activate(void)
         return;
     }
     message[0]=0;
-    if(model.page==2){picker=1;pick_focus=pick_scroll=picker_footer=0;model.help=0;
+    if(model.page==2){if(!model.role){strcpy(message,"请载入角色后设置技能快捷键。");model.help=1;return;}picker=1;pick_focus=pick_scroll=picker_footer=0;model.help=0;
         ConfigBinding selected=effective_binding(model.focus[2]);picker_rebuild(selected.custom ? selected.selector:-1);
         return;}
     ConfigId id=SettingsModel_Field(model.page,model.focus[model.page]);const ConfigDescriptor *f=RuntimeConfig_Descriptor(id);
@@ -448,6 +466,15 @@ static void box(HDC dc,int x,int y,int w,int h,COLORREF fill,COLORREF edge)
     }
     RECT r={x,y,x+w,y+h};FillRect(dc,&r,selected[0]);FrameRect(dc,&r,selected[1]);
 }
+/* 弹窗和底部操作共用按钮外观；文字靠左，键位靠右，两部分互不抢空间。 */
+static void action_button(HDC dc,int x,int y,int w,int h,const char *label,const char *key,int focused)
+{
+    box(dc,x,y,w,h,RGB(45,36,24),focused ? RGB(204,69,36):RGB(164,124,59));
+    text(dc,x+8,y+4,w-64,h-8,label,RGB(236,218,178));
+    WCHAR wide[40];if(!MultiByteToWideChar(CP_UTF8,0,key,-1,wide,40))return;
+    RECT r={x+w-60,y+4,x+w-8,y+h-4};SetTextColor(dc,RGB(236,218,178));SetBkMode(dc,TRANSPARENT);
+    DrawTextW(dc,wide,-1,&r,DT_RIGHT|DT_TOP|DT_SINGLELINE|DT_NOPREFIX);
+}
 static void value_text(ConfigId id,char *out,size_t cap)
 {
     const ConfigDescriptor *f=RuntimeConfig_Descriptor(id);int v=model.draft.values[id];
@@ -510,13 +537,28 @@ static void paint_scrollbar(HDC dc,int x,int y)
     box(dc,x+track.left,y+track.top,track.right-track.left,track.bottom-track.top,RGB(45,36,24),RGB(96,75,43));
     box(dc,x+thumb.left,y+thumb.top,thumb.right-thumb.left,thumb.bottom-thumb.top,RGB(194,146,65),RGB(218,168,80));
 }
+static void paint_native_entry(unsigned long context)
+{
+    void *page=(void *)(uintptr_t)((This1)backend.get_jm)((void *)backend.ui,0xAA);RuntimeFocusRect r;
+    if(!SettingsWindow_NativeEntryRect(page,&r))return;
+    void *surface=(void *)(uintptr_t)context,*dd=ptr(surface,0x2D),*table=ptr(dd,0);
+    if(!readable(table,0x6C))return;
+    logical_width=(int)rd(surface,0xC);logical_height=(int)rd(surface,0x10);
+    HDC dc=NULL;SurfaceGetDC get=(SurfaceGetDC)(uintptr_t)rd(table,0x44);SurfaceReleaseDC release=(SurfaceReleaseDC)(uintptr_t)rd(table,0x68);
+    if(get(dd,&dc)!=S_OK || !dc)return;
+    box(dc,r.left,r.top,r.right-r.left,r.bottom-r.top,RGB(12,12,12),RGB(70,59,40));release(dd,dc);
+    static char caption[48];if(!caption[0])WideCharToMultiByte(936,0,L"EDSlash设置",-1,caption,sizeof caption,NULL,NULL);
+    typedef int (__attribute__((thiscall)) *NativeText)(void *,unsigned long,const char *,int,int,int);
+    ((NativeText)backend.menu_native_text_draw)(page,context,caption,r.left+12,r.top+8,0);
+}
 static void paint(RuntimeEventId event,void *subject,unsigned long context,unsigned long value,void *user)
 {
     /* 借用原游戏绘制上下文的DirectDraw表面，DC只在本次绘制中持有。
      * 面板保持608×448，较大的表面只改变居中原点，不改变逻辑控件大小。 */
     (void)subject;(void)value;(void)user;
-    if(event!=RUNTIME_EVENT_UI_DRAW_END || !active || !context)return;
-    if(!rd(ptr((void *)backend.world_global,0),0x58) || !rd(root,0x64)){SettingsWindow_Close();return;}
+    if(event!=RUNTIME_EVENT_UI_DRAW_END || !context)return;
+    if(!active){paint_native_entry(context);return;}
+    if((!native_host && !rd(ptr((void *)backend.world_global,0),0x58)) || !rd(root,0x64)){SettingsWindow_Close();return;}
     void *surface=(void *)(uintptr_t)context,*dd=ptr(surface,0x2D),*table=ptr(dd,0);
     if(!readable(surface,0x31) || !readable(table,0x6C))return;
     typedef HRESULT (__stdcall *GetDCFn)(void *,HDC *);typedef HRESULT (__stdcall *ReleaseDCFn)(void *,HDC);
@@ -533,13 +575,13 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
     for(unsigned i=0;i<3;++i){box(dc,x+16+(int)i*192,y+38,184,30,RGB(40,32,23),i==model.page ? RGB(218,168,80):RGB(104,78,38));text(dc,x+24+(int)i*192,y+44,160,20,pages[i],RGB(226,210,174));}
     unsigned start=model.scroll[model.page]*2,count=SettingsModel_Count(model.page);
     for(unsigned i=start;i<count && i<start+12;++i) {
-        int cx=x+16+(int)(i%2)*288,cy=y+82+(int)((i-start)/2)*48;int focused=!footer && model.focus[model.page]==i;
+        int cx=x+16+(int)(i%2)*288,cy=y+82+(int)((i-start)/2)*48;int focused=!footer && model.focus[model.page]==i && (model.page!=2 || model.role);
         box(dc,cx,cy,280,42,RGB(31,27,21),focused ? RGB(204,69,36):RGB(96,75,43));
         char label[96],value_text_buffer[96];int dirty=0;
         if(model.page==2) {
             static const char *names[]={"A","B","X","Y","上","下","左","右","LB","RB","Back","Start","L3","R3"};
             snprintf(label,sizeof label,"RT + %s",names[i]);ConfigBinding b=model.draft_bindings[i];
-            strcpy(value_text_buffer,"未设置");ConfigBinding shown=effective_binding(i);
+            strcpy(value_text_buffer,model.role ? "未设置":"载入角色后设置");ConfigBinding shown=effective_binding(i);
             if(shown.custom)for(unsigned n=0;n<skill_count;++n)if(skills[n].selector==shown.selector)snprintf(value_text_buffer,sizeof value_text_buffer,"%s",skills[n].name);
             dirty=memcmp(&b,&model.saved_bindings[i],sizeof b)!=0;
         } else {
@@ -551,12 +593,12 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
             snprintf(label,sizeof label,"%s%s",f->label,state);value_text(id,value_text_buffer,sizeof value_text_buffer);
             dirty=f->type==CONFIG_TEXT ? strcmp(model.draft.aspect_ratio,model.saved.aspect_ratio)!=0:model.draft.values[id]!=model.saved.values[id];
         }
-        text(dc,cx+(model.page==2 ? 54:8),cy+3,model.page==2 ? 218:264,18,label,RGB(222,205,172));text(dc,cx+(model.page==2 ? 54:8),cy+21,model.page==2 ? 218:264,18,value_text_buffer,dirty ? RGB(255,178,76):RGB(154,198,149));
+        text(dc,cx+(model.page==2 ? 54:8),cy+3,model.page==2 ? 218:264,18,label,RGB(222,205,172));text(dc,cx+(model.page==2 ? 54:8),cy+21,model.page==2 ? 218:264,18,value_text_buffer,model.page==2 && !model.role ? RGB(112,112,112):dirty ? RGB(255,178,76):RGB(154,198,149));
     }
-    box(dc,x+16,y+378,136,30,RGB(45,36,24),footer==1 ? RGB(204,69,36):RGB(138,103,48));text(dc,x+24,y+384,120,22,"保存 (START)",RGB(236,218,178));
-    box(dc,x+160,y+378,136,30,RGB(45,36,24),footer==2 ? RGB(204,69,36):RGB(138,103,48));text(dc,x+168,y+384,120,22,"关闭",RGB(236,218,178));
-    box(dc,x+304,y+378,136,30,RGB(45,36,24),footer==3 ? RGB(204,69,36):RGB(138,103,48));text(dc,x+312,y+384,120,22,editing ? "当前默认(BACK)":"本页默认(BACK)",RGB(236,218,178));
-    if(!picker){box(dc,x+448,y+378,144,30,RGB(45,36,24),RGB(138,103,48));text(dc,x+456,y+384,128,22,model.help ? "隐藏说明 (Y)":"显示说明 (Y)",RGB(236,218,178));}
+    action_button(dc,x+16,y+378,136,30,"保存","START",footer==1);
+    action_button(dc,x+160,y+378,136,30,"关闭",menu_swap ? "A":"B",footer==2);
+    action_button(dc,x+304,y+378,136,30,editing ? "当前默认":"本页默认","BACK",footer==3);
+    if(!picker)action_button(dc,x+448,y+378,144,30,model.help ? "隐藏说明":"显示说明","Y",0);
     text(dc,x+16,y+416,576,26,message[0] ? message:(editing ? "左右×1，上下×10，长按加速；BACK默认，START保存":"LB/RB分类，BACK本页默认，START保存，Y说明"),RGB(207,188,154));
     paint_scrollbar(dc,x,y);
     if(picker) {
@@ -576,13 +618,11 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         text(dc,x+24,y+90,552,26,f->label,RGB(236,218,178));
         text(dc,x+24,y+132,280,24,"当前选择／数值：",RGB(222,205,172));
         text(dc,x+24,y+160,280,30,current,RGB(255,178,76));
-        box(dc,x+24,y+202,128,36,RGB(45,36,24),RGB(164,124,59));box(dc,x+164,y+202,140,36,RGB(45,36,24),RGB(164,124,59));
         int options=f->type==CONFIG_CHOICE || f->type==CONFIG_TEXT || edit_id==CONFIG_PICKUP_MODE;
-        text(dc,x+32,y+210,112,24,options ? "上一项 ←":"减小数值 ←",RGB(236,218,178));
-        text(dc,x+172,y+210,124,24,options ? "下一项 →":"增大数值 →",RGB(236,218,178));
-        box(dc,x+24,y+306,128,36,RGB(45,36,24),RGB(164,124,59));box(dc,x+164,y+306,140,36,RGB(45,36,24),RGB(164,124,59));
-        text(dc,x+32,y+314,112,24,menu_swap ? "完成 (B)":"完成 (A)",RGB(236,218,178));
-        text(dc,x+172,y+314,124,24,menu_swap ? "取消 (A)":"取消 (B)",RGB(236,218,178));
+        action_button(dc,x+24,y+202,128,36,options ? "上一项":"减小数值","←",0);
+        action_button(dc,x+164,y+202,140,36,options ? "下一项":"增大数值","→",0);
+        action_button(dc,x+24,y+306,128,36,"完成",menu_swap ? "B":"A",0);
+        action_button(dc,x+164,y+306,140,36,"取消",menu_swap ? "A":"B",0);
         if(!model.help)text(dc,x+328,y+138,256,190,"左右调整最小单位，上下调整十倍。按住方向两秒后加快，百分比加速更快。\n\n完成只保留这次修改；返回主列表后，选择“保存并应用”才会保存。取消会恢复打开这个调整窗口前的值。\n\n按Y可查看本项的详细说明。",RGB(207,188,154));
     }
     if((picker || model.help) && !confirm_discard && !confirm_reset && !error_modal) {
@@ -597,14 +637,11 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         text(dc,x+h.left+8,y+h.top+8,h.right-h.left-16,h.bottom-h.top-16,description,RGB(236,218,178));
         if(prior)SelectObject(dc,prior);
     }
-    if(confirm_discard){box(dc,x+96,y+160,416,116,RGB(26,23,18),RGB(208,151,67));text(dc,x+112,y+176,384,40,menu_swap ? "有未保存修改。B丢弃并关闭，A继续编辑。":"有未保存修改。A丢弃并关闭，B继续编辑。",RGB(238,218,177));
-        box(dc,x+112,y+232,176,28,RGB(45,36,24),RGB(164,124,59));text(dc,x+120,y+236,160,22,menu_swap ? "丢弃并关闭 (B)":"丢弃并关闭 (A)",RGB(238,218,177));
-        box(dc,x+304,y+232,192,28,RGB(45,36,24),RGB(164,124,59));text(dc,x+312,y+236,176,22,menu_swap ? "继续编辑 (A)":"继续编辑 (B)",RGB(238,218,177));}
-    if(confirm_reset) {
+    if(confirm_discard || confirm_reset) {
         box(dc,x+96,y+160,416,116,RGB(26,23,18),RGB(208,151,67));
-        text(dc,x+112,y+176,384,40,"将本页所有项目恢复默认？其它页面不变，保存后生效。",RGB(238,218,177));
-        text(dc,x+112,y+236,176,24,menu_swap ? "恢复默认 (B)":"恢复默认 (A)",RGB(238,218,177));
-        text(dc,x+304,y+236,176,24,menu_swap ? "继续编辑 (A)":"继续编辑 (B)",RGB(238,218,177));
+        text(dc,x+112,y+176,384,40,confirm_reset ? "将本页恢复默认？其它页面不变，保存后生效。":"有未保存的修改。丢弃并关闭，或继续编辑。",RGB(238,218,177));
+        action_button(dc,x+112,y+232,176,28,confirm_reset ? "恢复默认":"丢弃并关闭",menu_swap ? "B":"A",0);
+        action_button(dc,x+304,y+232,192,28,"继续编辑",menu_swap ? "A":"B",0);
     }
     if(error_modal) {
         box(dc,x+96,y+138,416,190,RGB(26,23,18),RGB(208,151,67));
@@ -616,7 +653,7 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
     if(previous)SelectObject(dc,previous);
     if(saved_dc)RestoreDC(dc,saved_dc);
     ((ReleaseDCFn)(uintptr_t)rd(table,0x68))(dd,dc);
-    if(!confirm_discard && !confirm_reset && !error_modal && !editing && model.page==2) {
+    if(!confirm_discard && !confirm_reset && !error_modal && !editing && model.page==2 && model.role) {
         /* DC释放后补原图标；避开说明框，不能把后画的图标盖到说明文字上。 */
         void *icons=ptr((void *)backend.settings_icon_global,0),*hud=ptr((void *)backend.skill_global,0);
         unsigned icon_count=rd(icons,0x44);void *sprites=ptr(icons,0x48);
@@ -706,6 +743,13 @@ static void keyboard(RuntimeEventId event,void *subject,unsigned long result,uns
     previous_escape=escape;
     int left=(GetAsyncKeyState(VK_LBUTTON)&0x8000)!=0,right=(GetAsyncKeyState(VK_RBUTTON)&0x8000)!=0;
     if(active && right && !previous_right)cancel();
+    if(!active && left && !previous_left && logical_width && logical_height) {
+        POINT p;RECT client;HWND w=GetForegroundWindow();void *page=(void *)(uintptr_t)((This1)backend.get_jm)((void *)backend.ui,0xAA);RuntimeFocusRect r;
+        if(SettingsWindow_NativeEntryRect(page,&r) && GetCursorPos(&p) && ScreenToClient(w,&p) && GetClientRect(w,&client) && client.right>0 && client.bottom>0) {
+            p.x=MulDiv(p.x,logical_width,client.right);p.y=MulDiv(p.y,logical_height,client.bottom);
+            if((p.x>=r.left && p.x<r.right && p.y>=r.top && p.y<r.bottom) && SettingsWindow_OpenNative(page)){pointer_mode=1;previous_left=left;}
+        }
+    }
     if(active && left && !previous_left) {
         POINT p;GetCursorPos(&p);HWND w=GetForegroundWindow();ScreenToClient(w,&p);RECT client;
         if(!GetClientRect(w,&client) || client.right<=0 || client.bottom<=0 || !logical_width || !logical_height)return;
@@ -735,8 +779,8 @@ int SettingsWindow_Initialize(const RuntimeContext *runtime)
     if(ready)return 1;
     if(!runtime || !runtime->profile || runtime->profile->game_id<1 || runtime->profile->game_id>2)return 0;
     backend=settings_profiles[runtime->profile->game_id-1];game=runtime->profile->game_id;
-    uintptr_t functions[]={backend.inventory_get,backend.get_jm,backend.menu_system_show,backend.menu_system_primary,backend.settings_actor_get,backend.settings_string_get,backend.ui_property,backend.lookup,backend.skill_eligibility,backend.icon_resolve,backend.icon_draw,backend.settings_skill_name,backend.settings_skill_description,backend.settings_string_destroy,backend.settings_query_skill,backend.settings_text_get,backend.focus_frame_get,backend.focus_image_get};
-    for(unsigned i=0;i<18;++i){BYTE bytes[12];if(!RuntimeWin32_Read((unsigned long)functions[i],bytes,12) || memcmp(bytes,backend.signatures[i],12)) {
+    uintptr_t functions[]={backend.inventory_get,backend.get_jm,backend.menu_system_show,backend.menu_system_primary,backend.settings_actor_get,backend.settings_string_get,backend.ui_property,backend.lookup,backend.skill_eligibility,backend.icon_resolve,backend.icon_draw,backend.settings_skill_name,backend.settings_skill_description,backend.settings_string_destroy,backend.settings_query_skill,backend.settings_text_get,backend.focus_frame_get,backend.focus_image_get,backend.menu_settings_show,backend.menu_settings_primary,backend.menu_native_text_draw};
+    for(unsigned i=0;i<21;++i){BYTE bytes[12];if(!RuntimeWin32_Read((unsigned long)functions[i],bytes,12) || memcmp(bytes,backend.signatures[i],12)) {
         RuntimeLog_Write("[模组设置] 原接口%u地址%08lX未通过签名校验，设置窗口停用。",i,(unsigned long)functions[i]);return 0;}}
     /* 订阅分别记账；后一项失败时重试也不会重复注册前一项。 */
     if(!draw_subscribed)draw_subscribed=Runtime_Subscribe(RUNTIME_EVENT_UI_DRAW_END,paint,NULL);

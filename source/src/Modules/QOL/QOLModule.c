@@ -3,6 +3,7 @@
 #include "ItemClassifier.h"
 #include "AutoPickup.h"
 #include "PickupNotice.h"
+#include "RandomNameUI.h"
 #include "../../Runtime/HookManager.h"
 #include "../../Runtime/Win32Bridge.h"
 #include "../../Runtime/X86Detour.h"
@@ -86,11 +87,13 @@ static int verify_qol_entries(const GameProfile* profile)
         0x56u, 0x8Bu, 0x74u, 0x24u, 0x0Cu
     };
 
+    /* 新的容量查询是原只读函数；头部不符时停用QOL，避免调用未知代码。 */
+    static const unsigned char stack_head[12]={0x53,0x8B,0x5C,0x24,0x10,0x55,0x8B,0x6C,0x24,0x10,0x56,0x57};
     if (!profile) {
         return 0;
     }
 
-    return bytes_equal(GAME_IMAGE_BASE + profile->qol.ground_item_update_rva,
+    return bytes_equal(GAME_IMAGE_BASE+profile->qol.inventory_stack_room_rva,stack_head,sizeof stack_head) && bytes_equal(GAME_IMAGE_BASE + profile->qol.ground_item_update_rva,
                        ground_head,
                        (unsigned long)sizeof(ground_head)) &&
            bytes_equal(GAME_IMAGE_BASE + profile->qol.pickup_entry_rva,
@@ -126,6 +129,7 @@ static void after_input(RuntimeEventId event,void *subject,unsigned long v1,unsi
     AutoPickup_ApplySettings((AutoPickupPolicy)RuntimeConfig_GetInt(CONFIG_PICKUP_MODE),
         (unsigned long)RuntimeConfig_GetInt(CONFIG_PICKUP_INTERVAL));
     /* 原暂停仍刷新菜单输入；设置窗口存在时仅同步配置，不执行世界拾取扫描。 */
+    RandomNameUI_AfterInputFrame();
     if(!SettingsWindow_Active())AutoPickup_AfterInputFrame();
 }
 
@@ -188,6 +192,8 @@ static int install_pickup_hook(const GameProfile *profile)
     return g_original_pickup_entry ? 1:0;
 }
 
+int QOLModule_RandomName(void *page) {return RandomNameUI_Request(page);}
+
 int QOLModule_Initialize(const RuntimeContext* runtime)
 {
     QolSettings settings;
@@ -243,6 +249,7 @@ int QOLModule_Initialize(const RuntimeContext* runtime)
         return 0;
     }
 
+    if(!RandomNameUI_Initialize(runtime))RuntimeWin32_Log(runtime->self_module,"[QoL][随机名称] 原名称接口未通过校验，保留原手工输入。");
     if (!Runtime_Subscribe(RUNTIME_EVENT_INPUT_FRAME_END,after_input,(void*)0)) {
         rollback_hooks();return 0;
     }
