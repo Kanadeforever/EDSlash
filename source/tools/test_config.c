@@ -96,7 +96,7 @@ int wmain(void)
     CHECK(RuntimeConfig_SetBinding(1,4,1,binding));
     CHECK(!RuntimeConfig_GetBinding(1,4,1).custom);
     RuntimeConfig_ApplyFrame(0);
-    CHECK(!RuntimeConfig_GetBinding(1,4,1).custom);
+    CHECK(RuntimeConfig_GetBinding(1,4,1).custom);
     RuntimeConfig_ApplyFrame(1);
     CHECK(RuntimeConfig_GetBinding(1,4,1).custom && RuntimeConfig_GetBinding(1,4,1).selector==1001);
     CHECK(!RuntimeConfig_GetBinding(2,4,1).custom && !RuntimeConfig_GetBinding(1,1,1).custom);
@@ -143,8 +143,8 @@ int wmain(void)
     CHECK(!RuntimeConfig_GetSavedBinding(1,4,3).custom);
     CHECK(RuntimeFile_Read(path,text,sizeof text,&size) && size==before_size && !memcmp(text,saved,size));
     CHECK(RuntimeConfig_ApplyFrame(0) && RuntimeConfig_GetInt(CONFIG_AIM_EXPAND_MS)==1500);
-    CHECK(!RuntimeConfig_GetBinding(1,4,2).custom && RuntimeConfig_HasPending() && RuntimeConfig_NeedsRestart());
-    CHECK(RuntimeConfig_ApplyFrame(1) && RuntimeConfig_GetBinding(1,4,2).selector==1002);
+    CHECK(RuntimeConfig_GetBinding(1,4,2).custom && RuntimeConfig_NeedsRestart());
+    RuntimeConfig_ApplyFrame(1);CHECK(RuntimeConfig_GetBinding(1,4,2).selector==1002);
     CHECK(RuntimeConfig_GetBinding(2,50,14).selector==3000 && RuntimeConfig_GetInt(CONFIG_BASE_HEIGHT)==720);
     /* 外部程序改过文件时，保存不能覆盖新内容。 */
     const char *external="[meta]\r\nschema=1\r\n[controller.input]\r\ndeadzone=9000\r\n";

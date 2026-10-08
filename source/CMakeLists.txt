@@ -103,7 +103,8 @@ edslash_test(test_startup tools/controller/test_startup.c src/Runtime/ModuleRegi
     src/Modules/Controller/Control.c src/Modules/Controller/Game.c src/Modules/Controller/Combat.c
     src/Modules/Controller/SkillResolver.c src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
     src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Cursor.c src/Modules/Controller/Crash.c src/Modules/Controller/Inspect.c src/Runtime/Focus.c)
-target_link_libraries(test_startup PRIVATE user32 m)
+target_sources(test_startup PRIVATE src/Runtime/SettingsWindow.c src/Runtime/SettingsModel.c)
+target_link_libraries(test_startup PRIVATE user32 gdi32 m)
 
 edslash_test(test_notice tools/qol/test_notice.c)
 edslash_test(test_autopickup tools/qol/test_autopickup.c)
@@ -116,6 +117,10 @@ target_compile_definitions(test_log PRIVATE EDSLASH_BUILD_ID="${EDSLASH_BUILD_ID
 edslash_test(test_config tools/test_config.c src/Runtime/SettingsModel.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c)
 target_compile_options(test_config PRIVATE -municode)
 target_link_options(test_config PRIVATE -municode)
+edslash_test(test_settings_window tools/test_settings_window.c src/Runtime/SettingsModel.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c)
+target_compile_options(test_settings_window PRIVATE -municode)
+target_link_options(test_settings_window PRIVATE -municode)
+target_link_libraries(test_settings_window PRIVATE user32 gdi32)
 edslash_test(test_sdl tools/controller/test_sdl.c src/Modules/Controller/Input.c
     src/Modules/Controller/Control.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c)
 target_compile_definitions(test_sdl PRIVATE SDL_STATIC_LIB)

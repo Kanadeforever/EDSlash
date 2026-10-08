@@ -61,6 +61,7 @@ def main():
     # 真实原指令须能拒绝旧错误地图地址，不能把模拟对象回放当成档案地址正确的证据。
     run([sys.executable, SOURCE / 'tools/controller/test_profiles.py'], os.environ.copy())
     run([sys.executable, SOURCE / 'tools/generate_focus_profiles.py'], os.environ.copy())
+    run([sys.executable, SOURCE / 'tools/generate_settings_profiles.py'], os.environ.copy())
     # 源码与构建输入摘要包含未提交内容，不以HEAD冒充当前产物。
     digest = hashlib.sha256()
     inputs = sorted(p for p in SOURCE.rglob("*") if p.is_file() and
@@ -144,7 +145,7 @@ def main():
         evidence["UPX"] = {"源": "已剥离发行件", "SHA256": hashlib.sha256(packed.read_bytes()).hexdigest(),
                            "字节数": packed.stat().st_size, "压缩完整性及非游戏加载": "通过",
                            "本轮新文件实机": "尚未单独复测"}
-    evidence["范围"] = "四官方准确EXE；双扳机动作菜单/快捷格/360度交互响应、分帧拾取与既有完整回归"
+    evidence["范围"] = "四官方准确EXE；原暂停模组设置/热应用/按键与技能绑定、双扳机动作菜单/快捷格/360度交互、分帧拾取与既有完整回归"
     evidence["验收边界"] = "原EXE静态及宿主回归不能证明GUI、脚本、设备、地图或Steam DLL全部通过"
     if args.checks_only:
         cleanup_legacy_cache()

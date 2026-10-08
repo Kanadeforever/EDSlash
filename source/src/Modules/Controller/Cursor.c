@@ -2,6 +2,7 @@
 #include "Menu.h"
 #include "Crash.h"
 #include "../../Runtime/Focus.h"
+#include "../../Runtime/SettingsWindow.h"
 #include <string.h>
 
 static BYTE saved[4][6];
@@ -31,6 +32,7 @@ static BOOL WINAPI position_hook(LPPOINT point)
 {
     /* 只替换软件光标绘制函数里那一次坐标取得。环形旧矩形记录和背景恢复仍会运行，
      * 因此焦点改变后不会留下旧图样；真正的世界/GUI采样GetCursorPos完全没有修改。 */
+    if(SettingsWindow_Active())return native_position(point);
     if (pad_visual() && (Game_JumpAnchor(point) || Menu_CursorAnchor(point))) return TRUE;
     return native_position(point);
 }
@@ -39,6 +41,10 @@ static int __attribute__((fastcall)) sprite_hook(void *self,void *unused,
 {
     (void)unused;
     POINT anchor;
+    if(SettingsWindow_Active()) {
+        if(!SettingsWindow_ShowPointer())return 0;
+        return ((SpriteDraw)g_profile->cursor_sprite_draw)(self,surface,x,y,frame,shade,flags);
+    }
     /* 普通手柄只在有效菜单焦点画原图样；世界或未知页隐藏图样。
      * 物理来源和BACK+START救援模式完整保留原位置、精灵、动画、颜色与参数。 */
     if (pad_visual()) {

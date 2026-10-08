@@ -4,6 +4,7 @@
 #include "Feedback.h"
 #include "Menu.h"
 #include "Inspect.h"
+#include "../../Runtime/SettingsWindow.h"
 #include "../../Runtime/Perf.h"
 #include <math.h>
 #include <stdio.h>
@@ -392,6 +393,7 @@ bool Game_JumpAnchor(POINT *point)
 void Game_Update(void)
 {
     ++native_frames;
+    if(SettingsWindow_Active() || !RuntimeConfig_GetInt(CONFIG_CONTROLLER_ENABLED)){Game_Release();Combat_Suspend();return;}
     if (!Memory_Readable(world(),0x5C) || !Read32(world(),0x58)) { Game_Release();Combat_Reset();return; }
     uint32_t menu_buttons=KEY(PAD_UP)|KEY(PAD_DOWN)|KEY(PAD_LEFT)|KEY(PAD_RIGHT);
     if (g_intent.menu_toggle || (g_intent.layer==LAYER_GAME && (g_intent.pressed & menu_buttons))) {

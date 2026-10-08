@@ -8,6 +8,7 @@
 #include "../../Runtime/X86Detour.h"
 #include "../../Runtime/Config.h"
 #include "../../Runtime/InputFrame.h"
+#include "../../Runtime/SettingsWindow.h"
 
 #define GAME_IMAGE_BASE 0x00400000ul
 #define CONFIG_PATH_CAPACITY 260ul
@@ -124,7 +125,8 @@ static void after_input(RuntimeEventId event,void *subject,unsigned long v1,unsi
         (unsigned long)RuntimeConfig_GetInt(CONFIG_DROP_DELAY));
     AutoPickup_ApplySettings((AutoPickupPolicy)RuntimeConfig_GetInt(CONFIG_PICKUP_MODE),
         (unsigned long)RuntimeConfig_GetInt(CONFIG_PICKUP_INTERVAL));
-    AutoPickup_AfterInputFrame();
+    /* 原暂停仍刷新菜单输入；设置窗口存在时仅同步配置，不执行世界拾取扫描。 */
+    if(!SettingsWindow_Active())AutoPickup_AfterInputFrame();
 }
 
 static int __cdecl qol_pickup_entry(int ground_item, int action_this)

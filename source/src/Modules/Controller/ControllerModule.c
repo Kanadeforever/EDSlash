@@ -3,6 +3,7 @@
 #include "../../Runtime/Log.h"
 #include "../../Runtime/Perf.h"
 #include "../../Runtime/Win32Bridge.h"
+#include "../../Runtime/SettingsWindow.h"
 #include "Combat.h"
 #include "Guard.h"
 #include "Feedback.h"
@@ -38,11 +39,11 @@ static PadInput previous_pad;
 static PadInput native_pad_anchor;
 static unsigned previous_mouse_buttons;
 static LPARAM previous_mouse_position;
-static bool mouse_position_known;
+static bool mouse_position_known,settings_capture_seen;
 
 static void use_physical_mouse(void)
 {
-    if (runtime_state!=1 || control.mouse || native_control) return;
+    if (SettingsWindow_Active() || runtime_state!=1 || control.mouse || native_control) return;
     Combat_ExportHistory();
     native_pad_anchor=previous_pad;
     ActionMenu_Suspend();Menu_Suspend();Game_Release();Combat_Suspend();
@@ -53,6 +54,7 @@ static void use_physical_mouse(void)
 
 static LRESULT CALLBACK window_hook(HWND window, UINT message, WPARAM wp, LPARAM lp)
 {
+    if(message==WM_MOUSEWHEEL && SettingsWindow_Wheel((short)(wp>>16)))return 0;
     /* 用户的实际鼠标操作可接管，不要求进入手柄虚拟鼠标救援模式。
      * 救援模式中 SetCursorPos/SendInput 属于插件自身，绝不能反向认成物理来源。 */
     if (message==WM_MOUSEMOVE) {
@@ -147,6 +149,10 @@ static BOOL WINAPI keyboard_hook(PBYTE keys)
     }
     g_input.menu = Game_Menu();
     g_input.connected = Input_Poll(&g_input);
+    /* 设置入口读取原始物理边沿，不能被世界改绑、鼠标接管或菜单AB交换抹掉。 */
+    static uint32_t settings_previous_buttons;
+    uint32_t settings_pressed=g_input.buttons & ~settings_previous_buttons;
+    settings_previous_buttons=g_input.buttons;
     /* 安全点及模块确认由同一个生产函数协调，Guard延后接收时保留代数，下帧再确认。 */
     static unsigned guard_generation;
     Guard_SyncSettings(&g_input,&guard_generation);
@@ -179,6 +185,23 @@ static BOOL WINAPI keyboard_hook(PBYTE keys)
         /* 救援模式最后一条程序生成的鼠标移动可能还在消息队列中，重建位置基准。 */
         mouse_position_known=false;
     }
+    bool settings_was_open=SettingsWindow_Active();
+    if(SettingsWindow_Pad(g_input.buttons,settings_pressed,g_input.lt,g_input.rt,g_input.lx,g_input.ly,g_input.rx,g_input.ry,g_input.now)) {
+        settings_capture_seen=true;
+        /* 救援鼠标模式也必须停止生成鼠标事件，否则导航摇杆同时拖动真实指针。 */
+        Input_Mouse(false);Input_ReleaseMouse();
+        Game_Release();Combat_Suspend();g_intent.layer=LAYER_MENU;g_intent.held=g_intent.pressed=0;
+        memset(keys,0,256);return result;
+    }
+    if(settings_was_open || settings_capture_seen) {
+        settings_capture_seen=false;
+        /* 关闭当帧及后续旧持键不再走世界/原菜单；连同扳机一起等中立。 */
+        control.ready=false;Game_Release();Combat_Suspend();g_intent.layer=LAYER_NONE;g_intent.held=g_intent.pressed=0;memset(keys,0,256);return result;
+    }
+    if(!RuntimeConfig_GetInt(CONFIG_CONTROLLER_ENABLED)) {
+        Game_Release();Combat_Suspend();g_intent.layer=LAYER_NATIVE;g_intent.held=g_intent.pressed=0;
+        return result; /* 设置输入已经处理；原物理输入不被关闭的手柄桥接管。 */
+    }
     Game_Diagnose();
     if (g_intent.reset) { Game_Release(); Input_ReleaseMouse(); }
     if (g_intent.mode_changed || !g_input.connected || !g_input.focused) Combat_Reset();
@@ -198,6 +221,9 @@ static BOOL WINAPI keyboard_hook(PBYTE keys)
 
 static SHORT WINAPI async_hook(int key)
 {
+    /* 设置窗口直接读取本ASI自己的系统入口。这里是游戏的入口，捕获时全部屏蔽，
+     * 避免窗口中的Enter、Y、方向键或鼠标同时触发原游戏的控制台和动作。 */
+    if(SettingsWindow_Active())return 0;
     SHORT native = original_async(key);
     if (game_thread != GetCurrentThreadId()) return native;
     return Game_Async(key, native);
@@ -330,7 +356,7 @@ static void initialize_runtime(void)
 
 int ControllerModule_Initialize(const RuntimeContext *runtime)
 {
-    if (!runtime || !runtime->profile || !RuntimeConfig_GetInt(CONFIG_CONTROLLER_ENABLED)) return 0;
+    if (!runtime || !runtime->profile) return 0;
     if (GetModuleHandleW(L"EDSlashController.asi")) {
         Log_Write("[Controller][停止] 检测到旧独立ASI，请停用它后使用统一插件。");return 0;
     }
@@ -354,6 +380,8 @@ int ControllerModule_Initialize(const RuntimeContext *runtime)
 }
 void ControllerModule_Shutdown(void)
 {
+    /* 先释放设置占用的原系统菜单虚表，随后才能撤回Controller菜单包装。 */
+    SettingsWindow_Close();
     /* 仅在显式卸载时撤回仍归本模块的入口；进程终止不在Loader锁内关闭SDL线程。 */
     if (!g_profile || !original_keyboard) return;
         Inspect_Shutdown();Cursor_Shutdown();ActionMenu_Shutdown();Menu_Shutdown();Feedback_Shutdown();Guard_Shutdown();

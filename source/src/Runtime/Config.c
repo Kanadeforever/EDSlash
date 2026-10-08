@@ -12,46 +12,57 @@
 /* 描述表是默认模板、范围校验和未来界面的共同来源，防止三处各写一套默认值。 */
 #define B(id,table,key,label,description,apply) {id,table,key,label,description,CONFIG_BOOL,1,0,1,1,NULL,NULL,apply}
 #define N(id,table,key,label,description,def,min,max,step,apply) {id,table,key,label,description,CONFIG_INT,def,min,max,step,NULL,NULL,apply}
-#define P(id,key,label) {id,"gameplay.stamina",key,label,"按最大体力百分比计算，0表示没有单次变化，最多两位小数。",CONFIG_PERCENT,0,0,10000,25,NULL,NULL,CONFIG_APPLY_FRAME}
-#define K(id,key,label,def) {id,"controller.world_keys",key,label,"仅普通世界层改绑；菜单和修饰组合保留原位置。七项不能重复，交换两键请同时保存。",CONFIG_CHOICE,def,0,7,1,NULL,"a|b|x|y|back|start|l3|r3",CONFIG_APPLY_IDLE}
+#define P(id,key,label) {id,"gameplay.stamina",key,label,(id==CONFIG_GUARD_PERCENT ? "设置防御每次消耗的体力。100%代表角色整条最大体力；1%代表其中百分之一。例如最大体力100时，1%就是1点。0表示不扣。需要将防御消耗模式设为最大体力百分比。" : "设置每次攻击造成实际伤害后恢复的体力。100%代表整条最大体力；1%代表其中百分之一。0表示不恢复。需要将攻击恢复模式设为最大体力百分比。没有伤害敌人时不恢复，恢复也不能超过体力上限。"),CONFIG_PERCENT,0,0,10000,25,NULL,NULL,CONFIG_APPLY_FRAME}
+/* 世界键说明先解释对应动作，再说明改键规则；名字仍由下面每个K项目指定。 */
+#define WORLD_KEYS_HELP "这是没有按住LT、RT等组合键时的按钮。菜单确认取消不随它改变。七项不能用同一个按钮；交换两键时，先把两项改好再保存。"
+#define K(id,key,label,def) {id,"controller.world_keys",key,label, \
+    (id==CONFIG_WORLD_INTERACT ? "按下后与附近的人物、物品、机关或换区点互动。会优先选择较近和角色前方的目标。" WORLD_KEYS_HELP : \
+     id==CONFIG_WORLD_AIM ? "按住时预览动作落点，用左摇杆调整方向，松开后执行。默认用于跳跃，外传长老默认是瞬移。" WORLD_KEYS_HELP : \
+     id==CONFIG_WORLD_LEFT ? "执行左手动作，通常是普通攻击。左右手动作可在同时按住LT和RT、拨动右摇杆打开的菜单中选择。" WORLD_KEYS_HELP : \
+     id==CONFIG_WORLD_RIGHT ? "执行右手当前选择的技能或连招套组。可以连续按下，按游戏原来的规则衔接动作。" WORLD_KEYS_HELP : \
+     id==CONFIG_WORLD_RUN ? "移动中按下后开始跑步；松开左摇杆停止移动，再移动时恢复走路。不改变跑步速度。" WORLD_KEYS_HELP : \
+     id==CONFIG_WORLD_MAP ? "按下显示或隐藏小地图，方便查看周围道路和位置。" WORLD_KEYS_HELP : \
+     "按下打开或关闭游戏原本的系统菜单，用于存档、读档和返回等操作。插件设置仍用LT加RT加Back打开。" WORLD_KEYS_HELP), \
+    CONFIG_CHOICE,def,0,7,1,NULL,"a|b|x|y|back|start|l3|r3",CONFIG_APPLY_IDLE}
+
 static const ConfigDescriptor fields[CONFIG_COUNT]={
-    B(CONFIG_DISPLAY_ENABLED,"display","enabled","动态宽屏","保持原显示修复范围；修改后重启。",CONFIG_APPLY_RESTART),
-    N(CONFIG_BASE_HEIGHT,"display","base_height","逻辑高度","默认480；更高数值扩大视野并增加游戏负担。",480,1,INT_MAX,16,CONFIG_APPLY_RESTART),
-    {CONFIG_ASPECT_RATIO,"display","aspect_ratio","画面比例","auto自动，或正整数宽:高；最终宽度仍按8像素对齐。",CONFIG_TEXT,0,0,0,0,"auto",NULL,CONFIG_APPLY_RESTART},
-    B(CONFIG_FONT_DPI,"font","fix_dpi","字体DPI修复","修改后重启。",CONFIG_APPLY_RESTART),
-    B(CONFIG_CENTER_HUD,"gui","center_hud","HUD居中","只影响显示布局，修改后重启。",CONFIG_APPLY_RESTART),
-    B(CONFIG_AUXILIARY_UI,"gui","auxiliary_above_hud","辅助界面层级","保持已验收的绘制和点击优先级。",CONFIG_APPLY_RESTART),
-    B(CONFIG_GROUND_NAMES,"qol.ground_items","always_show_names","物品名称常显","关闭后恢复原版显示条件。",CONFIG_APPLY_FRAME),
-    N(CONFIG_PICKUP_MODE,"qol.auto_pickup","mode","自动拾取范围","0关闭、1钱、2钱及回复、3再加宝石护身石、4全部。",2,0,4,1,CONFIG_APPLY_FRAME),
-    N(CONFIG_PICKUP_INTERVAL,"qol.auto_pickup","interval_ms","拾取扫描间隔","毫秒；0为每输入帧扫描，默认100。",100,0,3000,25,CONFIG_APPLY_FRAME),
-    N(CONFIG_DROP_DELAY,"qol.auto_pickup","drop_delay_ms","掉落等待","毫秒；仍需完成原版落地动画。",1000,0,3000,100,CONFIG_APPLY_FRAME),
-    B(CONFIG_CONTROLLER_ENABLED,"controller","enabled","手柄功能","关闭仍可用键鼠；启动安装选择修改后重启。",CONFIG_APPLY_RESTART),
-    N(CONFIG_DEADZONE,"controller.input","deadzone","摇杆死区","圆形左摇杆死区；连接时先松开全部输入。",8000,1000,24000,500,CONFIG_APPLY_FRAME),
-    N(CONFIG_MOVE_LEAD,"controller.movement","lead_tiles","移动前探","地图格数；走跑共用。",12,6,32,1,CONFIG_APPLY_IDLE),
-    N(CONFIG_MOUSE_SPEED,"controller.mouse","speed","鼠标模式速度","每秒桌面像素，右摇杆为三分之一。",900,100,3000,50,CONFIG_APPLY_FRAME),
-    B(CONFIG_RUMBLE,"controller.feedback","rumble","手柄震动","保持已有模式切换震动。",CONFIG_APPLY_FRAME),
-    B(CONFIG_CHARGE_GUARD,"gameplay.combat","charge_guard_on_hit","受击才扣防御体力","关闭恢复原版周期消耗。",CONFIG_APPLY_FRAME),
-    B(CONFIG_FREE_RUN,"gameplay.combat","free_run","跑步不扣体力","不按是否战斗区分。",CONFIG_APPLY_FRAME),
-    B(CONFIG_OMNI_GUARD,"gameplay.combat","omnidirectional_guard","全方位格挡","保留原5点体力门和特殊穿防。",CONFIG_APPLY_FRAME),
-    B(CONFIG_DIRECTIONAL_DODGE,"gameplay.combat","directional_dodge","方向闪避","当前闪避结束后应用；关闭恢复原版目标闪避。",CONFIG_APPLY_IDLE),
-    N(CONFIG_DODGE_DISTANCE,"gameplay.combat","dodge_distance","闪避距离","世界单位；64为1格，原碰撞限制保留。",128,16,512,16,CONFIG_APPLY_IDLE),
-    {CONFIG_GUARD_MODE,"gameplay.stamina","guard_mode","防御消耗模式","original原角色值，percent自定百分比。",CONFIG_CHOICE,0,0,1,1,NULL,"original|percent",CONFIG_APPLY_FRAME},
+    B(CONFIG_DISPLAY_ENABLED,"display","enabled","动态宽屏","让游戏画面适应较宽的屏幕，减少两侧空白。关闭时使用原游戏的画面方式。保存后需要退出游戏并重新打开才会改变。",CONFIG_APPLY_RESTART),
+    N(CONFIG_BASE_HEIGHT,"display","base_height","逻辑高度","决定画面能显示多大范围的场景。第一次使用建议保持480。调大后通常能看见更多场景，但人物和物品会变小，也会增加电脑负担。保存后重新打开游戏生效。",480,1,INT_MAX,16,CONFIG_APPLY_RESTART),
+    {CONFIG_ASPECT_RATIO,"display","aspect_ratio","画面比例","选择画面的宽和高之间的比例。自动会跟随游戏窗口；16:9适合常见宽屏，4:3接近原游戏。保存后需要重新打开游戏。",CONFIG_TEXT,0,0,0,0,"auto",NULL,CONFIG_APPLY_RESTART},
+    B(CONFIG_FONT_DPI,"font","fix_dpi","字体DPI修复","用于修正Windows显示缩放造成的字体大小异常。如果文字大小正常，可以保持当前选择。保存后需要退出并重新打开游戏。",CONFIG_APPLY_RESTART),
+    B(CONFIG_CENTER_HUD,"gui","center_hud","HUD居中","把画面底部的生命、体力、技能和物品快捷栏放在屏幕中间。关闭后使用原游戏位置。保存后直接改变位置，不需要重新打开游戏。",CONFIG_APPLY_FRAME),
+    B(CONFIG_AUXILIARY_UI,"gui","auxiliary_above_hud","辅助界面层级","开启后，背包等打开的窗口会显示在底部生命条和快捷栏的前面，避免被它们遮住。关闭后使用原游戏的叠放顺序。只改变谁在前面，不移动按钮。保存后直接生效。",CONFIG_APPLY_FRAME),
+    B(CONFIG_GROUND_NAMES,"qol.ground_items","always_show_names","物品名称常显","不用按住查看键，就能看到地上物品的名字，更容易判断要不要拾取。关闭后按照原游戏的方式显示物品名字。",CONFIG_APPLY_FRAME),
+    N(CONFIG_PICKUP_MODE,"qol.auto_pickup","mode","自动拾取范围","角色靠近地上物品时，插件会自动拾取选定类别。可选择关闭、只捡钱、钱和恢复道具、再加入宝石护身石，或者全部物品。仍然需要有足够的背包空间；不在范围内的物品可以手动拾取。",2,0,4,1,CONFIG_APPLY_FRAME),
+    N(CONFIG_PICKUP_INTERVAL,"qol.auto_pickup","interval_ms","拾取扫描间隔","自动拾取每隔多久检查一次附近物品。1000毫秒等于1秒，100毫秒等于0.1秒。调小会更快尝试拾取，但更频繁检查会增加电脑负担；0表示每次游戏刷新输入都检查。",100,0,3000,25,CONFIG_APPLY_FRAME),
+    N(CONFIG_DROP_DELAY,"qol.auto_pickup","drop_delay_ms","掉落等待","怪物掉落物品后，自动拾取至少等待多久。1000毫秒等于1秒。调小可以更早拾取，但物品仍必须先完成原游戏的落地动作；0也不能拾取还在空中的物品。",1000,0,3000,100,CONFIG_APPLY_FRAME),
+    B(CONFIG_CONTROLLER_ENABLED,"controller","enabled","手柄功能","开启后可以用手柄移动、战斗和操作菜单。关闭后使用原键盘鼠标；插件设置入口仍保留，可以再开启。保存后先松开手柄输入，等当前动作结束，才会切换。",CONFIG_APPLY_IDLE),
+    N(CONFIG_DEADZONE,"controller.input","deadzone","摇杆死区","摇杆推动超过这段幅度才开始控制角色。调大可以减少摇杆轻微偏移造成的自行移动，但需要推得更远。调小会更灵敏。连接手柄后先松开摇杆和按键，再开始使用。",8000,1000,24000,500,CONFIG_APPLY_FRAME),
+    N(CONFIG_MOVE_LEAD,"controller.movement","lead_tiles","移动前探","控制角色朝摇杆方向移动时，向前查找移动目标的距离。数值越大，目标放得越远；数值越小，目标更靠近角色。走路和跑步共用这项。修改后松开输入，等当前动作结束生效。",12,6,32,1,CONFIG_APPLY_IDLE),
+    N(CONFIG_MOUSE_SPEED,"controller.mouse","speed","鼠标模式速度","在手柄的鼠标救援模式里，控制指针移动速度。调大移动更快，调小更方便对准小按钮。右摇杆使用较慢的速度。正常角色移动不受这项影响。",900,100,3000,50,CONFIG_APPLY_FRAME),
+    B(CONFIG_RUMBLE,"controller.feedback","rumble","手柄震动","切换手柄和鼠标救援模式时，让手柄轻微震动，提醒切换成功。关闭后不震动。手柄本身不支持震动时，这项不会产生效果。",CONFIG_APPLY_FRAME),
+    B(CONFIG_CHARGE_GUARD,"gameplay.combat","charge_guard_on_hit","受击才扣防御体力","按住LT防御时，只有成功格挡攻击才扣体力；没有受到攻击时不扣。关闭后恢复原游戏规则，持续防御也会不断扣体力。体力不足仍会按原游戏规则停止防御。",CONFIG_APPLY_FRAME),
+    B(CONFIG_FREE_RUN,"gameplay.combat","free_run","跑步不扣体力","开启后跑步不消耗体力，战斗中也一样。关闭后恢复原游戏跑步消耗体力的规则。不改变跑步速度。",CONFIG_APPLY_FRAME),
+    B(CONFIG_OMNI_GUARD,"gameplay.combat","omnidirectional_guard","全方位格挡","按住LT防御时，可以格挡来自前后左右的普通攻击。关闭后只按原游戏允许的方向格挡。体力太少或遇到原本就无法格挡的攻击，仍可能受伤。",CONFIG_APPLY_FRAME),
+    B(CONFIG_DIRECTIONAL_DODGE,"gameplay.combat","directional_dodge","方向闪避","闪避时，左摇杆推向哪里，就朝哪里直线移动。关闭后使用原游戏的闪避方向和路径。当前闪避不会被半途改变；下一次闪避使用新选择。",CONFIG_APPLY_IDLE),
+    N(CONFIG_DODGE_DISTANCE,"gameplay.combat","dodge_distance","闪避距离","方向闪避一次移动多远。调大距离更长，调小更容易停在近处。64大约相当于一个地图格。墙壁和障碍仍会限制移动。只在方向闪避开启时使用；当前闪避结束后生效。",128,16,512,16,CONFIG_APPLY_IDLE),
+    {CONFIG_GUARD_MODE,"gameplay.stamina","guard_mode","防御消耗模式","选择防御扣掉多少体力：游戏原有消耗沿用这个角色的原值；最大体力百分比使用下方的防御扣费百分比。百分比以整条体力的最大值计算，不是当前剩余体力。",CONFIG_CHOICE,0,0,1,1,NULL,"original|percent",CONFIG_APPLY_FRAME},
     P(CONFIG_GUARD_PERCENT,"guard_percent","防御扣费百分比"),
-    {CONFIG_RECOVERY_MODE,"gameplay.stamina","recovery_mode","攻击恢复模式","guard跟随防御消耗，percent自定百分比。",CONFIG_CHOICE,0,0,1,1,NULL,"guard|percent",CONFIG_APPLY_FRAME},
+    {CONFIG_RECOVERY_MODE,"gameplay.stamina","recovery_mode","攻击恢复模式","攻击确实伤害敌人时，可以恢复体力。选择与格挡消耗相同，恢复量就和防御扣费相同；选择最大体力百分比，则使用下方的实伤恢复百分比。挥空或完全被格挡不会恢复。",CONFIG_CHOICE,0,0,1,1,NULL,"guard|percent",CONFIG_APPLY_FRAME},
     P(CONFIG_RECOVERY_PERCENT,"recovery_percent","实伤恢复百分比"),
     N(CONFIG_INSPECT_DISTANCE,"controller.interaction","max_distance","正面调查最大距离",
-      "世界单位，64=1格；范围16～480，默认160；360度近身搜索，优先近处及前方，不改变原互动资格。",160,16,480,16,CONFIG_APPLY_FRAME),
+      "按调查键时，在角色周围多远的范围内寻找物品、人物、机关和换区点。调大可以更远选中，调小更容易区分靠近的目标。会优先选择较近和角色前方的目标；仍需满足原游戏的互动条件。默认160，最多480。",160,16,480,16,CONFIG_APPLY_FRAME),
     {CONFIG_LEGACY_ULTIMATE,"controller.combat","single_trigger_ultimate","旧必杀输入模式",
-     "false使用LT+RT+ABXY准备/再次新按释放；true恢复LT+ABXY，连招只能LT十字切换。动作菜单仍使用双扳机。",
+     "关闭时使用较安全的新方式：同时按住LT和RT，再按A/B/X/Y准备必杀；松开面键后再次按同一个键才释放。开启后只需LT加面键，较容易误触，连招切换也固定使用LT加方向键。",
      CONFIG_BOOL,0,0,1,1,NULL,NULL,CONFIG_APPLY_FRAME},
     {CONFIG_COMBO_SWITCH,"controller.combat","combo_switch_input","新模式连招切换输入",
-     "仅single_trigger_ultimate=false时生效：face为LT+Y/B/A/X切1/2/3/4，dpad为LT+上/右/下/左；旧模式固定dpad。",
+     "选择四套连招的切换方法。面键方式为按住LT，再按Y/B/A/X选择第1/2/3/4套；方向键方式为LT加上/右/下/左。只有旧必杀输入模式关闭时可以选择；旧模式固定用方向键。",
      CONFIG_CHOICE,0,0,1,1,NULL,"face|dpad",CONFIG_APPLY_FRAME},
     N(CONFIG_AIM_EXPAND_MS,"controller.skill_aim","expand_time_ms","技能落点扩散耗时",
-      "从最短距离扩到原技能最远落点的毫秒数；越小越快，范围100～10000，默认1000。每次按B固定本次值，下次预览使用新设置。",
+      "按住跳跃预览键时，落点从近处扩到最远处需要多久。1000毫秒等于1秒。调小扩得更快，调大更方便慢慢选距离。松开按键后朝预览位置跳跃，长老使用瞬移。正在预览的这一次不受修改影响。",
       1000,100,10000,50,CONFIG_APPLY_FRAME),
     {CONFIG_MENU_SWAP_AB,"controller.menu","swap_confirm_cancel","菜单确认取消交换",
-     "false为A确认B取消；true为B确认A取消。只影响菜单，世界操作和组合技能不变；输入释放后的安全点生效。",
+     "交换菜单里的确认和取消按钮。关闭为A确认、B取消；开启为B确认、A取消。不会交换战斗动作和组合键。当前插件设置窗口保持打开时的按法，下次打开才使用新按法。",
      CONFIG_BOOL,0,0,1,1,NULL,NULL,CONFIG_APPLY_IDLE},
     K(CONFIG_WORLD_INTERACT,"interact","调查键",0),K(CONFIG_WORLD_AIM,"skill_aim","技能落点预览键",1),
     K(CONFIG_WORLD_LEFT,"left_action","左手动作键",2),K(CONFIG_WORLD_RIGHT,"right_action","右手动作键",3),
@@ -62,6 +73,7 @@ static const ConfigDescriptor fields[CONFIG_COUNT]={
 #undef N
 #undef P
 #undef K
+#undef WORLD_KEYS_HELP
 typedef struct {unsigned game,role,slot;ConfigBinding binding;} BindingRecord;
 /* 文档和候选缓冲放静态区，不把64KiB文档压到游戏调用栈，也不逐帧分配。 */
 static TomlDocument document,candidate;
@@ -181,7 +193,10 @@ invalid:
     /* 普通世界动作必须有独立物理键；批量保存允许两项同时交换，不留下中间冲突。 */
     for(unsigned i=CONFIG_WORLD_INTERACT;i<=CONFIG_WORLD_SYSTEM;++i)
         for(unsigned j=CONFIG_WORLD_INTERACT;j<i;++j)
-            if(snapshot->values[i]==snapshot->values[j])return error("世界操作键位重复，请一起调整交换的两项");
+            if(snapshot->values[i]==snapshot->values[j]) {
+                char repeated[240];snprintf(repeated,sizeof repeated,"%s 和 %s 的按钮重复。请选不同按钮；交换两键要一起改好再保存。",fields[i].label,fields[j].label);
+                return error(repeated);
+            }
     for (unsigned i=0;i<doc->count;++i) {
         const TomlEntry *e=&doc->entries[i];int known=0;
         for (unsigned j=0;j<CONFIG_COUNT;++j)
@@ -394,8 +409,8 @@ int RuntimeConfig_ApplyFrame(int action_idle)
     }
     int bindings_changed=active_count!=pending_count ||
         memcmp(active_bindings,pending_bindings,pending_count*sizeof pending_bindings[0]);
-    if (!action_idle && bindings_changed) pending_idle=1;
-    if (action_idle && bindings_changed) {
+    /* 技能请求在新输入时复制选择码；新绑定可在下一输入帧接收，不重写在途Runtime。 */
+    if (bindings_changed) {
         memcpy(active_bindings,pending_bindings,sizeof active_bindings);active_count=pending_count;changed=1;
     }
     applied_serial=saved_serial;

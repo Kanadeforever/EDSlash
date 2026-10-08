@@ -5438,10 +5438,23 @@ static void __fastcall ui_manager_draw_layer_scope_hook(LPVOID self, LPVOID unus
         layer_draw_chain_contains(self, hud);
 
     /*
-     * 统一 Runtime 只广播最外层 UI manager Draw。当前 v0.1-dev1 没有其它模块订阅，
-     * 所以不会改变任何实机行为；下一阶段手柄光标/提示层需要 UI 时可以直接订阅，
+     * 最外层UI广播给共享焦点与设置窗口，业务仍由各模块管理，
+     * 调用原绘制后同步通知借用本次绘制上下文的订阅者，
      * 而不必再次 Hook 这条 manager Draw callsite。
      */
+    /* 开关在绘制安全点同步；居中位置从当前实际HUD还原原X后再计算，避免累计平移。 */
+    g_auxiliary_ui_above_hud = RuntimeConfig_GetInt(CONFIG_AUXILIARY_UI) ? TRUE : FALSE;
+    {
+        BOOL desired = RuntimeConfig_GetInt(CONFIG_CENTER_HUD) ? TRUE : FALSE;
+        if (desired != g_center_main_hud && g_gameplay_profile_active && !g_strategy_transition_in_progress &&
+            hud && g_original_main_hud_layout) {
+            LONG delta = ((LONG)g_target_width - (LONG)g_native_base_width) / 2;
+            LONG base_x = *(LONG*)((BYTE*)hud + UI_OBJECT_X_OFFSET) - (g_center_main_hud ? delta : 0);
+            LONG base_y = *(LONG*)((BYTE*)hud + UI_OBJECT_Y_OFFSET);
+            g_center_main_hud = desired;
+            g_original_main_hud_layout(hud, base_x + (desired ? delta : 0), base_y);
+        }
+    }
     Runtime_EmitEvent(RUNTIME_EVENT_UI_DRAW_BEGIN, self, draw_context, 0u);
     g_original_ui_manager_draw(self, draw_context);
     Runtime_EmitEvent(RUNTIME_EVENT_UI_DRAW_END, self, draw_context, 0u);
@@ -6213,15 +6226,15 @@ static void initialize_display_fix(void)
      * 绘制侧会动态纳入当前菜单体系里与 HUD 相交的独立顶层辅助面板，用来覆盖用户实机看到的左侧装备面板。
      */
     /*
-     * 只要主 HUD 居中功能开启，就安装同一套 UI manager / root-picker 基础 Hook。
+     * 主HUD接口验证成功就安装同一套UI manager/root-picker基础Hook；居中关闭时也保留。
      * 原因有两个：
      *   1. 0x0B/0x0E 的原版按压动画需要 picker root 校正，它属于 HUD 居中兼容，不应被 AuxiliaryUIAboveHUD 开关绑死；
-     *   2. 统一 Runtime 的 UI_DRAW_BEGIN/END 事件也由这个稳定 manager Draw Hook 提供，未来手柄模块需要复用。
+     *   2. 统一Runtime焦点与设置窗口复用此入口的UI_DRAW_BEGIN/END事件。
      *
      * 当 AuxiliaryUIAboveHUD=0 时，所有辅助菜单 Draw 延后逻辑仍由 g_auxiliary_ui_above_hud 在运行时完整关闭；
      * 也就是说安装基础 Hook 不等于强制开启辅助 GUI 图层。
      */
-    if (hud_result && config.center_main_hud) {
+    if (hud_result) {
         layer_result = install_auxiliary_ui_draw_layer_hook(&text_region);
     }
 

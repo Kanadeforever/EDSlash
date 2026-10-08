@@ -1,6 +1,6 @@
 # 源码构建说明
 
-当前统一目标为EDSlash.asi＋EDSlash.toml，静态链接仓库内完整SDL 3.4.16。旧独立Controller、两份INI与外置SDL3.dll构建路径已移除。MOD设置界面后置，未来入口为F12和L3＋R3。构建输入摘要标识当前产物；离线回归与非游戏加载单独记录，新产物实机待用户验证，历史反馈见docs/版本与更新记录.md。
+当前统一目标为EDSlash.asi＋EDSlash.toml，静态链接仓库内完整SDL 3.4.16。旧独立Controller、两份INI与外置SDL3.dll构建路径已移除。MOD设置窗口已接通LT＋RT＋Back及物理反引号键，原系统菜单暂停，待实机验收。构建输入摘要标识当前产物；离线回归与非游戏加载单独记录，新产物实机待用户验证，历史反馈见docs/版本与更新记录.md。
 
 ## 环境
 
@@ -61,7 +61,7 @@ python source/tools/build.py --upx
 配置标量核心改编自Castle Reforge Runtime TOML v1，已纳入本项目，无外部项目路径依赖。SDL完整固定源码及原始许可保留，版权和实际编译器声明见[配置与SDL第三方许可](../docs/配置与SDL第三方许可.txt)。
 
 
-Guard设置应用测试使用真实TOML与双版本运动回放；test_menu链接生产Control/Menu/Game和真实虚表包装，检查标题无玩家、独立焦点、页面/来源中立门、业务ABI及逐槽失败回滚。游戏内MOD设置界面仍后置，真实高亮/动画/设备时序必须两作实机确认。
+Guard设置应用测试使用真实TOML与双版本运动回放；test_menu链接生产Control/Menu/Game和真实虚表包装，检查标题无玩家、独立焦点、页面/来源中立门、业务ABI及逐槽失败回滚。游戏内MOD设置界面已接通原暂停、输入与绘制；真实高亮/动画/热应用和设备时序必须两作实机确认。
 
 编译器发生随机内部错误时，可用`python tools/build.py --jobs 1`串行复核；默认并行数6，不改变生产O2或发行/debug同一次链接的规则。
 

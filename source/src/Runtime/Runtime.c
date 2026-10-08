@@ -5,6 +5,7 @@
 #include "Log.h"
 #include "InputFrame.h"
 #include "Focus.h"
+#include "SettingsWindow.h"
 
 /* 全工程只存在这一份 RuntimeContext。 */
 static RuntimeContext g_runtime;
@@ -64,6 +65,7 @@ int Runtime_Initialize(void* self_module)
      * 单个功能模块的兼容失败由 Registry 隔离；后续模块仍会继续尝试初始化。
      * 这是“所有模块合并到一个 ASI”以后必须具备的故障隔离，否则一个可选模块就会拖死整套大修。
      */
+    (void)SettingsWindow_Initialize(&g_runtime);
     if (!ModuleRegistry_InitializeAll(&g_runtime)) {
         return 0;
     }

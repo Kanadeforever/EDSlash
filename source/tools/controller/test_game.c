@@ -11,6 +11,8 @@
 
 /* 在真正的 32 位进程中，让游戏适配层调用同约定的替身函数。
    这验证 this、参数值、功能路由及两个 Profile 偏移；不冒充真实游戏测试。 */
+int __attribute__((noinline,noclone)) SettingsWindow_Active(void){return 0;}
+int SettingsWindow_ShowPointer(void){return 0;}
 const Profile *g_profile;
 Intent g_intent;
 PadInput g_input;
@@ -85,6 +87,7 @@ int RuntimeConfig_GetInt(ConfigId id)
     case CONFIG_GUARD_PERCENT:return test_cost>=0 ? test_cost:0;
     case CONFIG_RECOVERY_MODE:return test_recovery>=0;
     case CONFIG_RECOVERY_PERCENT:return test_recovery>=0 ? test_recovery:0;
+    case CONFIG_CONTROLLER_ENABLED:return 1;
     case CONFIG_MOVE_LEAD:return 12;
     case CONFIG_AIM_EXPAND_MS:return test_aim_ms;
     default:return 0;
