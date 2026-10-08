@@ -12,7 +12,15 @@ static unsigned head,count;
 static HANDLE file=INVALID_HANDLE_VALUE,worker,wake,drained;
 static volatile LONG worker_state,stopping,in_flight;
 static LONG written_bytes,dropped_messages,file_writes;
-static int initialized;
+static int initialized;static void *self_module;static volatile LONG enabled=1;
+int RuntimeLog_Enabled(void){return InterlockedCompareExchange(&enabled,0,0)!=0;}
+void RuntimeLog_SetEnabled(int value)
+{
+    value=value!=0;
+    if(InterlockedExchange(&enabled,value)==value)return;
+    if(value){if(!initialized && self_module)RuntimeLog_Initialize(self_module);}
+    else {AcquireSRWLockExclusive(&queue_lock);head=count=0;ReleaseSRWLockExclusive(&queue_lock);}
+}
 int RuntimeLog_AppendAnsi(char *output,size_t capacity,const char *text)
 {
     if(!output || !capacity || !text)return 0;
@@ -28,7 +36,8 @@ int RuntimeLog_AppendAnsi(char *output,size_t capacity,const char *text)
 /* 一个持久句柄、一份有界队列。游戏线程只复制文本，磁盘写入由低优先级线程完成。 */
 int RuntimeLog_Initialize(void *module)
 {
-    if (initialized) return 1;
+    self_module=module;
+    if (initialized || !RuntimeLog_Enabled()) return 1;
     wchar_t path[1100];
     if (!RuntimeFile_Sibling(module,L"EDSlash.log",path,1100)) return 0;
     file=CreateFileW(path,GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,NULL,
@@ -96,7 +105,7 @@ int RuntimeLog_Start(void)
 }
 void RuntimeLog_Text(const char *text)
 {
-    if (!text || !initialized) return;
+    if (!text || !initialized || !RuntimeLog_Enabled()) return;
     size_t size=strlen(text);
     AcquireSRWLockExclusive(&queue_lock);
     /* 队列满时不阻塞游戏。计数会出现在性能摘要，不能静默把证据完整性说成已保证。 */
@@ -113,7 +122,7 @@ void RuntimeLog_Text(const char *text)
 }
 void RuntimeLog_Line(const char *text)
 {
-    if (!text) return;
+    if (!text || !RuntimeLog_Enabled()) return;
     char line[4096];int n=snprintf(line,sizeof line,"%s\r\n",text);
     if (n>=0 && (size_t)n<sizeof line) RuntimeLog_Text(line);
 }
@@ -123,6 +132,7 @@ void RuntimeLog_Write(const char *format,...)
 }
 void RuntimeLog_VWrite(const char *format,va_list args)
 {
+    if(!RuntimeLog_Enabled())return;
     char line[2048];int n=vsnprintf(line,sizeof line,format,args);
     if (n>=0 && (size_t)n<sizeof line) RuntimeLog_Line(line);
 }

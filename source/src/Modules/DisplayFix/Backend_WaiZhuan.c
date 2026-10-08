@@ -591,16 +591,8 @@ static void flush_log_file(void)
 }
 
 
-/*
- * 运行时诊断不能再使用上面的“整份 CREATE_ALWAYS 日志”，因为 hook 真正被调用时初始化早已结束。
- * 这个函数每次只追加一行：
- *   - FILE_APPEND_DATA 让 Windows 永远把 WriteFile 放到文件末尾；
- *   - OPEN_ALWAYS 表示日志已经存在就打开，不存在就新建；
- *   - 每条运行时日志都严格限次数，绝不会每帧刷盘。
- *
- * 这次特意加入运行时日志，是因为 v0.3-test2 已经证明：
- * “机器码 hook 安装成功”不等于“游戏运行时真的经过了我们猜的那条路径”。
- */
+/* 运行时诊断统一交给公共日志服务，遵守日志总开关。
+ * 本模块不独立打开文件；后台队列和批量写入由Runtime负责。 */
 static void append_runtime_line(const char* text)
 {
     /* 同一路径以宽字符打开，中文安装目录也不会丢失日志。 */

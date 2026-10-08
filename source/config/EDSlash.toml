@@ -1,5 +1,9 @@
 # EDSlash统一配置；UTF-8无BOM，CRLF。
 # 本版本只读取此TOML，不读取旧INI。
+[logging]
+# 插件日志：关闭后不记录运行、性能和插件崩溃信息；已有文件保留。
+enabled = true
+
 [meta]
 schema = 1
 

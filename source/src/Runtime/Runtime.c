@@ -40,12 +40,14 @@ int Runtime_Initialize(void* self_module)
      * 桥初始化失败不会阻止不依赖它的模块继续启动；需要系统 API 的模块会自行检查是否可用。
      */
     (void)RuntimeWin32_Initialize(profile);
-    (void)RuntimeLog_Initialize(self_module);
     if (!RuntimeConfig_Initialize(self_module)) {
+        (void)RuntimeLog_Initialize(self_module);
         RuntimeLog_Line(RuntimeConfig_Error());
         (void)RuntimeLog_Flush(0);
         return 0;
     }
+    RuntimeLog_SetEnabled(RuntimeConfig_GetInt(CONFIG_LOG_ENABLED));
+    (void)RuntimeLog_Initialize(self_module);
     if (!RuntimeInput_Initialize(&g_runtime)) {
         /* 显示修复与手柄使用各自的其它入口，公共输入帧故障不拖垮它们。 */
         RuntimeLog_Line("[输入][警告] 公共帧入口不可用；自动拾取模块将自行停止，显示与手柄继续初始化。");

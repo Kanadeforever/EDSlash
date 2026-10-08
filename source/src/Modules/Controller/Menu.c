@@ -317,6 +317,7 @@ void Menu_Suspend(void)
     /* 中立门只属于菜单：世界里的Y/物理右键交替不能被菜单清理吞掉第一次手柄攻击。
      * 当前/待退出菜单或真实GUI存在才保留门；纯战斗交接继续原成功历史协议。 */
     bool needs_gate=installed && (state.root || state.barrier || Menu_Context(&reason)!=NULL);
+    SettingsWindow_NativeEntryFocus(NULL,0);
     clear_focus();
     memset(&resume_grid,0,sizeof resume_grid);
     memset(&carried,0,sizeof carried);carried.origin=-1;
@@ -341,6 +342,7 @@ static void project(void)
     unsigned reason;void *current=Menu_Context(&reason);
     if (current!=state.root) return;
     int kind=kind_of(current);
+    SettingsWindow_NativeEntryFocus(current,kind==SETTINGS_KIND && state.id==0x600);
     if (kind<0 || kind==3 || kind==6 || (kind==0 && (int)Read32(current,0xC0)!=-1)) return;
     MenuButton list[64];unsigned count=buttons(current,kind,list);
     void *focused=NULL;
@@ -774,12 +776,17 @@ static void settings_update(void *root)
         } else {
             unsigned next=navigate(list,count,selected,dir,dir>=3);
             bool horizontal=dir>=3;
-            bool same_group=(id>=0xAE && id<=0xAF && list[next].id>=0xAE && list[next].id<=0xAF) ||
-                (id>=0xB0 && id<=0xB1 && list[next].id>=0xB0 && list[next].id<=0xB1);
+            bool same_group=next!=selected && ((id>=0xAE && id<=0xAF && list[next].id>=0xAE && list[next].id<=0xAF) ||
+                (id>=0xB0 && id<=0xB1 && list[next].id>=0xB0 && list[next].id<=0xB1));
             /* 上下只移动焦点；左右只在同组选项内选择，不能误执行返回按钮。 */
-            if (!horizontal || same_group) {
+            /* 入口是额外按钮：从下面选项向右可进入，移动焦点不打开窗口或改原选项。 */
+            if(horizontal && !same_group && dir==4 && id!=0x600)
+                for(unsigned i=0;i<count;++i)if(list[i].id==0x600){next=i;break;}
+            if(horizontal && id==0x600 && dir==3)next=navigate(list,count,selected,dir,false);
+            bool entry_move=list[next].id==0x600 || id==0x600;
+            if (!horizontal || same_group || entry_move) {
                 state.id=list[next].id;project();
-                if (horizontal && state.id!=id) ((This3)g_profile->menu_settings_primary)(root,0,0,NULL);
+                if (horizontal && same_group && state.id!=id) ((This3)g_profile->menu_settings_primary)(root,0,0,NULL);
             }
         }
         /* 两秒后提高频率，不增大每步数值，避免跨过想要的音量/明暗值。 */

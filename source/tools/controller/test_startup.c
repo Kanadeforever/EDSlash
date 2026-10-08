@@ -123,3 +123,8 @@ int main(void)
 
 /* 启动故障回归不创建名称窗口；新游戏随机请求由独立QOL适配回放验证。 */
 int QOLModule_RandomName(void *page){(void)page;return 0;}
+
+/* 宿主不写真实日志，默认保留异常回放资格。 */
+int RuntimeLog_Enabled(void){return 1;}
+
+void RuntimeLog_SetEnabled(int value){(void)value;}

@@ -217,6 +217,8 @@ static int open_on(void *native_page)
     RuntimeLog_Write("[模组设置] 打开并取得原系统菜单暂停/捕获，角色selector=%u。",selector);return 1;
 }
 static int open_window(void) {return open_on(NULL);}
+static void *native_entry_focus;static int native_entry_hover;
+void SettingsWindow_NativeEntryFocus(void *page,int selected){native_entry_focus=selected ? page:NULL;}
 int SettingsWindow_NativeEntryRect(void *page,RuntimeFocusRect *rectangle)
 {
     if(!ready || active || !rectangle || !readable(page,0xC0) || rd(page,0)!=backend.menu_settings_vtable || rd(page,0x28)!=0xAA || !rd(page,0x64))return 0;
@@ -549,7 +551,12 @@ static void paint_native_entry(unsigned long context)
     box(dc,r.left,r.top,r.right-r.left,r.bottom-r.top,RGB(12,12,12),RGB(70,59,40));release(dd,dc);
     static char caption[48];if(!caption[0])WideCharToMultiByte(936,0,L"EDSlash设置",-1,caption,sizeof caption,NULL,NULL);
     typedef int (__attribute__((thiscall)) *NativeText)(void *,unsigned long,const char *,int,int,int);
-    ((NativeText)backend.menu_native_text_draw)(page,context,caption,r.left+12,r.top+8,0);
+    /* 原文字接口以传入x为文字中心；底板和文字必须使用相同中心。
+     * 复制只读绘制属性，不暂时改原AA页的字体颜色，避免影响其它文字。 */
+    BYTE style[0xC0];memcpy(style,page,sizeof style);
+    unsigned color=(native_entry_hover || native_entry_focus==page) ? RGB(255,255,0):rd(page,0x60);
+    memcpy(style+0x60,&color,4);
+    ((NativeText)backend.menu_native_text_draw)(style,context,caption,(r.left+r.right)/2,r.top+8,0);
 }
 static void paint(RuntimeEventId event,void *subject,unsigned long context,unsigned long value,void *user)
 {
@@ -743,11 +750,13 @@ static void keyboard(RuntimeEventId event,void *subject,unsigned long result,uns
     previous_escape=escape;
     int left=(GetAsyncKeyState(VK_LBUTTON)&0x8000)!=0,right=(GetAsyncKeyState(VK_RBUTTON)&0x8000)!=0;
     if(active && right && !previous_right)cancel();
-    if(!active && left && !previous_left && logical_width && logical_height) {
+    native_entry_hover=0;
+    if(!active && logical_width && logical_height) {
         POINT p;RECT client;HWND w=GetForegroundWindow();void *page=(void *)(uintptr_t)((This1)backend.get_jm)((void *)backend.ui,0xAA);RuntimeFocusRect r;
         if(SettingsWindow_NativeEntryRect(page,&r) && GetCursorPos(&p) && ScreenToClient(w,&p) && GetClientRect(w,&client) && client.right>0 && client.bottom>0) {
             p.x=MulDiv(p.x,logical_width,client.right);p.y=MulDiv(p.y,logical_height,client.bottom);
-            if((p.x>=r.left && p.x<r.right && p.y>=r.top && p.y<r.bottom) && SettingsWindow_OpenNative(page)){pointer_mode=1;previous_left=left;}
+            native_entry_hover=p.x>=r.left && p.x<r.right && p.y>=r.top && p.y<r.bottom;
+            if(native_entry_hover && left && !previous_left && SettingsWindow_OpenNative(page)){pointer_mode=1;previous_left=left;}
         }
     }
     if(active && left && !previous_left) {

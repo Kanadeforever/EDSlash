@@ -54,3 +54,6 @@ void RuntimePerf_End(RuntimePerfId id,int64_t begin) {(void)id;(void)begin;}
 void RuntimePerf_FrameEnd(void) {}
 
 int RuntimeLog_Start(void) {return 1;}
+
+int RuntimeConfig_GetInt(ConfigId id){return id==CONFIG_LOG_ENABLED;}
+void RuntimeLog_SetEnabled(int value){(void)value;}

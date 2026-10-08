@@ -2,6 +2,7 @@
 #include "Crash.h"
 #include "../../Runtime/Focus.h"
 #include "../../Runtime/FileIO.h"
+#include "../../Runtime/Log.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -13,6 +14,7 @@ static char report[2048];
 void Crash_Stage(const char *stage) {current_stage=stage ? stage:"未知阶段";}
 static LONG CALLBACK record_exception(EXCEPTION_POINTERS *details)
 {
+    if (!RuntimeLog_Enabled())return EXCEPTION_CONTINUE_SEARCH;
     if (!details || !details->ExceptionRecord || !details->ContextRecord) return EXCEPTION_CONTINUE_SEARCH;
     DWORD code=details->ExceptionRecord->ExceptionCode;
     /* 普通C++异常、调试断点等不记录。只记录内存/指令/除零类异常，原处理链继续负责退出。 */

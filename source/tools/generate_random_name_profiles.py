@@ -16,6 +16,7 @@ def main():
         for f in FUNCTIONS:assert p['signatures'][f]==q['signatures'][f]
         lines.append('    {')
         for f in FIELDS:lines.append(f'        .{f}=0x{p["addresses"][f]:08X}u,')
+        lines.append(f'        .birthday={1 if game==2 else 0}u,')
         lines.append('        .signatures={')
         for f in FUNCTIONS:lines.append('            {'+','.join(f'0x{b:02X}' for b in bytes.fromhex(p['signatures'][f]))+'},')
         lines.extend(['        }','    },'])

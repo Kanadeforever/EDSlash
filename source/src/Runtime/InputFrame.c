@@ -19,6 +19,7 @@ static int __fastcall input_frame(unsigned char *keys,void *unused)
     /* 没有就绪的动作桥就没有正在执行的手柄动作，Runtime接收idle候选。
      * Registry登记成功不能代替延后SHA、SDL和动作桥的实际成功结果。 */
     RuntimeConfig_ApplyFrame(!ControllerModule_IsReady());
+    RuntimeLog_SetEnabled(RuntimeConfig_GetInt(CONFIG_LOG_ENABLED));
     Runtime_EmitEvent(RUNTIME_EVENT_INPUT_FRAME_BEGIN,keys,0,0);
     int result=original ? original(keys,unused):0;
     Runtime_EmitEvent(RUNTIME_EVENT_INPUT_FRAME_END,keys,(unsigned long)result,0);

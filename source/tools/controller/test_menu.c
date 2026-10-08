@@ -1374,7 +1374,11 @@ static void settings_regression(bool expansion)
     entry_enabled=1;ptr(ui_data,0x3C,settings_root);((This2)menu_tables[16][0x1C/4])(settings_root,1,0);neutral_menu();
     for(unsigned i=0;i<4;++i){menu_step(KEY(PAD_DOWN),0,0);neutral_menu();}
     CHECK(ReadPtr(settings_root,0xA8)==NULL && Menu_CursorAnchor(&anchor));
-    menu_step(KEY(PAD_A),0,0);CHECK(entry_opened==1);entry_enabled=0;ptr(ui_data,0x3C,NULL);
+    menu_step(KEY(PAD_A),0,0);CHECK(entry_opened==1);
+    /* 下方原选项向右只聚焦入口，A才打开；向左回原选项不自动切换配置。 */
+    neutral_menu();menu_step(KEY(PAD_LEFT),0,0);neutral_menu();unsigned unchanged=settings_choices;
+    menu_step(KEY(PAD_RIGHT),0,0);neutral_menu();CHECK(ReadPtr(settings_root,0xA8)==NULL && settings_choices==unchanged);
+    entry_enabled=0;ptr(ui_data,0x3C,NULL);
     Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
 }
 static void newgame_regression(bool expansion)

@@ -74,7 +74,12 @@ def merged_text(existing, template):
     for name, values in additions.items():
         if not name:
             raise ValueError('无法安全定位根配置键')
-        output.extend(['', f'[{name}]'] + values)
+        if name == 'logging':
+            # 总开关放第一个表之前，保留原根键和所有已有内容的所属表。
+            at = next((i for i, line in enumerate(output) if HEADER.match(line)), len(output))
+            output[at:at] = [f'[{name}]'] + values + ['']
+        else:
+            output.extend(['', f'[{name}]'] + values)
     merged = ('\r\n'.join(output).rstrip() + '\r\n').encode('utf-8')
     decoded = tomllib.loads(merged.decode('utf-8'))
     # 最后核对所有旧值及所有模板键，确保注入位置没有改变值所属的配置段。

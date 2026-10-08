@@ -20,7 +20,7 @@ static DWORD __stdcall fake_pid(HWND w,LPDWORD pid){(void)w;*pid=GetCurrentProce
 static unsigned checks,pauses,resumes,original_actions;
 static int fixture_write_result=1;
 #define CHECK(x) do{++checks;if(!(x)){fprintf(stderr,"设置窗口失败 行%d：%s\n",__LINE__,#x);return 1;}}while(0)
-static BYTE native_settings_root[0x300];static uintptr_t native_settings_table[26];static unsigned native_captions;
+static BYTE native_settings_root[0x300];static uintptr_t native_settings_table[26];static unsigned native_captions;static unsigned expected_caption_color;
 static BYTE fake_world[0x100],fake_actor[0x500],fake_player[0x400],fake_root[0x300],fake_ui[0x80],fake_hud[0xD00],default_record[0x20];
 static void *world_ptr=fake_world,*hud_ptr=fake_hud;
 static uintptr_t table[32];
@@ -47,7 +47,7 @@ static int __attribute__((thiscall)) show_root(void *p,int show,int mode)
 }
 static int __attribute__((thiscall)) native_action(void *p,int e,int x,void *y){(void)p;(void)e;(void)x;(void)y;++original_actions;return 1;}
 static int __attribute__((thiscall)) native_caption(void *page,unsigned long context,const char *text,int x,int y,int mode)
-{CHECK(page==native_settings_root && context && !strncmp(text,"EDSlash",7) && x==412 && y==314 && !mode);++native_captions;return 1;}
+{CHECK(page!=native_settings_root && context && !strncmp(text,"EDSlash",7) && x==488 && y==314 && !mode);CHECK(rd(page,0x60)==expected_caption_color && rd(page,0x78)==0);++native_captions;return 1;}
 static BYTE fixture_record[0x40],fixture_choices[16];
 static int __attribute__((thiscall)) no_property(void *p,int i)
 {return p==fixture_record ? (i==2 ? 701:i==15 ? 11:0):p==fixture_choices ? (i==1 ? 1:i==2 ? 701:0):0;}
@@ -264,6 +264,9 @@ int wmain(void)
     wr(native_settings_root,0x28,0xAA);wr(native_settings_root,0x64,1);wr(fake_world,0x58,0);wr(fake_ui,0x3C,(uint32_t)(uintptr_t)native_settings_root);
     RuntimeFocusRect entry;CHECK(SettingsWindow_NativeEntryRect(native_settings_root,&entry));
     paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);CHECK(native_captions==1);
+    SettingsWindow_NativeEntryFocus(native_settings_root,1);expected_caption_color=RGB(255,255,0);
+    paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);CHECK(native_captions==2 && rd(native_settings_root,0x78)==0);
+    SettingsWindow_NativeEntryFocus(NULL,0);expected_caption_color=0;
     unsigned pause_before=pauses;CHECK(SettingsWindow_OpenNative(native_settings_root) && !model.role && pauses==pause_before);
     model.page=2;activate();CHECK(!picker && strstr(message,"载入角色"));
     CHECK(!SettingsModel_SetBinding(&model,1,(ConfigBinding){1,123,1}));

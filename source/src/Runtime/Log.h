@@ -6,6 +6,9 @@
  * 成功追加完整片段，容量不足/转换失败不写半个字符。 */
 int RuntimeLog_AppendAnsi(char *output,size_t capacity,const char *text);
 typedef struct {unsigned long queued_bytes,written_bytes,dropped_messages,file_opens,file_writes;} RuntimeLogStats;
+/* 总开关在保存后的帧边界生效；关闭不删除旧文件，关闭启动不创建日志文件。 */
+void RuntimeLog_SetEnabled(int enabled);
+int RuntimeLog_Enabled(void);
 int RuntimeLog_Initialize(void *module);
 /* Start只能在Loader锁外调用；初始日志先入队，首个游戏输入帧启动后台写盘。 */
 int RuntimeLog_Start(void);

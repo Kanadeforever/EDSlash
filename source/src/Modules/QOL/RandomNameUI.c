@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <string.h>
+#include <stdio.h>
 #include "RandomNameUI.h"
 #include "RandomName.h"
 #include "../../Runtime/Win32Bridge.h"
@@ -9,13 +10,13 @@
 
 typedef struct NameBackend {
     uintptr_t ui,get_jm,menu_newgame_vtable,menu_name_vtable,menu_name_set;
-    unsigned char signatures[2][12];
+    unsigned birthday;unsigned char signatures[2][12];
 } NameBackend;
 #include "RandomNameUIData.h"
 typedef int (__attribute__((thiscall)) *GetJm)(void *,int);
 typedef int (__attribute__((thiscall)) *SetText)(void *,const char *);
 static NameBackend backend;static int ready;
-static unsigned refusal;static int previous_f1;
+static unsigned refusal;static int previous_f1;static uint32_t birthday_state;
 static RandomNameSession session;
 /* 只保留身份值作会话比较；每次使用都重新查原登记页、子对象和HWND。 */
 static uintptr_t page_identity,window_identity;
@@ -42,23 +43,42 @@ static void *name_widget(void *page,HWND *window)
 }
 void RandomNameUI_End(void)
 {RandomName_End(&session);page_identity=window_identity=0;}
-typedef struct AcceptContext {HDC dc;unsigned limit;char encoded[32];} AcceptContext;
+typedef struct AcceptContext {unsigned limit;char encoded[32];} AcceptContext;
 static int accept_name(const char *utf8,void *user)
 {
     AcceptContext *context=user;WCHAR wide[16];BOOL replaced=FALSE;
     int n=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,utf8,-1,wide,16);if(n<3)return 0;
     int bytes=WideCharToMultiByte(936,WC_NO_BEST_FIT_CHARS,wide,-1,context->encoded,sizeof context->encoded,NULL,&replaced);
     if(!bytes || replaced || (unsigned)(bytes-1)>context->limit)return 0;
-    /* 用原名称编辑框当前字体验证字形，不把“GBK可编码”直接当成字体可显示。 */
-    WORD glyphs[16];if(GetGlyphIndicesW(context->dc,wide,n-1,glyphs,GGI_MARK_NONEXISTING_GLYPHS)==GDI_ERROR)return 0;
-    for(int i=0;i<n-1;++i)if(glyphs[i]==0xFFFF)return 0;
+    /* 原EDIT收集输入，名称由游戏CJmName的文字接口绘制。
+     * EDIT默认字体不是屏幕上的游戏字体，不能以它缺少汉字拒绝整个候选池。 */
     return 1;
+}
+/* 外传原日期校验允许1..12月；二月29天，四/六/九/十一月30天，其余31天。
+ * 生日控件可以隐藏其EDIT，CString仍是原创建校验的输入；不直接改创建参数。 */
+static const unsigned month_days[12]={31,29,31,30,31,30,31,31,30,31,30,31};
+static void birthday_pick(unsigned *month,unsigned *day)
+{
+    if(!birthday_state)birthday_state=GetTickCount()^0x6D2B79F5u;
+    birthday_state^=birthday_state<<13;birthday_state^=birthday_state>>17;birthday_state^=birthday_state<<5;
+    unsigned index=birthday_state%366u;*month=1;
+    while(index>=month_days[*month-1]){index-=month_days[*month-1];++*month;}
+    *day=index+1;
 }
 int RandomNameUI_Request(void *page)
 {
     HWND window;void *input=name_widget(page,&window);if(!input){
         RuntimeLog_Write("[随机名称][拒绝] 原因=%u 页面=%08lX；1未就绪/2页/3模组窗口/4模态/5名称类/6父页/7隐藏/8句柄/9线程。",refusal,(unsigned long)(uintptr_t)page);
         RandomNameUI_End();return 0;}
+    void *month_input=NULL,*day_input=NULL;
+    if(backend.birthday) {
+        month_input=jm(0xDF);day_input=jm(0xE0);
+        if(rd(month_input,0)!=backend.menu_name_vtable || rd(day_input,0)!=backend.menu_name_vtable ||
+           rd(month_input,0x28)!=0xDF || rd(day_input,0x28)!=0xE0 ||
+           rd(month_input,0xA4)!=(uintptr_t)page || rd(day_input,0xA4)!=(uintptr_t)page) {
+            RuntimeLog_Line("[随机名称][拒绝] 外传生日控件身份不符，保留原姓名和生日。");return 0;
+        }
+    }
     /* 原程序的ANSI编辑/CString链按GBK运行；未确认的系统代码页不写乱码。 */
     if(GetACP()!=936){RuntimeLog_Line("[随机名称] 当前名称编辑编码不是GBK，未覆盖原文本。");return 0;}
     if(!session.active || page_identity!=(uintptr_t)page || window_identity!=(uintptr_t)window) {
@@ -68,19 +88,19 @@ int RandomNameUI_Request(void *page)
     if(!GetWindowTextW(window,current_wide,64))current_wide[0]=0;
     if(!WideCharToMultiByte(CP_UTF8,0,current_wide,-1,current,sizeof current,NULL,NULL))return 0;
     LRESULT limit=SendMessageW(window,EM_GETLIMITTEXT,0,0);if(limit<4){RuntimeLog_Write("[随机名称][拒绝] 编辑容量=%ld，不足两个汉字。",(long)limit);return 0;}
-    HDC dc=GetDC(window);if(!dc)return 0;
-    HFONT font=(HFONT)SendMessageW(window,WM_GETFONT,0,0);HGDIOBJ previous=font ? SelectObject(dc,font):NULL;
-    if(font && (!previous || previous==HGDI_ERROR)){ReleaseDC(window,dc);return 0;}
-    AcceptContext context={dc,(unsigned)limit,{0}};
+    AcceptContext context={(unsigned)limit,{0}};
     unsigned characters=context.limit/2;if(characters>4)characters=4;
     /* 尚未证明原角色selector的性别对应，按生成核心约定使用中性池。 */
     int result=RandomName_Generate(&session,RANDOM_NAME_NEUTRAL,characters,current,accept_name,&context,generated,sizeof generated);
-    if(previous)SelectObject(dc,previous);
-    ReleaseDC(window,dc);
-    if(!result){RuntimeLog_Line("[随机名称][拒绝] 候选未通过编码、容量或当前编辑字体字形检查。");return 0;}
+    if(!result){RuntimeLog_Line("[随机名称][拒绝] 候选未通过GBK无损编码或名称字节容量检查。");return 0;}
     /* 原setter同步CString、编辑框和外传光标位置；不能自行写D4或模拟确认。 */
     ((SetText)backend.menu_name_set)(input,context.encoded);
-    RuntimeLog_Line("[随机名称] 已填入名称，等待玩家确认创建。");return 1;
+    if(backend.birthday) {
+        unsigned month,day;char month_text[4],day_text[4];birthday_pick(&month,&day);
+        snprintf(month_text,sizeof month_text,"%u",month);snprintf(day_text,sizeof day_text,"%u",day);
+        ((SetText)backend.menu_name_set)(month_input,month_text);((SetText)backend.menu_name_set)(day_input,day_text);
+        RuntimeLog_Write("[随机名称] 已填入名称和生日%u月%u日，等待玩家确认创建。",month,day);
+    } else RuntimeLog_Line("[随机名称] 已填入名称，等待玩家确认创建。");return 1;
 }
 void RandomNameUI_AfterInputFrame(void)
 {

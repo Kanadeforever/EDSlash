@@ -16,6 +16,7 @@ int __attribute__((noinline,noclone)) SettingsWindow_Active(void){return 0;}
 int SettingsWindow_ShowPointer(void){return 0;}
 static int entry_enabled;static unsigned entry_opened;
 int SettingsWindow_NativeEntryRect(void *p,RuntimeFocusRect *r){if(!entry_enabled || !p || !r)return 0;*r=(RuntimeFocusRect){400,306,576,342};return 1;}
+void SettingsWindow_NativeEntryFocus(void *p,int selected){(void)p;(void)selected;}
 int SettingsWindow_OpenNative(void *p){if(!p || !entry_enabled)return 0;++entry_opened;return 1;}
 static unsigned random_name_requests;
 int QOLModule_RandomName(void *p){if(p){++random_name_requests;return 1;}return 0;}
@@ -1090,3 +1091,6 @@ void RuntimePerf_Initialize(void) {}
 int64_t RuntimePerf_Begin(void) {return 0;}
 void RuntimePerf_End(RuntimePerfId id,int64_t begin) {(void)id;(void)begin;}
 void RuntimePerf_FrameEnd(void) {}
+
+/* 宿主不写真实日志，默认保留异常回放资格。 */
+int RuntimeLog_Enabled(void){return 1;}

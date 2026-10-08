@@ -7,6 +7,15 @@ from sync_config import merged_text, plan, apply
 
 
 class SyncConfigTests(unittest.TestCase):
+    def test_log_switch_first_table_preserves_root_values(self):
+        old=b'# keep\r\nroot_value=7\r\n[meta]\r\nschema=1\r\n'
+        merged,keys=merged_text(old,b'[logging]\r\nenabled=true\r\n[meta]\r\nschema=1\r\n')
+        result=tomllib.loads(merged.decode())
+        self.assertEqual(result['root_value'],7)
+        self.assertTrue(result['logging']['enabled'])
+        self.assertLess(merged.index(b'[logging]'),merged.index(b'[meta]'))
+        self.assertEqual(keys,['logging.enabled'])
+
     def test_existing_values_and_new_sections(self):
         old = b'# custom\r\n[controller]\r\nenabled = false # keep\r\n[controller.bindings.DaoJian.character_4.slot_1]\r\nmode="skill"\r\nselector=321\r\nhand="right"\r\n'
         template = b'[controller]\nenabled=true\n# new flag\nrumble=true\n[controller.interaction]\n# range\nmax_distance=160\n'

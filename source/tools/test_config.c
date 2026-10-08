@@ -160,6 +160,14 @@ int wmain(void)
     CHECK(RuntimeConfig_GetInt(CONFIG_DEADZONE)==9000);
     CloseHandle(lock);
     CHECK(RuntimeFile_Read(path,text,sizeof text,&size) && !strcmp(text,external));
+    /* 日志首次补入旧配置必须位于首表，保存与实际生效仍按帧边界分开。 */
+    CHECK(RuntimeConfig_SetInt(CONFIG_LOG_ENABLED,0));
+    CHECK(RuntimeFile_Read(path,text,sizeof text,&size));CHECK(strstr(text,"[logging]")<strstr(text,"[meta]"));
+    CHECK(RuntimeConfig_GetInt(CONFIG_LOG_ENABLED)==1);CHECK(RuntimeConfig_ApplyFrame(1));CHECK(!RuntimeConfig_GetInt(CONFIG_LOG_ENABLED));
+    CHECK(RuntimeConfig_SetInt(CONFIG_LOG_ENABLED,1) && RuntimeConfig_ApplyFrame(1));
+    unsigned field_seen[CONFIG_COUNT]={0};
+    for(unsigned page=0;page<2;++page)for(unsigned i=0;i<SettingsModel_Count(page);++i){ConfigId id=SettingsModel_Field(page,i);CHECK(id<CONFIG_COUNT);++field_seen[id];}
+    for(unsigned i=0;i<CONFIG_COUNT;++i)CHECK(field_seen[i]==1);
     /* 坏配置重载也不能污染原有效内存快照。 */
     const char *broken="[meta]\r\nschema=1\r\n[controller.input]\r\ndeadzone=\"错类型\"\r\n";
     CHECK(RuntimeFile_WriteAtomic(path,broken,strlen(broken),0));

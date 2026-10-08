@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <wchar.h>
 
+static int logging_enabled=1;
+int RuntimeLog_Enabled(void){return logging_enabled;}
 Intent g_intent;PadInput g_input;
 const char *RuntimeFocus_Stage(void){return NULL;}
 static const RuntimeContext runtime={.self_module=(void *)1};
@@ -41,6 +43,7 @@ int main(void)
     CHECK(read_report(bytes)==before);
     exception.ExceptionCode=EXCEPTION_ACCESS_VIOLATION;writing=1;
     CHECK(record_exception(&details)==EXCEPTION_CONTINUE_SEARCH);writing=0;CHECK(read_report(bytes)==before);
+    logging_enabled=0;CHECK(record_exception(&details)==EXCEPTION_CONTINUE_SEARCH && read_report(bytes)==before);
     Crash_Shutdown();CHECK(!exception_hook);CHECK(DeleteFileW(output_path));
     printf("异常地址/寄存器/中文文本、递归保护及原异常链保留通过：%u项\n",checks);return 0;
 }

@@ -9,6 +9,8 @@ int SettingsWindow_Active(void);
 /* 原设置页的文字入口：只接受当前可见AA页，不伪造原子控件。 */
 int SettingsWindow_NativeEntryRect(void *page,RuntimeFocusRect *rectangle);
 int SettingsWindow_OpenNative(void *page);
+/* 菜单只提交是否聚焦；原字体、颜色和鼠标悬停由窗口服务统一绘制。 */
+void SettingsWindow_NativeEntryFocus(void *page,int selected);
 int SettingsWindow_ShowPointer(void);
 int SettingsWindow_Pad(uint32_t held,uint32_t pressed,int lt,int rt,float lx,float ly,float rx,float ry,uint32_t now);
 void SettingsWindow_Close(void);

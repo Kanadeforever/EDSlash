@@ -16,6 +16,15 @@ static DWORD WINAPI producer(void *arg)
 }
 int main(void)
 {
+    wchar_t existing_path[1100];CHECK(RuntimeFile_Sibling(GetModuleHandleW(NULL),L"EDSlash.log",existing_path,1100));
+    HANDLE preserved=CreateFileW(existing_path,GENERIC_WRITE,FILE_SHARE_READ,NULL,CREATE_ALWAYS,0,NULL);CHECK(preserved!=INVALID_HANDLE_VALUE);
+    DWORD copied;CHECK(WriteFile(preserved,"保留旧日志",15,&copied,NULL) && copied==15);CloseHandle(preserved);
+    RuntimeLog_SetEnabled(0);CHECK(!RuntimeLog_Enabled());
+    CHECK(RuntimeLog_Initialize(GetModuleHandleW(NULL)));
+    RuntimeLogStats disabled;RuntimeLog_GetStats(&disabled);CHECK(!disabled.file_opens);
+    preserved=CreateFileW(existing_path,GENERIC_READ,FILE_SHARE_READ,NULL,OPEN_EXISTING,0,NULL);CHECK(preserved!=INVALID_HANDLE_VALUE);
+    char kept[32]={0};CHECK(ReadFile(preserved,kept,sizeof kept,&copied,NULL) && copied==15 && !memcmp(kept,"保留旧日志",15));CloseHandle(preserved);
+    RuntimeLog_Line("关闭时不写入");RuntimeLog_SetEnabled(1);CHECK(RuntimeLog_Enabled());
     CHECK(RuntimeLog_Initialize(GetModuleHandleW(NULL)));
     CHECK(RuntimeLog_Flush(0));
     RuntimeLogStats before;RuntimeLog_GetStats(&before);CHECK(before.file_opens==1);
@@ -55,6 +64,11 @@ int main(void)
     }
     for(size_t i=0;i<size;++i)if(bytes[i]=='\n')CHECK(i>0 && bytes[i-1]=='\r');
     CHECK(MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,bytes,(int)size,NULL,0)>0);
+    RuntimeLog_GetStats(&before);RuntimeLog_SetEnabled(0);
+    RuntimeLog_Write("不应写入%d",123);RuntimeLog_Line("不应写入");CHECK(RuntimeLog_Flush(1000));
+    RuntimeLog_GetStats(&disabled);CHECK(disabled.written_bytes==before.written_bytes && !disabled.queued_bytes);
+    RuntimeLog_SetEnabled(1);RuntimeLog_Line("重新开启日志");CHECK(RuntimeLog_Flush(1000));
+    RuntimeLog_GetStats(&disabled);CHECK(disabled.written_bytes>before.written_bytes);
     RuntimeLog_Shutdown();CHECK(DeleteFileW(path));
     printf("后台日志并发、单次打开、批量写入、中文和完整收尾通过：%u项，512条生产耗时%.3f毫秒\n",
         checks,(double)(end.QuadPart-begin.QuadPart)*1000.0/frequency.QuadPart);

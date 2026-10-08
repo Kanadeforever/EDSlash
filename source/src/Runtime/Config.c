@@ -67,7 +67,8 @@ static const ConfigDescriptor fields[CONFIG_COUNT]={
     K(CONFIG_WORLD_INTERACT,"interact","调查键",0),K(CONFIG_WORLD_AIM,"skill_aim","技能落点预览键",1),
     K(CONFIG_WORLD_LEFT,"left_action","左手动作键",2),K(CONFIG_WORLD_RIGHT,"right_action","右手动作键",3),
     K(CONFIG_WORLD_RUN,"run","奔跑切换键",6),K(CONFIG_WORLD_MAP,"minimap","小地图键",7),
-    K(CONFIG_WORLD_SYSTEM,"system_menu","系统菜单键",5)
+    K(CONFIG_WORLD_SYSTEM,"system_menu","系统菜单键",5),
+    B(CONFIG_LOG_ENABLED,"logging","enabled","插件日志","记录插件运行和故障信息，方便排查问题。关闭后不再记录普通日志、性能摘要和插件崩溃记录；已有文件保留。保存后生效，再开启即可继续记录。",CONFIG_APPLY_FRAME)
 };
 #undef B
 #undef N
@@ -115,15 +116,30 @@ static int literal(const ConfigDescriptor *field,int value,const char *text,char
     else length=snprintf(output,capacity,"%d",value);
     return length>=0 && (size_t)length<capacity;
 }
+/* 日志开关是总入口：旧配置首次补入此表时放在第一个表之前，原根键和注释保留。 */
+static int config_update(const TomlDocument *doc,const char *table,const char *key,const char *value,char *output,size_t capacity,size_t *size)
+{
+    if(strcmp(table,"logging") || Toml_Find(doc,table,key))return Toml_Update(doc,table,key,value,output,capacity,size);
+    for(unsigned i=0;i<doc->count;++i)if(!strcmp(doc->entries[i].table,"logging"))return Toml_Update(doc,table,key,value,output,capacity,size);
+    size_t at=0;
+    while(at<doc->size){size_t begin=at;while(at<doc->size && doc->bytes[at]!='\n')++at;if(at<doc->size)++at;
+        while(begin<at && (doc->bytes[begin]==' ' || doc->bytes[begin]=='\t'))++begin;
+        if(begin<at && doc->bytes[begin]=='['){at=begin;break;}}
+    char prefix[256];int n=snprintf(prefix,sizeof prefix,"[logging]\r\n# 插件日志总开关；保存后生效。\r\n%s = %s\r\n\r\n",key,value);
+    if(n<0 || (size_t)n>=sizeof prefix || doc->size+(size_t)n+1>capacity)return 0;
+    memcpy(output,doc->bytes,at);memcpy(output+at,prefix,(size_t)n);memcpy(output+at+n,doc->bytes+at,doc->size-at);
+    *size=doc->size+(size_t)n;output[*size]=0;return 1;
+}
 int RuntimeConfig_DefaultText(char *output,size_t capacity,size_t *size)
 {
     if (!output || !size) return 0;
     const char *last="";size_t position=0;
-    int n=snprintf(output,capacity,"# EDSlash统一配置；UTF-8无BOM，CRLF。\r\n# 本版本只读取此TOML，不读取旧INI。\r\n[meta]\r\nschema = 1\r\n");
+    int n=snprintf(output,capacity,"# EDSlash统一配置；UTF-8无BOM，CRLF。\r\n# 本版本只读取此TOML，不读取旧INI。\r\n[logging]\r\n# 插件日志：关闭后不记录运行、性能和插件崩溃信息；已有文件保留。\r\nenabled = true\r\n\r\n[meta]\r\nschema = 1\r\n");
     if (n<0 || (size_t)n>=capacity) return 0;
     position=(size_t)n;
     for (unsigned i=0;i<CONFIG_COUNT;++i) {
         const ConfigDescriptor *f=&fields[i];char value[80];
+        if(f->id==CONFIG_LOG_ENABLED)continue;
         if (!literal(f,f->default_value,f->default_text,value,sizeof value)) return 0;
         if (strcmp(last,f->table)) {
             n=snprintf(output+position,capacity-position,"\r\n[%s]\r\n",f->table);
@@ -294,7 +310,7 @@ int RuntimeConfig_SetInt(ConfigId id,int value)
     const ConfigDescriptor *f=RuntimeConfig_Descriptor(id);char value_text[80];size_t size;
     if (!f || f->type==CONFIG_TEXT || value<f->minimum || value>f->maximum ||
         !literal(f,value,NULL,value_text,sizeof value_text)) return error("设置值超出允许范围");
-    if (!Toml_Update(&document,f->table,f->key,value_text,work,sizeof work,&size)) return error("无法生成配置候选");
+    if (!config_update(&document,f->table,f->key,value_text,work,sizeof work,&size)) return error("无法生成配置候选");
     return commit_text(work,size);
 }
 int RuntimeConfig_SetText(ConfigId id,const char *value)
@@ -315,7 +331,7 @@ int RuntimeConfig_SetText(ConfigId id,const char *value)
     if (!f || id!=CONFIG_ASPECT_RATIO || !value || !valid_ratio(value) ||
         strlen(value)>=sizeof active.aspect_ratio || !literal(f,0,value,value_text,sizeof value_text))
         return error("画面比例必须为auto或有效宽:高");
-    if (!Toml_Update(&document,f->table,f->key,value_text,work,sizeof work,&size)) return error("无法生成配置候选");
+    if (!config_update(&document,f->table,f->key,value_text,work,sizeof work,&size)) return error("无法生成配置候选");
     return commit_text(work,size);
 }
 ConfigBinding RuntimeConfig_GetBinding(unsigned game,unsigned role,unsigned slot)
@@ -338,7 +354,7 @@ int RuntimeConfig_SetBinding(unsigned game,unsigned role,unsigned slot,ConfigBin
     const char *keys[]={"mode","selector","hand"};
     const char *values[]={binding.custom ? "\"skill\"":"\"none\"",selector,binding.right ? "\"right\"":"\"left\""};
     for (unsigned i=0;i<3;++i) {
-        if (!Toml_Update(&candidate,table,keys[i],values[i],work,sizeof work,&size) ||
+        if (!config_update(&candidate,table,keys[i],values[i],work,sizeof work,&size) ||
             !Toml_Parse(&candidate,work,size)) return error("无法生成完整技能绑定");
     }
     return commit_text(work,size);
@@ -370,7 +386,7 @@ int RuntimeConfig_SaveBatch(const ConfigEdit *edits,size_t count,
                 return error("批量文本值无效");
         } else if(edit->value<f->minimum || edit->value>f->maximum ||
                   !literal(f,edit->value,NULL,value,sizeof value))return error("批量设置值超出范围");
-        if(!Toml_Update(&candidate,f->table,f->key,value,work,sizeof work,&size) || !Toml_Parse(&candidate,work,size))
+        if(!config_update(&candidate,f->table,f->key,value,work,sizeof work,&size) || !Toml_Parse(&candidate,work,size))
             return error("无法生成批量配置候选");
     }
     for(size_t i=0;i<binding_count;++i) {
@@ -386,7 +402,7 @@ int RuntimeConfig_SaveBatch(const ConfigEdit *edits,size_t count,
         const char *keys[]={"mode","selector","hand"};
         const char *values[]={b.custom ? "\"skill\"":"\"none\"",selector,b.right ? "\"right\"":"\"left\""};
         for(unsigned j=0;j<3;++j)
-            if(!Toml_Update(&candidate,table,keys[j],values[j],work,sizeof work,&size) || !Toml_Parse(&candidate,work,size))
+            if(!config_update(&candidate,table,keys[j],values[j],work,sizeof work,&size) || !Toml_Parse(&candidate,work,size))
                 return error("无法生成完整批量技能绑定");
     }
     /* commit_text复用外部改动检测、完整decode、CRLF规范化与一次替换；生效仍在原安全边界。 */
