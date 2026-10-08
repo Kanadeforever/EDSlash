@@ -28,7 +28,7 @@ typedef struct {
     ConfigApply apply;
 } ConfigDescriptor;
 typedef struct { int values[CONFIG_COUNT]; char aspect_ratio[40]; unsigned generation; } ConfigSnapshot;
-/* 自动模式沿用原游戏当前绑定；自定义按Player+0x348的角色selector隔离。 */
+/* 未设置模式不发RT动作；明确技能按Player+0x348的角色selector隔离，旧game标记仅兼容读取。 */
 typedef struct { int custom, selector, right; } ConfigBinding;
 /* 设置窗口的候选修改：调用期间借用text；非文本项使用value，不持有游戏对象。 */
 typedef struct {ConfigId id;int value;const char *text;} ConfigEdit;

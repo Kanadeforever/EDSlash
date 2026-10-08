@@ -20,21 +20,22 @@ typedef struct {
     uintptr_t menu_system_vtable,menu_system_show,menu_system_primary;
     uintptr_t settings_actor_get,settings_string_get,settings_icon_global;
     uintptr_t ui_property,skill_groups,methods,lookup,skill_eligibility,icon_resolve,icon_draw;
-    uintptr_t settings_skill_name,settings_skill_description,settings_string_destroy,settings_query_skill,settings_empty_string;
-    unsigned active_offset,invalid_offset;BYTE signatures[15][12];
+    uintptr_t settings_skill_name,settings_skill_description,settings_string_destroy,settings_query_skill,settings_empty_string,settings_text_get,settings_text_table,focus_frame_get,focus_image_get;
+    unsigned active_offset,invalid_offset;BYTE signatures[18][12];
 } SettingsBackend;
 #include "SettingsData.h"
 static SettingsBackend backend;
 static SettingsModel model;
 static unsigned game;
-static int ready,active,editing,footer,confirm_discard,picker,pick_focus,pick_scroll,picker_style,barrier;
+static int ready,active,editing,footer,confirm_discard,picker,pick_focus,pick_scroll,barrier;
 static int draw_subscribed,input_subscribed,menu_swap,error_modal,picker_footer,scroll_drag;
 static ConfigId edit_id;static int edit_before;static char edit_text_before[40];
 static void *root;static uintptr_t old_primary,old_draw;
 static void paint(RuntimeEventId,void *,unsigned long,unsigned long,void *);
+static void clear_icon_cache(void);
 static HFONT font,help_font;static int origin_x,origin_y,logical_width,logical_height;
 static struct {COLORREF color;HBRUSH brush;} brushes[32];static unsigned brush_count;
-static uint32_t repeat_at;static int previous_direction;
+static uint32_t repeat_at,hold_since;static int previous_direction;
 static int pointer_mode;static POINT previous_pointer;
 static int previous_open_key,previous_left,previous_right,previous_escape;
 static char message[160];
@@ -43,6 +44,7 @@ static struct {int selector,icon,kind;char name[128],description[2048];} skills[
 static unsigned skill_view[128],skill_view_count;
 /* 只在构建候选的同步调用期间借用学习记录，构建结束全部清空。 */
 static void *learned_records[16],*skill_player;
+
 static int copy_game_text(const char *source,char *out,unsigned capacity)
 {
     if(!source || !out || !capacity)return 0;
@@ -129,15 +131,23 @@ static void add_skill(void *role,int id,int direct)
     skills[skill_count].selector=selector;skills[skill_count].icon=icon;skills[skill_count].kind=(int)rd(g,0x32);
     strcpy(skills[skill_count].description,skills[skill_count].name);
     for(unsigned i=0;i<16;++i)if(learned_records[i] && ((This1)backend.ui_property)(learned_records[i],2)==id) {
-        /* 与原技能页悬停相同的完整说明生成函数；游戏CString由游戏自己的析构释放。
-         * 复制为UTF-8以后只保留文字，不持有游戏字符串或学习记录。 */
+        /* 学习页先拼技能名与记录第15项指向的描述句，再追加原数值说明。
+         * 仅调用数值函数会漏掉描述句；detail=0避免重复标题和连招页专用文字。 */
+        char narrative[1024]={0};int text_id=((This1)backend.ui_property)(learned_records[i],15);
+        if(text_id>=0 && text_id!=0xFFFF) {
+            const char *body=(const char *)(uintptr_t)((This2)backend.settings_text_get)((void *)backend.settings_text_table,text_id,1);
+            copy_game_text(body,narrative,sizeof narrative);
+        }
         unsigned game_string=rd((void *)backend.settings_empty_string,0);
         if(game_string) {
             typedef void (__cdecl *Description)(void *,void *,unsigned *,int);
-            ((Description)backend.settings_skill_description)(skill_player,learned_records[i],&game_string,1);
-            if(!copy_game_text((const char *)(uintptr_t)game_string,skills[skill_count].description,sizeof skills[skill_count].description))
-                strcpy(skills[skill_count].description,skills[skill_count].name);
+            char statistics[1024]={0};
+            ((Description)backend.settings_skill_description)(skill_player,learned_records[i],&game_string,0);
+            copy_game_text((const char *)(uintptr_t)game_string,statistics,sizeof statistics);
             ((This0)backend.settings_string_destroy)(&game_string);
+            char heading[128];memcpy(heading,skills[skill_count].name,sizeof heading);
+            snprintf(skills[skill_count].description,sizeof skills[skill_count].description,"%s\n%s%s%s",
+                heading,narrative,narrative[0] ? "\n":"",statistics);
         }
         break;
     }
@@ -155,13 +165,6 @@ static void build_skills(void)
     if(readable(choices,12)) {
         int n=((This1)backend.ui_property)(choices,1);
         if(n>=0 && n<=1024)for(int i=0;i<n && skill_count<128;++i)add_skill(role,((This1)backend.ui_property)(choices,i+2),0);
-    }
-    /* 原绑定中的基础动作可能是特殊选择，和已学技能合并去重。 */
-    void *node=ptr(ptr((void *)backend.skill_global,0),0xC18);
-    for(unsigned i=0;node && i<128;++i) {
-        if(!readable(node,0x20))break;
-        add_skill(role,(int)rd(node,0x14),1);
-        void *next=ptr(node,8);if(next==node)break;node=next;
     }
     memset(learned_records,0,sizeof learned_records);skill_player=NULL;
 }
@@ -202,24 +205,83 @@ static int open_window(void)
     /* 本次窗口固定使用打开时的确认布局，保存交换AB后不在半次编辑中改变含义。 */
     menu_swap=RuntimeConfig_GetInt(CONFIG_MENU_SWAP_AB);
     active=1;barrier=1;editing=footer=picker=confirm_discard=error_modal=picker_footer=scroll_drag=0;previous_direction=0;message[0]=0;
+    clear_icon_cache();
     ((This2)backend.menu_system_show)(root,1,0);build_skills();
     RuntimeLog_Write("[模组设置] 打开并取得原系统菜单暂停/捕获，角色selector=%u。",selector);return 1;
 }
+static ConfigBinding effective_binding(unsigned slot)
+{return model.draft_bindings[slot];}
 static void picker_rebuild(int selector)
 {
-    /* 原动作菜单左手只接受类别1；右手接受普通类别0/1。
-     * 切换施放侧时重建“可设置”的视图，不把不可用条目留在列表里。 */
-    skill_view_count=0;pick_focus=pick_scroll=picker_footer=0;
-    for(unsigned i=0;i<skill_count;++i)if(picker_style || skills[i].kind==1) {
-        if(skills[i].selector==selector)pick_focus=(int)skill_view_count;
-        skill_view[skill_view_count++]=i;
-    }
+    /* 快捷技能独立于左右手槽位，列出全部可设置的已学普通技能。 */
+    skill_view_count=1;skill_view[0]=UINT32_MAX;pick_focus=pick_scroll=picker_footer=0;
+    for(unsigned i=0;i<skill_count;++i){if(skills[i].selector==selector)pick_focus=(int)skill_view_count;skill_view[skill_view_count++]=i;}
     if(pick_focus>=5)pick_scroll=pick_focus-4;
 }
-static void picker_switch_style(void)
+typedef HRESULT (__stdcall *SurfaceGetDC)(void *,HDC *);
+typedef HRESULT (__stdcall *SurfaceReleaseDC)(void *,HDC);
+static struct {uintptr_t image;COLORREF color;int width,height;HBITMAP bitmap;} icon_cache[64];
+static unsigned cache_next;
+static void clear_icon_cache(void)
 {
-    int selector=skill_view_count && (unsigned)pick_focus<skill_view_count ? skills[skill_view[pick_focus]].selector:-1;
-    picker_style=!picker_style;picker_rebuild(selector);
+    for(unsigned i=0;i<64;++i){if(icon_cache[i].bitmap)DeleteObject(icon_cache[i].bitmap);memset(&icon_cache[i],0,sizeof icon_cache[i]);}
+    cache_next=0;
+}
+static RECT icon_rectangle(int cell_x,int cell_y,int row_height,int sw,int sh,int maximum)
+{
+    /* 按比例缩小，实际图像高度参与居中；不会把原裁取API误当缩放API。 */
+    int w=sw,h=sh;
+    if(w>maximum || h>maximum){if(w>=h){h=MulDiv(h,maximum,w);w=maximum;}else {w=MulDiv(w,maximum,h);h=maximum;}}
+    if(w<1)w=1;
+    if(h<1)h=1;
+    int x=cell_x+8+(40-w)/2,y=cell_y+(row_height-h)/2;
+    return (RECT){x,y,x+w,y+h};
+}
+static void scaled_icon(unsigned long context,void *icons,void *animation,int icon,int selector,int cx,int cy,int row_height,int maximum,COLORREF color)
+{
+    /* 先核对当前动画、登记图像和尺寸。只存图像的整数身份，不跨帧解引用旧对象。 */
+    unsigned n=rd(animation,8),index=rd(animation,4);void *frames=ptr(animation,0);
+    if(!n || n>4096 || index>=n || !readable((BYTE *)frames+index*22u,22))return;
+    void *frame=(void *)(uintptr_t)((This0)backend.focus_frame_get)(animation);
+    if(!readable(frame,22))return;
+    void *bank=ptr(frame,8),*entries=ptr(bank,4);unsigned resource=rd(frame,4)&0xFFFFFu;
+    if(!readable(bank,8) || !readable((BYTE *)entries+resource*4u,4) || !readable(ptr(entries,resource*4u),0x28))return;
+    void *image=(void *)(uintptr_t)((This0)backend.focus_image_get)(frame);
+    if(!readable(image,0x14))return;
+    int sw=(int)rd(image,0xC),sh=(int)rd(image,0x10);if(sw<1 || sh<1 || sw>128 || sh>128)return;
+    void *surface=(void *)(uintptr_t)context,*dd=ptr(surface,0x2D),*table=ptr(dd,0);
+    if(!readable(table,0x6C))return;
+    SurfaceGetDC get=(SurfaceGetDC)(uintptr_t)rd(table,0x44);
+    SurfaceReleaseDC release=(SurfaceReleaseDC)(uintptr_t)rd(table,0x68);
+    RECT target=icon_rectangle(cx,cy,row_height,sw,sh,maximum);HDC dc=NULL;
+    if(get(dd,&dc)!=S_OK || !dc)return;
+    HDC work=CreateCompatibleDC(dc),backup=CreateCompatibleDC(dc);HBITMAP glyph=NULL,saved=NULL;
+    if(!work || !backup){if(work)DeleteDC(work);if(backup)DeleteDC(backup);release(dd,dc);return;}
+    unsigned slot=64;
+    for(unsigned i=0;i<64;++i)if(icon_cache[i].bitmap && icon_cache[i].image==(uintptr_t)image && icon_cache[i].color==color && icon_cache[i].width==sw && icon_cache[i].height==sh){slot=i;break;}
+    if(slot<64)glyph=icon_cache[slot].bitmap;
+    else {
+        glyph=CreateCompatibleBitmap(dc,sw,sh);saved=CreateCompatibleBitmap(dc,sw,sh);
+        if(!glyph || !saved){if(glyph)DeleteObject(glyph);if(saved)DeleteObject(saved);DeleteDC(work);DeleteDC(backup);release(dd,dc);return;}
+        HGDIOBJ previous=SelectObject(backup,saved);int sx=origin_x+24,sy=origin_y+90;
+        /* 临时绘制区域先保存；填上同色底，再让原接口绘出原素材，随后完整还原。
+         * 缓存只在首次出现时生成，后续每帧仅StretchBlt缩小，不修改游戏素材。 */
+        BOOL copied=BitBlt(backup,0,0,sw,sh,dc,sx,sy,SRCCOPY);
+        HBRUSH brush=CreateSolidBrush(color);RECT r={sx,sy,sx+sw,sy+sh};if(copied && brush)FillRect(dc,&r,brush);if(brush)DeleteObject(brush);
+        release(dd,dc);dc=NULL;
+        int16_t offsets[4]={0};RuntimeWin32_Read((unsigned long)(uintptr_t)frame+0xE,offsets,sizeof offsets);
+        if(copied)((IconDraw)backend.icon_draw)(icons,(int)context,icon,selector,sx-offsets[0]+offsets[2],sy-offsets[1]+offsets[3],0,-1,0,0);
+        if(get(dd,&dc)!=S_OK || !dc){SelectObject(backup,previous);DeleteObject(saved);DeleteObject(glyph);DeleteDC(work);DeleteDC(backup);return;}
+        HGDIOBJ old=SelectObject(work,glyph);BOOL ready_image=copied && BitBlt(work,0,0,sw,sh,dc,sx,sy,SRCCOPY);
+        if(copied)BitBlt(dc,sx,sy,sw,sh,backup,0,0,SRCCOPY);
+        SelectObject(work,old);SelectObject(backup,previous);DeleteObject(saved);
+        if(!ready_image){DeleteObject(glyph);DeleteDC(work);DeleteDC(backup);release(dd,dc);return;}
+        slot=cache_next++%64;if(icon_cache[slot].bitmap)DeleteObject(icon_cache[slot].bitmap);
+        icon_cache[slot].image=(uintptr_t)image;icon_cache[slot].color=color;icon_cache[slot].width=sw;icon_cache[slot].height=sh;icon_cache[slot].bitmap=glyph;
+    }
+    HGDIOBJ old=SelectObject(work,glyph);int old_mode=SetStretchBltMode(dc,COLORONCOLOR);
+    StretchBlt(dc,origin_x+target.left,origin_y+target.top,target.right-target.left,target.bottom-target.top,work,0,0,sw,sh,SRCCOPY);
+    SetStretchBltMode(dc,old_mode);SelectObject(work,old);DeleteDC(work);DeleteDC(backup);release(dd,dc);
 }
 static void cancel(void)
 {
@@ -238,9 +300,9 @@ static void activate(void)
     if(error_modal){error_modal=0;return;}
     if(picker) {
         unsigned slot=model.focus[2]+1;
-        if(picker_footer)SettingsModel_SetBinding(&model,slot,(ConfigBinding){0,0,0});
-        else if(skill_view_count && (unsigned)pick_focus<skill_view_count)
-            SettingsModel_SetBinding(&model,slot,(ConfigBinding){1,skills[skill_view[pick_focus]].selector,picker_style});
+        if(!pick_focus)SettingsModel_SetBinding(&model,slot,(ConfigBinding){0,0,0});
+        else if(pick_focus>0 && (unsigned)pick_focus<skill_view_count)
+            SettingsModel_SetBinding(&model,slot,(ConfigBinding){1,skills[skill_view[pick_focus]].selector,1});
         else return;
         picker=0;return;
     }
@@ -251,8 +313,7 @@ static void activate(void)
         return;
     }
     if(model.page==2){picker=1;pick_focus=pick_scroll=picker_footer=0;model.help=0;
-        picker_style=model.draft_bindings[model.focus[2]].custom ? model.draft_bindings[model.focus[2]].right:1;
-        picker_rebuild(model.draft_bindings[model.focus[2]].custom ? model.draft_bindings[model.focus[2]].selector:-1);
+        ConfigBinding selected=effective_binding(model.focus[2]);picker_rebuild(selected.custom ? selected.selector:-1);
         return;}
     ConfigId id=SettingsModel_Field(model.page,model.focus[model.page]);const ConfigDescriptor *f=RuntimeConfig_Descriptor(id);
     if(!f)return;
@@ -266,9 +327,8 @@ static void move(int dir)
      * 列表到最底部再向下才进入保存按钮，不在视觉上下边界斜跳到另一列。 */
     if(confirm_discard || error_modal)return;
     if(picker) {
-        if(picker_footer){if(dir==1)picker_footer=0;return;}
         if(dir==1 && pick_focus)--pick_focus;
-        if(dir==2){if((unsigned)(pick_focus+1)<skill_view_count)++pick_focus;else picker_footer=1;}
+        if(dir==2){if((unsigned)(pick_focus+1)<skill_view_count)++pick_focus;}
         if(pick_focus<pick_scroll)pick_scroll=pick_focus;
         if(pick_focus-pick_scroll>=5)pick_scroll=pick_focus-4;
         return;
@@ -281,7 +341,7 @@ static void move(int dir)
             for(unsigned i=0;i<5;++i)if(!strcmp(model.draft.aspect_ratio,ratios[i]))index=i;
             SettingsModel_SetText(&model,ratios[(index+(dir==1 || dir==3 ? 4u:1u))%5]);
         } else {
-            int step=f->step ? f->step:1;int64_t value=model.draft.values[id];
+            int step=f->type==CONFIG_INT || f->type==CONFIG_PERCENT ? (edit_id==CONFIG_PICKUP_MODE ? 1:dir<=2 ? 10:1):1;int64_t value=model.draft.values[id];
             value+=(dir==1 || dir==4 ? step:-step);
             if(value<f->minimum)value=f->minimum;
             if(value>f->maximum)value=f->maximum;
@@ -297,6 +357,25 @@ static void move(int dir)
     }
     unsigned before=model.focus[model.page];SettingsModel_Move(&model,dir,6);
     if(dir==2 && before==model.focus[model.page])footer=1;
+}
+static void repeat_direction(int dir,uint32_t now,int *old_dir,uint32_t *started,uint32_t *next)
+{
+    int fresh=dir!=*old_dir;
+    if(fresh)*started=now;
+    if(dir && (fresh || (int32_t)(now-(*next))>=0)) {
+        int numeric=editing && edit_id!=CONFIG_PICKUP_MODE && (RuntimeConfig_Descriptor(edit_id)->type==CONFIG_INT || RuntimeConfig_Descriptor(edit_id)->type==CONFIG_PERCENT);
+        int percent=numeric && RuntimeConfig_Descriptor(edit_id)->type==CONFIG_PERCENT;
+        unsigned elapsed=now-(*started),interval=110;
+        if(numeric && elapsed>=2000)interval=percent ? 4u:35u;
+        else if(percent)interval=60;
+        /* 慢帧最多补8次，不提高步长；百分比因此可比普通数值更快，且不会无限追赶。 */
+        unsigned repeats=1;
+        if(!fresh && numeric && elapsed>=2000)repeats=1+(now-(*next))/interval;
+        if(repeats>8)repeats=8;
+        for(unsigned i=0;i<repeats;++i)move(dir);
+        *next=now+(fresh ? 350u:interval);
+    }
+    *old_dir=dir;
 }
 int SettingsWindow_Pad(uint32_t held,uint32_t pressed,int lt,int rt,float lx,float ly,float rx,float ry,uint32_t now)
 {
@@ -316,14 +395,13 @@ int SettingsWindow_Pad(uint32_t held,uint32_t pressed,int lt,int rt,float lx,flo
         return 1;}
     if(pressed&(1u<<9)){editing=picker=footer=0;SettingsModel_Page(&model,-1);}
     if(pressed&(1u<<10)){editing=picker=footer=0;SettingsModel_Page(&model,1);}
-    if(pressed&(1u<<3))model.help=!model.help;
+    if(!picker && (pressed&(1u<<3)))model.help=!model.help;
     if(pressed&(1u<<(menu_swap ? 1:0)))activate();
     if(pressed&(1u<<(menu_swap ? 0:1)))cancel();
-    if(picker && (pressed&(1u<<2)))picker_switch_style();
     int dir=held&(1u<<11) ? 1:held&(1u<<12) ? 2:held&(1u<<13) ? 3:held&(1u<<14) ? 4:0;
     if(!dir && (fabsf(lx)>0.55f || fabsf(ly)>0.55f))dir=fabsf(ly)>=fabsf(lx) ? (ly<0 ? 1:2):(lx<0 ? 3:4);
-    if(dir && (dir!=previous_direction || (int32_t)(now-repeat_at)>=0)) {move(dir);repeat_at=now+(dir==previous_direction ? 110u:350u);}
-    previous_direction=dir;return 1;
+    repeat_direction(dir,now,&previous_direction,&hold_since,&repeat_at);
+    return 1;
 }
 static void text(HDC dc,int x,int y,int width,int height,const char *s,COLORREF color)
 {
@@ -348,8 +426,8 @@ static void box(HDC dc,int x,int y,int w,int h,COLORREF fill,COLORREF edge)
 static void value_text(ConfigId id,char *out,size_t cap)
 {
     const ConfigDescriptor *f=RuntimeConfig_Descriptor(id);int v=model.draft.values[id];
-    if(id==CONFIG_GUARD_MODE)snprintf(out,cap,"%s",v ? "最大体力百分比":"游戏原有消耗");
-    else if(id==CONFIG_RECOVERY_MODE)snprintf(out,cap,"%s",v ? "最大体力百分比":"与格挡消耗相同");
+    if(id==CONFIG_GUARD_MODE)snprintf(out,cap,"%s",v ? "按最大体力比例":"原版数值");
+    else if(id==CONFIG_RECOVERY_MODE)snprintf(out,cap,"%s",v ? "按最大体力比例":"与防御消耗一致");
     else if(id==CONFIG_COMBO_SWITCH)snprintf(out,cap,"%s",v ? "LT＋方向键":"LT＋Y/B/A/X");
     else if(id==CONFIG_PICKUP_MODE){const char *names[]={"关闭自动拾取","只拾取钱","钱和恢复道具","再加宝石护身石","全部物品"};snprintf(out,cap,"%s",names[v]);}
     else if(f->type==CONFIG_BOOL)snprintf(out,cap,"%s",v ? "开启":"关闭");
@@ -426,10 +504,6 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
     HGDIOBJ previous=font ? SelectObject(dc,font):NULL;
     int x=origin_x,y=origin_y;box(dc,x,y,608,448,RGB(20,18,15),RGB(164,124,59));
     text(dc,x+16,y+10,450,24,"EDSlash 模组设置",RGB(231,206,154));
-    unsigned total_rows=(SettingsModel_Count(model.page)+1)/2,first_row=model.scroll[model.page]+1,last_row=first_row+5;
-    if(last_row>total_rows)last_row=total_rows;
-    char row_status[80];snprintf(row_status,sizeof row_status,"第%u–%u行 / 共%u行",first_row,last_row,total_rows);
-    text(dc,x+408,y+10,184,24,row_status,RGB(207,188,154));
     const char *pages[]={"模组设置","按键设置","技能快捷"};
     for(unsigned i=0;i<3;++i){box(dc,x+16+(int)i*192,y+38,184,30,RGB(40,32,23),i==model.page ? RGB(218,168,80):RGB(104,78,38));text(dc,x+24+(int)i*192,y+44,160,20,pages[i],RGB(226,210,174));}
     unsigned start=model.scroll[model.page]*2,count=SettingsModel_Count(model.page);
@@ -440,8 +514,8 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         if(model.page==2) {
             static const char *names[]={"A","B","X","Y","上","下","左","右","LB","RB","Back","Start","L3","R3"};
             snprintf(label,sizeof label,"RT + %s",names[i]);ConfigBinding b=model.draft_bindings[i];
-            strcpy(value_text_buffer,"跟随原游戏");
-            if(b.custom){strcpy(value_text_buffer,"自定义技能");for(unsigned n=0;n<skill_count;++n)if(skills[n].selector==b.selector)snprintf(value_text_buffer,sizeof value_text_buffer,"%s",skills[n].name);}
+            value_text_buffer[0]=0;ConfigBinding shown=effective_binding(i);
+            if(shown.custom)for(unsigned n=0;n<skill_count;++n)if(skills[n].selector==shown.selector)snprintf(value_text_buffer,sizeof value_text_buffer,"%s",skills[n].name);
             dirty=memcmp(&b,&model.saved_bindings[i],sizeof b)!=0;
         } else {
             ConfigId id=SettingsModel_Field(model.page,i);const ConfigDescriptor *f=RuntimeConfig_Descriptor(id);
@@ -456,23 +530,18 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
     }
     box(dc,x+16,y+378,184,30,RGB(45,36,24),footer==1 ? RGB(204,69,36):RGB(138,103,48));text(dc,x+24,y+384,160,22,"保存并应用",RGB(236,218,178));
     box(dc,x+216,y+378,184,30,RGB(45,36,24),footer==2 ? RGB(204,69,36):RGB(138,103,48));text(dc,x+224,y+384,160,22,"关闭",RGB(236,218,178));
-    box(dc,x+416,y+378,176,30,RGB(45,36,24),RGB(138,103,48));text(dc,x+424,y+384,160,22,model.help ? "隐藏说明 (Y)":"显示说明 (Y)",RGB(236,218,178));
-    text(dc,x+16,y+416,576,26,message[0] ? message:(editing ? "方向键调整，确认结束编辑；Y说明":"LB/RB分类，确认编辑，Y说明；橙色表示未保存"),RGB(207,188,154));
+    if(!picker){box(dc,x+416,y+378,176,30,RGB(45,36,24),RGB(138,103,48));text(dc,x+424,y+384,160,22,model.help ? "隐藏说明 (Y)":"显示说明 (Y)",RGB(236,218,178));}
+    text(dc,x+16,y+416,576,26,message[0] ? message:(editing ? "左右×1，上下×10，按住两秒加速；Y说明":"LB/RB分类，确认编辑，Y说明；橙色表示未保存"),RGB(207,188,154));
     paint_scrollbar(dc,x,y);
     if(picker) {
         box(dc,x+16,y+82,576,322,RGB(24,22,18),RGB(194,146,65));
         text(dc,x+24,y+90,280,24,"选择已学会的技能",RGB(228,206,167));
-        text(dc,x+328,y+90,256,24,picker_style ? "右手施放；X切换":"左手施放；X切换",RGB(228,206,167));
+        text(dc,x+328,y+90,256,24,"技能说明",RGB(228,206,167));
         for(unsigned n=(unsigned)pick_scroll;n<skill_view_count && n<(unsigned)pick_scroll+5;++n) {
             int sy=y+122+(int)(n-(unsigned)pick_scroll)*48;
             box(dc,x+24,sy,280,48,RGB(37,32,25),!picker_footer && n==(unsigned)pick_focus ? RGB(204,69,36):RGB(88,71,42));
-            text(dc,x+80,sy+14,216,28,skills[skill_view[n]].name,RGB(225,207,177));
+            text(dc,x+80,sy+14,216,28,n ? skills[skill_view[n]].name:"未设置",RGB(225,207,177));
         }
-        if(!skill_view_count)text(dc,x+32,y+138,264,100,"当前这一侧没有可分配的已学技能。按X切换左右手，或使用原游戏设置。",RGB(225,207,177));
-        box(dc,x+24,y+366,280,30,RGB(45,36,24),picker_footer ? RGB(204,69,36):RGB(138,103,48));
-        text(dc,x+32,y+371,264,22,"使用原游戏设置",RGB(236,218,178));
-        box(dc,x+328,y+366,256,30,RGB(45,36,24),RGB(138,103,48));
-        text(dc,x+336,y+371,240,22,model.help ? "隐藏技能说明 (Y)":"显示技能说明 (Y)",RGB(207,188,154));
         paint_scrollbar(dc,x,y);
     }
     if(editing) {
@@ -488,11 +557,11 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         box(dc,x+24,y+306,128,36,RGB(45,36,24),RGB(164,124,59));box(dc,x+164,y+306,140,36,RGB(45,36,24),RGB(164,124,59));
         text(dc,x+32,y+314,112,24,menu_swap ? "完成 (B)":"完成 (A)",RGB(236,218,178));
         text(dc,x+172,y+314,124,24,menu_swap ? "取消 (A)":"取消 (B)",RGB(236,218,178));
-        if(!model.help)text(dc,x+328,y+138,256,190,"按左右方向键，或点左边的按钮调整。\n\n完成只保留这次修改；返回主列表后，选择“保存并应用”才会保存。取消会恢复打开这个调整窗口前的值。\n\n按Y可查看本项的详细说明。",RGB(207,188,154));
+        if(!model.help)text(dc,x+328,y+138,256,190,"左右调整最小单位，上下调整十倍。按住方向两秒后加快，百分比加速更快。\n\n完成只保留这次修改；返回主列表后，选择“保存并应用”才会保存。取消会恢复打开这个调整窗口前的值。\n\n按Y可查看本项的详细说明。",RGB(207,188,154));
     }
-    if(model.help && !confirm_discard && !error_modal) {
+    if((picker || model.help) && !confirm_discard && !error_modal) {
         const char *description;
-        if(picker)description=!picker_footer && skill_view_count && (unsigned)pick_focus<skill_view_count ? skills[skill_view[pick_focus]].description:"使用原游戏设置会恢复这个快捷位置原来的功能，不再使用插件为它指定的技能。";
+        if(picker)description=pick_focus>0 && (unsigned)pick_focus<skill_view_count ? skills[skill_view[pick_focus]].description:"未设置任何技能。选择并保存后，按这个RT组合键不会发动技能。";
         else description=model.page==2 ? "先选择一个RT组合键位置并确认，再从已学会的技能中选择。保存后，按住RT并按这个组合键就会直接发动技能，不需要再按鼠标右键。每个角色分别保存。":RuntimeConfig_Descriptor(SettingsModel_Field(model.page,model.focus[model.page]))->description;
         RECT h=editing ? (RECT){328,122,584,362}:help_rectangle();
         box(dc,x+h.left,y+h.top,h.right-h.left,h.bottom-h.top,RGB(28,25,19),RGB(191,145,68));
@@ -501,9 +570,9 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         text(dc,x+h.left+8,y+h.top+8,h.right-h.left-16,h.bottom-h.top-16,description,RGB(236,218,178));
         if(prior)SelectObject(dc,prior);
     }
-    if(confirm_discard){box(dc,x+96,y+160,416,116,RGB(26,23,18),RGB(208,151,67));text(dc,x+112,y+176,384,40,"有未保存修改。确认丢弃并关闭，取消继续编辑。",RGB(238,218,177));
-        box(dc,x+112,y+232,176,28,RGB(45,36,24),RGB(164,124,59));text(dc,x+120,y+236,160,22,"丢弃并关闭",RGB(238,218,177));
-        box(dc,x+304,y+232,192,28,RGB(45,36,24),RGB(164,124,59));text(dc,x+312,y+236,176,22,"继续编辑",RGB(238,218,177));}
+    if(confirm_discard){box(dc,x+96,y+160,416,116,RGB(26,23,18),RGB(208,151,67));text(dc,x+112,y+176,384,40,menu_swap ? "有未保存修改。B丢弃并关闭，A继续编辑。":"有未保存修改。A丢弃并关闭，B继续编辑。",RGB(238,218,177));
+        box(dc,x+112,y+232,176,28,RGB(45,36,24),RGB(164,124,59));text(dc,x+120,y+236,160,22,menu_swap ? "丢弃并关闭 (B)":"丢弃并关闭 (A)",RGB(238,218,177));
+        box(dc,x+304,y+232,192,28,RGB(45,36,24),RGB(164,124,59));text(dc,x+312,y+236,176,22,menu_swap ? "继续编辑 (A)":"继续编辑 (B)",RGB(238,218,177));}
     if(error_modal) {
         box(dc,x+96,y+138,416,190,RGB(26,23,18),RGB(208,151,67));
         text(dc,x+112,y+152,384,24,"无法保存设置",RGB(255,178,76));
@@ -518,18 +587,20 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         /* DC释放后补原图标；避开说明框，不能把后画的图标盖到说明文字上。 */
         void *icons=ptr((void *)backend.settings_icon_global,0),*hud=ptr((void *)backend.skill_global,0);
         unsigned icon_count=rd(icons,0x44);void *sprites=ptr(icons,0x48);
-        if(readable(icons,0x4C) && icon_count && icon_count<=4096 && readable(sprites,icon_count*32u)) {
+        if(readable(icons,0x4C) && icon_count && icon_count<=4096 && sprites) {
             unsigned begin=picker ? (unsigned)pick_scroll:start,limit=picker ? skill_view_count:count;
             unsigned end=begin+(picker ? 5u:12u);if(end>limit)end=limit;
             for(unsigned i=begin;i<end;++i) {
-                if(!picker && !model.draft_bindings[i].custom)continue;
-                int selection=picker ? skills[skill_view[i]].selector:model.draft_bindings[i].selector;
+                if(picker && i==0)continue;
+                ConfigBinding shown=picker ? (ConfigBinding){0,0,0}:effective_binding(i);
+                if(!picker && !shown.custom)continue;
+                int selection=picker ? skills[skill_view[i]].selector:shown.selector;
                 int icon=picker ? skills[skill_view[i]].icon:((This1)backend.icon_resolve)(hud,selection);
                 int dx=picker ? 26:16+(int)(i%2)*288,dy=picker ? 122+(int)(i-begin)*48:82+(int)((i-start)/2)*48;
                 RECT glyph={dx,dy,dx+48,dy+48},overlap,h=help_rectangle();
-                if(model.help && IntersectRect(&overlap,&glyph,&h))continue;
-                if(icon>=0 && (unsigned)icon<icon_count)
-                    ((IconDraw)backend.icon_draw)(icons,(int)context,icon,selection,x+dx,y+dy,2,-1,0,0);
+                if((picker || model.help) && IntersectRect(&overlap,&glyph,&h))continue;
+                if(icon>=0 && (unsigned)icon<icon_count && readable((BYTE *)sprites+(unsigned)icon*32u,32))
+                    scaled_icon(context,icons,(BYTE *)sprites+(unsigned)icon*32u,icon,selection,picker ? 24:16+(int)(i%2)*288,dy,picker ? 48:42,picker ? 38:32,picker ? RGB(37,32,25):RGB(31,27,21));
             }
         }
     }
@@ -550,12 +621,9 @@ static void mouse_click(int x,int y)
     unsigned total,visible,top;RECT track;scroll_metrics(&total,&visible,&top,&track);
     if(x>=track.left && x<track.right && y>=track.top && y<track.bottom){scroll_at(y);scroll_drag=1;return;}
     if(picker) {
-        if(x>=328 && x<584 && y>=90 && y<114)picker_switch_style();
-        else if(x>=24 && x<304 && y>=122 && y<362){unsigned row=(unsigned)(y-122)/48+(unsigned)pick_scroll;
+        if(x>=24 && x<304 && y>=122 && y<362){unsigned row=(unsigned)(y-122)/48+(unsigned)pick_scroll;
             if(row<skill_view_count){picker_footer=0;pick_focus=(int)row;activate();}}
-        else if(x>=24 && x<304 && y>=366 && y<396){picker_footer=1;activate();}
-        else if(x>=328 && x<584 && y>=366 && y<396)model.help=!model.help;
-        return;
+                return;
     }
     if(y>=38 && y<68 && x>=16 && x<592){model.page=(unsigned)((x-16)/192);footer=0;return;}
     if(y>=82 && y<370 && x>=16 && x<592) {
@@ -575,7 +643,7 @@ static void mouse_hover(int x,int y)
         if(x>=24 && x<304 && y>=122 && y<362) {
             unsigned row=(unsigned)(y-122)/48+(unsigned)pick_scroll;
             if(row<skill_view_count){picker_footer=0;pick_focus=(int)row;}
-        } else if(x>=24 && x<304 && y>=366 && y<396)picker_footer=1;
+        }
         return;
     }
     if(x>=16 && x<592 && y>=82 && y<370) {
@@ -592,7 +660,11 @@ static void keyboard(RuntimeEventId event,void *subject,unsigned long result,uns
     static unsigned old_keys;
     int keys[]={VK_UP,VK_DOWN,VK_LEFT,VK_RIGHT,VK_RETURN,'Y'};unsigned now_keys=0;
     for(unsigned i=0;i<6;++i)if(GetAsyncKeyState(keys[i])&0x8000)now_keys|=1u<<i;
-    if(active)for(unsigned i=0;i<6;++i)if((now_keys&~old_keys)&(1u<<i)){pointer_mode=1;if(i<4)move((int)i+1);else if(i==4)activate();else model.help=!model.help;}
+    static int keyboard_direction;static uint32_t keyboard_started,keyboard_next;
+    int direction=now_keys&1 ? 1:now_keys&2 ? 2:now_keys&4 ? 3:now_keys&8 ? 4:0;
+    if(active){if(direction)pointer_mode=1;repeat_direction(direction,GetTickCount(),&keyboard_direction,&keyboard_started,&keyboard_next);}
+    else keyboard_direction=0;
+    if(active)for(unsigned i=4;i<6;++i)if((now_keys&~old_keys)&(1u<<i)){pointer_mode=1;if(i==4)activate();else if(!picker)model.help=!model.help;}
     old_keys=now_keys;
     int open_key=(GetAsyncKeyState(VK_OEM_3)&0x8000)!=0,escape=(GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0;
     if(open_key && !previous_open_key){if(active)cancel();else if(open_window())pointer_mode=1;}
@@ -630,8 +702,8 @@ int SettingsWindow_Initialize(const RuntimeContext *runtime)
     if(ready)return 1;
     if(!runtime || !runtime->profile || runtime->profile->game_id<1 || runtime->profile->game_id>2)return 0;
     backend=settings_profiles[runtime->profile->game_id-1];game=runtime->profile->game_id;
-    uintptr_t functions[]={backend.inventory_get,backend.get_jm,backend.menu_system_show,backend.menu_system_primary,backend.settings_actor_get,backend.settings_string_get,backend.ui_property,backend.lookup,backend.skill_eligibility,backend.icon_resolve,backend.icon_draw,backend.settings_skill_name,backend.settings_skill_description,backend.settings_string_destroy,backend.settings_query_skill};
-    for(unsigned i=0;i<15;++i){BYTE bytes[12];if(!RuntimeWin32_Read((unsigned long)functions[i],bytes,12) || memcmp(bytes,backend.signatures[i],12)) {
+    uintptr_t functions[]={backend.inventory_get,backend.get_jm,backend.menu_system_show,backend.menu_system_primary,backend.settings_actor_get,backend.settings_string_get,backend.ui_property,backend.lookup,backend.skill_eligibility,backend.icon_resolve,backend.icon_draw,backend.settings_skill_name,backend.settings_skill_description,backend.settings_string_destroy,backend.settings_query_skill,backend.settings_text_get,backend.focus_frame_get,backend.focus_image_get};
+    for(unsigned i=0;i<18;++i){BYTE bytes[12];if(!RuntimeWin32_Read((unsigned long)functions[i],bytes,12) || memcmp(bytes,backend.signatures[i],12)) {
         RuntimeLog_Write("[模组设置] 原接口%u地址%08lX未通过签名校验，设置窗口停用。",i,(unsigned long)functions[i]);return 0;}}
     /* 订阅分别记账；后一项失败时重试也不会重复注册前一项。 */
     if(!draw_subscribed)draw_subscribed=Runtime_Subscribe(RUNTIME_EVENT_UI_DRAW_END,paint,NULL);

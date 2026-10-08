@@ -232,21 +232,26 @@ static void *choose_target(void *me)
 
 /* 技能快捷和B落点预览共用选择码读取：只读原绑定，不注入Q等键盘事件。
  * user_binding用于RT的自定义槽；B固定动作取原第一槽，避免MOD改绑RT+A后改变B含义。 */
+#include "../../Runtime/DefaultSkills.h"
 static bool skill_choice(unsigned slot,bool user_binding,int *selection,bool *left_style)
 {
-    static const int keys[]={'Q','W','E','R','T','Y','U','I','O','A','S','D',0,0};
     if(slot>=14 || !selection || !left_style)return false;
     if(user_binding) {
+        /* 配置按存档Player的创建角色编号保存；场景Actor同偏移是其它数据，不能混用。 */
+        void *archive=g_profile->inventory_get ? (void *)(uintptr_t)((This0)g_profile->inventory_get)((void *)g_profile->inventory_root):NULL;
+        unsigned role=Memory_Readable(archive,0x34C) ? Read32(archive,0x348):0;
         ConfigBinding binding=RuntimeConfig_GetBinding(Runtime_GetContext()->profile->game_id,
-            Read32(Game_Player(),0x348),slot+1);
-        if(binding.custom){*selection=binding.selector;*left_style=binding.right==0;return binding.selector>=0;}
+            role,slot+1);
+        /* RT快捷是独立技能请求，不作为左手/右手动作选择。旧hand字段不改变这个路由。 */
+        if(binding.custom){*selection=binding.selector;*left_style=false;return binding.selector>=0;}
+        return false; /* 未设置的RT位置不取原键盘选择；固定B仍走下面的原动作来源。 */
     }
-    if(!keys[slot])return false;
+    int key=RuntimeSkill_DefaultKey(slot+1);if(!key)return false;
     void *hud=global(g_profile->skill_global),*record=ReadPtr(hud,0xC18);
     for(unsigned n=0;record && n<128;++n) {
         if(!Memory_Readable(record,0x20))break;
-        if((int)Read32(record,0x18)==keys[slot]) {
-            *selection=(int)Read32(record,0x14);*left_style=Read32(record,0x1C)!=0;return *selection>=0;
+        if((int)Read32(record,0x18)==key) {
+            *selection=(int)Read32(record,0x14);*left_style=!user_binding && Read32(record,0x1C)!=0;return *selection>=0;
         }
         void *next=ReadPtr(record,8);if(next==record)break;record=next;
     }

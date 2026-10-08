@@ -123,7 +123,21 @@ static void settings_regression(bool expansion)
     /* 常态快照未变化时仍快速返回，确认序号不重复推进。 */
     previous=applied;Guard_SyncSettings(&released,&applied);CHECK(applied==previous);
     Guard_Shutdown();CHECK(VirtualFree(angle_code,0,MEM_RELEASE));CHECK(VirtualFree(code,0,MEM_RELEASE));
-    Game_Release();CHECK(DeleteFileW(path));
+    Game_Release();
+    /* 真实保存、应用和RT输入，Actor同偏移故意不是存档角色编号。 */
+    configure(&profile,expansion);record_actions=true;g_intent.layer=LAYER_SKILL;
+    Write32(configuration_player,0x348,4);Write32(roles[0],0x348,30);
+    ConfigBindingEdit edits[2]={{expansion ? 2u:1u,4,1,{1,111,0}},{expansion ? 2u:1u,4,3,{1,222,0}}};
+    CHECK(RuntimeConfig_SaveBatch(NULL,0,edits,2));RuntimeConfig_ApplyFrame(0);
+    g_intent.held=g_intent.pressed=KEY(PAD_A);Game_Update();CHECK(releases==1 && arg1==1001 && last_right_style);
+    ptr(roles[0],profile.active_offset,NULL);engine_tick+=2;Combat_End();Combat_Reset();
+    g_intent.held=g_intent.pressed=KEY(PAD_X);Game_Update();CHECK(releases==2 && arg1==1002 && last_right_style);
+    ptr(roles[0],profile.active_offset,NULL);engine_tick+=2;Combat_End();Combat_Reset();
+    edits[0].value=(ConfigBinding){0,0,0};edits[1].value=(ConfigBinding){0,0,0};
+    CHECK(RuntimeConfig_SaveBatch(NULL,0,edits,2));RuntimeConfig_ApplyFrame(0);
+    g_intent.held=g_intent.pressed=KEY(PAD_A);Game_Update();CHECK(releases==2);
+    g_intent.held=g_intent.pressed=KEY(PAD_X);Game_Update();CHECK(releases==2);
+    Combat_Reset();Game_Release();record_actions=false;CHECK(DeleteFileW(path));
     printf("%s真实TOML保存、动作安全点、Guard确认及中断/切换集成回归通过\n",expansion?"外传":"本体");
 }
 int main(void)

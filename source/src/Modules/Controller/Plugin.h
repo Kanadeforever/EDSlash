@@ -49,7 +49,7 @@ typedef struct {
     uintptr_t menu_load_vtable,menu_load_tick,menu_load_show,menu_load_hover;
     uintptr_t menu_load_select,menu_load_page,menu_load_submit,menu_load_primary,menu_sound;
     uintptr_t settings_actor_get,settings_string_get,settings_icon_global;
-    uintptr_t settings_skill_name,settings_skill_description,settings_string_destroy,settings_query_skill,settings_empty_string;
+    uintptr_t settings_skill_name,settings_skill_description,settings_string_destroy,settings_query_skill,settings_empty_string,settings_text_get,settings_text_table;
     uintptr_t projection_global; /* 原屏幕到世界投影对象，用其原函数反算预览屏幕坐标。 */
     uintptr_t icon_focus_call; /* 原图标绘制之后、原说明绘制之前的CALL。 */
     uintptr_t cursor_position_call,cursor_position_iat,cursor_sprite_call1,cursor_sprite_call2,cursor_sprite_draw;

@@ -20,7 +20,7 @@ static DWORD __stdcall fake_pid(HWND w,LPDWORD pid){(void)w;*pid=GetCurrentProce
 static unsigned checks,pauses,resumes,original_actions;
 static int fixture_write_result=1;
 #define CHECK(x) do{++checks;if(!(x)){fprintf(stderr,"设置窗口失败 行%d：%s\n",__LINE__,#x);return 1;}}while(0)
-static BYTE fake_world[0x100],fake_actor[0x500],fake_player[0x400],fake_root[0x300],fake_ui[0x80],fake_hud[0xD00];
+static BYTE fake_world[0x100],fake_actor[0x500],fake_player[0x400],fake_root[0x300],fake_ui[0x80],fake_hud[0xD00],default_record[0x20];
 static void *world_ptr=fake_world,*hud_ptr=fake_hud;
 static uintptr_t table[32];
 int RuntimeWin32_Read(unsigned long address,void *out,unsigned long size)
@@ -47,15 +47,17 @@ static int __attribute__((thiscall)) show_root(void *p,int show,int mode)
 static int __attribute__((thiscall)) native_action(void *p,int e,int x,void *y){(void)p;(void)e;(void)x;(void)y;++original_actions;return 1;}
 static BYTE fixture_record[0x40],fixture_choices[16];
 static int __attribute__((thiscall)) no_property(void *p,int i)
-{return p==fixture_record && i==2 ? 701:p==fixture_choices ? (i==1 ? 1:i==2 ? 701:0):0;}
+{return p==fixture_record ? (i==2 ? 701:i==15 ? 11:0):p==fixture_choices ? (i==1 ? 1:i==2 ? 701:0):0;}
 static BYTE fixture_group[0x50],fixture_method[0x50];
-static char game_name[64],game_description[256];static int name_available=1,descriptions,destroyed;
+static char game_name[64],game_description[256],game_narrative[256];static int name_available=1,descriptions,destroyed;
 static void *empty_string=game_description;
 static int __attribute__((thiscall)) fixture_name(void *p){(void)p;return name_available ? (int)(uintptr_t)game_name:0;}
 static void __attribute__((thiscall)) fixture_query(void *p,void **learned,void **next,int slot)
 {(void)p;*learned=slot==0 ? fixture_record:NULL;*next=NULL;}
 static void __cdecl fixture_description(void *player,void *record,unsigned *string,int detail)
-{if(player==fake_player && record==fixture_record && detail==1)++descriptions;*string=(unsigned)(uintptr_t)game_description;}
+{if(player==fake_player && record==fixture_record && detail==0)++descriptions;*string=(unsigned)(uintptr_t)game_description;}
+static int __attribute__((thiscall)) fixture_text(void *self,int id,int column)
+{(void)self;return id==11 && column==1 ? (int)(uintptr_t)game_narrative:0;}
 static int __attribute__((thiscall)) fixture_destroy(void *p){(void)p;++destroyed;return 1;}
 static int __attribute__((thiscall)) fixture_lookup(void *p,int id)
 {(void)p;return (int)(uintptr_t)(id==701 ? fixture_group:id==10023 ? fixture_method:NULL);}
@@ -63,10 +65,13 @@ static int __attribute__((thiscall)) fixture_eligibility(void *p,int id){(void)p
 static HDC fixture_dc;static unsigned releases;static int dc_failed;
 static BYTE fixture_icons[0x60],fixture_sprites[128];static void *icons_pointer=fixture_icons;
 static unsigned icon_calls;static int icon_abi_ok;
+static BYTE icon_frame[22],icon_bank[8],icon_image[0x40];static void *icon_entry=icon_image;
+static int __attribute__((thiscall)) fixture_frame(void *p){(void)p;return (int)(uintptr_t)icon_frame;}
+static int __attribute__((thiscall)) fixture_image(void *p){(void)p;return (int)(uintptr_t)icon_image;}
 static int __attribute__((thiscall)) fixture_icon_draw(void *self,int context,int icon,int selector,int x,int y,int mode,int shade,int bindings,int side)
 {
     (void)context;++icon_calls;
-    icon_abi_ok=self==fixture_icons && icon==2 && selector==123 && x==42 && y==138 && mode==2 && shade==-1 && !bindings && !side;
+    icon_abi_ok=self==fixture_icons && icon==2 && selector==123 && x==40 && y==106 && mode==0 && shade==-1 && !bindings && !side;
     /* 图标只是本进程蓝色方块夹具，验证原绘制参数/位置；不是原游戏素材。 */
     box(fixture_dc,x,y,43,47,RGB(38,66,92),RGB(145,174,196));return 1;
 }
@@ -94,9 +99,10 @@ int wmain(void)
         .settings_actor_get=(uintptr_t)get_actor,.ui_property=(uintptr_t)no_property,.active_offset=0x359,.invalid_offset=0x446,
         .settings_skill_name=(uintptr_t)fixture_name,.settings_skill_description=(uintptr_t)fixture_description,
         .settings_string_destroy=(uintptr_t)fixture_destroy,.settings_query_skill=(uintptr_t)fixture_query,
-        .settings_empty_string=(uintptr_t)&empty_string};
+        .settings_empty_string=(uintptr_t)&empty_string,.settings_text_get=(uintptr_t)fixture_text};
     WideCharToMultiByte(936,0,L"踢击",-1,game_name,sizeof game_name,NULL,NULL);
     WideCharToMultiByte(936,0,L"原版技能说明",-1,game_description,sizeof game_description,NULL,NULL);
+    WideCharToMultiByte(936,0,L"技能原版描述句",-1,game_narrative,sizeof game_narrative,NULL,NULL);
     table[0x24/4]=(uintptr_t)native_action;wr(fake_root,0,(uint32_t)(uintptr_t)table);
     wr(fake_world,0x30,(uint32_t)(uintptr_t)fake_ui);wr(fake_world,0x58,1);wr(fake_player,0x348,50);
     /* 战斗中并推杆仍可打开，由原Show暂停；不再以待机拒绝。 */
@@ -145,7 +151,7 @@ int wmain(void)
     model.page=1;model.focus[1]=0;activate();CHECK(editing);move(4);cancel();CHECK(!editing && !SettingsModel_Dirty(&model));
     model.page=2;skill_count=1;skills[0].selector=123;strcpy(skills[0].name,"测试技能");activate();
     move(2);cancel();CHECK(!model.draft_bindings[0].custom);
-    activate();activate();CHECK(model.draft_bindings[0].custom && model.draft_bindings[0].selector==123);
+    activate();move(2);activate();CHECK(model.draft_bindings[0].custom && model.draft_bindings[0].selector==123);
     SettingsModel_Discard(&model);SettingsWindow_Close();
     CHECK(RuntimeConfig_SetInt(CONFIG_MENU_SWAP_AB,1));RuntimeConfig_ApplyFrame(1);
     CHECK(open_window());SettingsWindow_Pad(0,0,0,0,0,0,0,0,80);
@@ -161,9 +167,8 @@ int wmain(void)
     add_skill(fake_actor,10023,1);CHECK(skill_count==0);
     wr(fixture_group,0x32,0);name_available=0;add_skill(fake_actor,701,0);CHECK(skill_count==0);
     name_available=1;learned_records[0]=fixture_record;skill_player=fake_player;add_skill(fake_actor,701,0);
-    CHECK(skill_count==1 && !strcmp(skills[0].description,"原版技能说明") && descriptions==1 && destroyed==1);
-    skills[1]=skills[0];skills[1].selector=124;skills[1].kind=0;skill_count=2;picker_style=0;picker_rebuild(123);CHECK(skill_view_count==0);
-    skills[0].kind=1;picker_rebuild(123);CHECK(skill_view_count==1);picker_switch_style();CHECK(skill_view_count==2);
+    CHECK(skill_count==1 && strstr(skills[0].description,"技能原版描述句") && strstr(skills[0].description,"原版技能说明") && descriptions==1 && destroyed==1);
+    skills[1]=skills[0];skills[1].selector=124;skills[1].kind=0;skill_count=2;picker_rebuild(123);CHECK(skill_view_count==3 && skill_view[0]==UINT32_MAX);
     skill_count=1;
     /* 大写键位只改显示，不改变保存枚举；三个页面都有真实滚动位置。 */
     char key_text[64];value_text(CONFIG_WORLD_INTERACT,key_text,sizeof key_text);CHECK(!strcmp(key_text,"A"));
@@ -188,8 +193,10 @@ int wmain(void)
     fixture_key=VK_OEM_3;keyboard(RUNTIME_EVENT_INPUT_FRAME_END,fake_root,0,0,NULL);CHECK(!active);
     fixture_key=0;keyboard(RUNTIME_EVENT_INPUT_FRAME_END,fake_root,0,0,NULL);
     /* 用实际候选生成链取得已学组、原名称和原说明，不直接把假名字填进列表冒充数据接通。 */
+    wr(fake_hud,0xC18,(uint32_t)(uintptr_t)default_record);wr(default_record,0x14,123);wr(default_record,0x18,'Q');
     wr(fake_actor,0x193,(uint32_t)(uintptr_t)fixture_choices);CHECK(open_window());
-    CHECK(skill_count==1 && !strcmp(skills[0].name,"踢击") && !strcmp(skills[0].description,"原版技能说明"));
+    CHECK(!effective_binding(0).custom && !effective_binding(12).custom);
+    CHECK(skill_count==1 && !strcmp(skills[0].name,"踢击") && strstr(skills[0].description,"技能原版描述句") && strstr(skills[0].description,"原版技能说明"));
     wr(surface,0xC,640);wr(surface,0x10,480);
     model.page=0;model.focus[0]=7;model.help=1;
     paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
@@ -197,13 +204,36 @@ int wmain(void)
     model.page=1;model.focus[1]=0;model.help=0;activate();
     paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
     snapshot_path="settings_edit_fixture.bmp";CHECK(snapshot(&info.bmiHeader,pixels));cancel();
-    model.page=2;activate();model.help=1;
+    model.page=2;activate();move(2);model.help=1;
     backend.settings_icon_global=(uintptr_t)&icons_pointer;backend.icon_draw=(uintptr_t)fixture_icon_draw;
-    wr(fixture_icons,0x44,4);wr(fixture_icons,0x48,(uint32_t)(uintptr_t)fixture_sprites);
+    backend.focus_frame_get=(uintptr_t)fixture_frame;backend.focus_image_get=(uintptr_t)fixture_image;
+    wr(fixture_sprites+64,0,(uint32_t)(uintptr_t)icon_frame);wr(fixture_sprites+64,8,1);
+    wr(icon_frame,8,(uint32_t)(uintptr_t)icon_bank);wr(icon_bank,4,(uint32_t)(uintptr_t)&icon_entry);
+    wr(icon_image,0xC,43);wr(icon_image,0x10,47);
+    wr(fixture_icons,0x44,1000);wr(fixture_icons,0x48,(uint32_t)(uintptr_t)fixture_sprites);
     paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
     CHECK(icon_calls==1 && icon_abi_ok);
+    RECT small=icon_rectangle(24,170,48,43,47,38);CHECK(small.bottom-small.top==38 && small.top==175);
+    RECT compact=icon_rectangle(16,82,42,43,47,32);CHECK(compact.bottom-compact.top==32 && compact.top==87);
+    CHECK(small.right-small.left<43 && compact.right-compact.left<43);
+    paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);CHECK(icon_calls==1); /* 复用缓存 */
+    move(1);activate();CHECK(!model.draft_bindings[0].custom); /* 第一项未设置 */
     snapshot_path="settings_skill_fixture.bmp";CHECK(snapshot(&info.bmiHeader,pixels));
-    CHECK(picker && !picker_footer);cancel();SettingsWindow_Close();
+    CHECK(!picker);SettingsWindow_Close();
+    clear_icon_cache();
+    /* 全部数值用最小单位：左右1、上下10；百分比底层1即0.01%。 */
+    CHECK(open_window());model.page=1;model.focus[1]=0;activate();int number=model.draft.values[CONFIG_DEADZONE];
+    move(4);CHECK(model.draft.values[CONFIG_DEADZONE]==number+1);move(1);CHECK(model.draft.values[CONFIG_DEADZONE]==number+11);
+    move(3);move(2);CHECK(model.draft.values[CONFIG_DEADZONE]==number);
+    int old_dir=0;uint32_t started=0,next=0;repeat_direction(4,100,&old_dir,&started,&next);
+    repeat_direction(4,2100,&old_dir,&started,&next);CHECK(next==2135);
+    edit_id=CONFIG_GUARD_PERCENT;model.focus[1]=0; /* 改为该字段所在的真实页/焦点。 */
+    model.page=0;for(unsigned i=0;i<SettingsModel_Count(0);++i)if(SettingsModel_Field(0,i)==CONFIG_GUARD_PERCENT)model.focus[0]=i;
+    model.draft.values[CONFIG_GUARD_PERCENT]=0;old_dir=0;repeat_direction(4,100,&old_dir,&started,&next);
+    CHECK(model.draft.values[CONFIG_GUARD_PERCENT]==1);repeat_direction(4,2100,&old_dir,&started,&next);CHECK(next==2104);
+    model.draft.values[CONFIG_GUARD_PERCENT]=10000;move(1);CHECK(model.draft.values[CONFIG_GUARD_PERCENT]==10000);
+    model.draft.values[CONFIG_GUARD_PERCENT]=0;move(2);CHECK(model.draft.values[CONFIG_GUARD_PERCENT]==0);
+    editing=0;SettingsModel_Discard(&model);SettingsWindow_Close();
     SelectObject(fixture_dc,previous_bitmap);DeleteObject(bitmap);DeleteDC(fixture_dc);
     if(font){DeleteObject(font);font=NULL;}
     if(help_font){DeleteObject(help_font);help_font=NULL;}

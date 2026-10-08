@@ -95,14 +95,16 @@ int RuntimeConfig_GetInt(ConfigId id)
 }
 #endif
 static GameProfile runtime_profile={.game_id=GAME_ID_DAOJIAN};
+static BYTE configuration_player[0x400];
+static int __attribute__((thiscall)) configuration_player_get(void *self)
+{CHECK(self==configuration_player);return (int)(uintptr_t)configuration_player;}
 static const RuntimeContext runtime_context={.profile=&runtime_profile};
 const RuntimeContext *Runtime_GetContext(void) {return &runtime_context;}
 #ifndef EDSLASH_REAL_CONFIG
 ConfigBinding RuntimeConfig_GetBinding(unsigned game,unsigned role,unsigned slot)
 {
     CHECK(game==runtime_profile.game_id);
-    CHECK(role==4 || role==30);
-    ConfigBinding binding={custom_binding && slot==1 && role==4,111,custom_right};return binding;
+    ConfigBinding binding={(custom_binding==2 ? slot==1:custom_binding && slot==1 && role==4),custom_binding==2 ? 222:111,custom_right};return binding;
 }
 #endif
 bool Memory_Readable(const void *p,size_t bytes)
@@ -275,8 +277,10 @@ static void configure(Profile *profile, bool expansion)
     profile->inspect_ready_offset=expansion?0x412:0x406;
     g_profile=profile;
     memset(roles,0,sizeof roles);memset(table_data,0,sizeof table_data);
-    /* 原始PlayerInit两版都写+0x348，4是已确认selector，不能用对象类型替代。 */
-    Write32(roles[0],0x348,4);
+    /* 场景Actor和存档Player故意不同，配置角色编号只允许读取后者。 */
+    memset(configuration_player,0,sizeof configuration_player);Write32(configuration_player,0x348,4);
+    Write32(roles[0],0x348,30);
+    profile->inventory_root=(uintptr_t)configuration_player;profile->inventory_get=(uintptr_t)configuration_player_get;
     memset(ui_data,0,sizeof ui_data);memset(mouse_data,0,sizeof mouse_data);
     ptr(world_data,0x30,manager_data);Write32(world_data,0x58,1);
     Write32(manager_data,0x0C,1);
@@ -358,7 +362,7 @@ static void exercise(bool expansion)
     g_intent.layer=LAYER_ITEM;g_intent.pressed=0;Game_Update();CHECK(quick_slot==2 && releases==2);
     int before_selected=selected;g_intent.layer=LAYER_SKILL;g_intent.pressed=0;g_intent.rx=1;Game_Update();CHECK(selected==before_selected);
     ptr(hud_data,0xC18,binding_data);Write32(binding_data,0x14,111);Write32(binding_data,0x18,'Q');
-    g_intent.rx=0;g_intent.pressed=KEY(PAD_A);Game_Update();CHECK(selected==before_selected && releases==3);
+    g_intent.rx=0;g_intent.pressed=KEY(PAD_A);Game_Update();CHECK(selected==before_selected && releases==2);
     g_intent.layer=LAYER_GUARD;g_intent.pressed=0;Game_Update();
     CHECK(Game_Async(VK_MENU,0)==0);CHECK(!Game_Async(VK_SHIFT,0));
     g_input.focused=false;CHECK(!Game_Async(VK_MENU,0));Game_Update();
@@ -828,7 +832,8 @@ static void quick_cast_regression(bool expansion)
     ptr(hud_data,0xC18,binding_data);Write32(binding_data,0x14,222);Write32(binding_data,0x18,'Q');
     g_intent.held=g_intent.pressed=KEY(PAD_Y);Game_Update();CHECK(releases==1 && arg1==1001);
     ptr(roles[0],profile.active_offset,NULL);engine_tick+=2;Combat_End();
-    /* RT+A 发技能，不装备、不按 Y；不会推进当前套组步骤。 */
+    /* 显式配置RT+A后直接发技能，不装备、不推进套组。 */
+    custom_binding=2;
     g_intent.layer=LAYER_SKILL;g_intent.held=g_intent.pressed=KEY(PAD_A);Game_Update();
     if(releases==1){g_intent.pressed=0;Game_Update();}
     CHECK(releases==2 && arg1==1002 && (int)Read32(hud_data,0x120)==0);
@@ -908,15 +913,15 @@ static void configured_binding_regression(bool expansion)
     Profile profile;configure(&profile,expansion);record_actions=true;custom_binding=1;
     g_intent.layer=LAYER_SKILL;g_intent.held=g_intent.pressed=KEY(PAD_A);
     Game_Update();
-    CHECK(releases==1 && arg1==1001 && !last_right_style);
+    CHECK(releases==1 && arg1==1001 && last_right_style);
     ptr(roles[0],profile.active_offset,NULL);engine_tick+=2;Combat_End();
     Combat_Reset();
     ptr(hud_data,0xC18,binding_data);Write32(binding_data,0x14,222);Write32(binding_data,0x18,'Q');
-    Write32(roles[0],0x348,30);g_intent.pressed=KEY(PAD_A);Game_Update();
-    CHECK(releases==2 && arg1==1002); /* 另一个角色走自己的原版绑定，而不是串用自定义111。 */
+    Write32(configuration_player,0x348,30);g_intent.pressed=KEY(PAD_A);Game_Update();
+    CHECK(releases==1); /* 另一个角色未设置，不串用绑定也不回退原键盘选择。 */
     ptr(roles[0],profile.active_offset,NULL);engine_tick+=2;Combat_End();Combat_Reset();
-    Write32(roles[0],0x348,4);custom_right=1;g_intent.pressed=KEY(PAD_A);Game_Update();
-    CHECK(releases==3 && last_right_style);
+    Write32(configuration_player,0x348,4);custom_right=1;g_intent.pressed=KEY(PAD_A);Game_Update();
+    CHECK(releases==2 && last_right_style);
     Combat_Reset();Game_Release();custom_binding=0;
 }
 static int __attribute__((thiscall)) move_terrain(void *cell,int kind)
@@ -1018,12 +1023,12 @@ static void jump_regression(bool expansion)
         /* 外传第四个数据映射可代表瞬移；业务由原Method，控制器不改类型。 */
         test_aim_ms=kind==1 ? 2000:kind==2 ? 200:kind==3 ? 10000:1000;int duration=test_aim_ms;
         jump_builtin=kind==2;jump_fixture_selection=jump_builtin ? 10000:kind==3 ? 222:111;
-        /* 原RT+A默认绑定和B使用同一选择；两条路在相同初始历史下对照实际Method。 */
+        /* RT未设置不发动作；B仍独立解析原跳跃选择，并核对实际Method。 */
         memset(binding_data,0,sizeof binding_data);Write32(binding_data,0x18,'Q');
         Write32(binding_data,0x14,(uint32_t)jump_fixture_selection);Write32(binding_data,0x1C,kind%2);
         ptr(hud_data,0xC18,binding_data);ptr(roles[0],profile.active_offset,NULL);Combat_Reset();
         g_intent.layer=LAYER_SKILL;g_intent.pressed=KEY(PAD_A);g_intent.held=0;g_intent.lx=g_intent.ly=0;
-        int rt_before=releases;Game_Update();CHECK(releases==rt_before+1);int rt_method=arg1;
+        int rt_before=releases;Game_Update();CHECK(releases==rt_before); /* 未设置RT+A无动作，固定B仍独立使用原跳跃技能。 */int rt_method=jump_builtin ? 10000:jump_fixture_selection==222 ? 1002:1001;
         ptr(roles[0],profile.active_offset,NULL);Combat_Reset();Feedback_End();g_intent.layer=LAYER_GAME;
         ptr(roles[0],profile.active_offset,NULL);Write32(roles[0],0x73,1);Combat_Reset();
         Write32(roles[0],0x73,0x0B);g_input.now=100;g_intent.lx=1;g_intent.ly=0;g_intent.pressed=g_intent.held=KEY(PAD_B);

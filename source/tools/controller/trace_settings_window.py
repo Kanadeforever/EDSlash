@@ -46,6 +46,10 @@ def main():
         assert target(pe,a['menu_skill_tick']+name_offset)==a['settings_skill_name']
         assert target(pe,a['menu_skill_tick']+query_offset)==a['settings_query_skill']
         assert target(pe,a['menu_skill_tick']+description_offset)==a['settings_skill_description']
+        narrative_offset=0x2DD if profile['game_id']==1 else 0x2FE
+        table_offset=0x2D9 if profile['game_id']==1 else 0x2FA
+        assert target(pe,a['menu_skill_tick']+narrative_offset)==a['settings_text_get']
+        assert struct.unpack('<I',pe.read(a['menu_skill_tick']+table_offset,4))[0]==a['settings_text_table']
         empty_offset=0x46B if profile['game_id']==1 else 0x48C
         assert struct.unpack('<I',pe.read(a['menu_skill_tick']+empty_offset,4))[0]==a['settings_empty_string']
         # JM2D原绘制/主操作虚表槽核对；自建窗口不改变其它菜单的虚表。
@@ -59,6 +63,7 @@ def main():
         blocks.append(('原动作候选资格/组分类/16位selector', a['menu_action_rebuild'] + 0x79, 0x90))
         blocks.extend([('原技能页取姓名',a['menu_skill_tick']+name_offset-0x16,0x27),
                        ('原技能页已学记录及完整悬停说明',a['menu_skill_tick']+query_offset-0x20,0x55),
+                       ('原学习页追加第15项描述句',a['menu_skill_tick']+narrative_offset-0x21,0x40),
                        ('原姓名读取器',a['settings_skill_name'],0xA5),
                        ('原已学说明生成器',a['settings_skill_description'],0xB0),
                        ('原游戏CString析构',a['settings_string_destroy'],0x28)])

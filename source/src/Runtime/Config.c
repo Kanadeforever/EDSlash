@@ -12,7 +12,7 @@
 /* 描述表是默认模板、范围校验和未来界面的共同来源，防止三处各写一套默认值。 */
 #define B(id,table,key,label,description,apply) {id,table,key,label,description,CONFIG_BOOL,1,0,1,1,NULL,NULL,apply}
 #define N(id,table,key,label,description,def,min,max,step,apply) {id,table,key,label,description,CONFIG_INT,def,min,max,step,NULL,NULL,apply}
-#define P(id,key,label) {id,"gameplay.stamina",key,label,(id==CONFIG_GUARD_PERCENT ? "设置防御每次消耗的体力。100%代表角色整条最大体力；1%代表其中百分之一。例如最大体力100时，1%就是1点。0表示不扣。需要将防御消耗模式设为最大体力百分比。" : "设置每次攻击造成实际伤害后恢复的体力。100%代表整条最大体力；1%代表其中百分之一。0表示不恢复。需要将攻击恢复模式设为最大体力百分比。没有伤害敌人时不恢复，恢复也不能超过体力上限。"),CONFIG_PERCENT,0,0,10000,25,NULL,NULL,CONFIG_APPLY_FRAME}
+#define P(id,key,label) {id,"gameplay.stamina",key,label,(id==CONFIG_GUARD_PERCENT ? "设置防御每次消耗的体力。100%代表角色整条最大体力；1%代表其中百分之一。例如最大体力100时，1%就是1点。0表示不扣。需要将防御体力消耗方式设为按最大体力比例。" : "设置每次攻击造成实际伤害后恢复的体力。100%代表整条最大体力；1%代表其中百分之一。0表示不恢复。需要将攻击命中体力恢复方式设为按最大体力比例。没有伤害敌人时不恢复，恢复也不能超过体力上限。"),CONFIG_PERCENT,0,0,10000,25,NULL,NULL,CONFIG_APPLY_FRAME}
 /* 世界键说明先解释对应动作，再说明改键规则；名字仍由下面每个K项目指定。 */
 #define WORLD_KEYS_HELP "这是没有按住LT、RT等组合键时的按钮。菜单确认取消不随它改变。七项不能用同一个按钮；交换两键时，先把两项改好再保存。"
 #define K(id,key,label,def) {id,"controller.world_keys",key,label, \
@@ -46,10 +46,10 @@ static const ConfigDescriptor fields[CONFIG_COUNT]={
     B(CONFIG_OMNI_GUARD,"gameplay.combat","omnidirectional_guard","全方位格挡","按住LT防御时，可以格挡来自前后左右的普通攻击。关闭后只按原游戏允许的方向格挡。体力太少或遇到原本就无法格挡的攻击，仍可能受伤。",CONFIG_APPLY_FRAME),
     B(CONFIG_DIRECTIONAL_DODGE,"gameplay.combat","directional_dodge","方向闪避","闪避时，左摇杆推向哪里，就朝哪里直线移动。关闭后使用原游戏的闪避方向和路径。当前闪避不会被半途改变；下一次闪避使用新选择。",CONFIG_APPLY_IDLE),
     N(CONFIG_DODGE_DISTANCE,"gameplay.combat","dodge_distance","闪避距离","方向闪避一次移动多远。调大距离更长，调小更容易停在近处。64大约相当于一个地图格。墙壁和障碍仍会限制移动。只在方向闪避开启时使用；当前闪避结束后生效。",128,16,512,16,CONFIG_APPLY_IDLE),
-    {CONFIG_GUARD_MODE,"gameplay.stamina","guard_mode","防御消耗模式","选择防御扣掉多少体力：游戏原有消耗沿用这个角色的原值；最大体力百分比使用下方的防御扣费百分比。百分比以整条体力的最大值计算，不是当前剩余体力。",CONFIG_CHOICE,0,0,1,1,NULL,"original|percent",CONFIG_APPLY_FRAME},
-    P(CONFIG_GUARD_PERCENT,"guard_percent","防御扣费百分比"),
-    {CONFIG_RECOVERY_MODE,"gameplay.stamina","recovery_mode","攻击恢复模式","攻击确实伤害敌人时，可以恢复体力。选择与格挡消耗相同，恢复量就和防御扣费相同；选择最大体力百分比，则使用下方的实伤恢复百分比。挥空或完全被格挡不会恢复。",CONFIG_CHOICE,0,0,1,1,NULL,"guard|percent",CONFIG_APPLY_FRAME},
-    P(CONFIG_RECOVERY_PERCENT,"recovery_percent","实伤恢复百分比"),
+    {CONFIG_GUARD_MODE,"gameplay.stamina","guard_mode","防御体力消耗方式","选择防御扣掉多少体力：原版数值沿用这个角色的原值；按最大体力比例使用下方的防御体力消耗比例。百分比以整条体力的最大值计算，不是当前剩余体力。",CONFIG_CHOICE,0,0,1,1,NULL,"original|percent",CONFIG_APPLY_FRAME},
+    P(CONFIG_GUARD_PERCENT,"guard_percent","防御体力消耗比例"),
+    {CONFIG_RECOVERY_MODE,"gameplay.stamina","recovery_mode","攻击命中体力恢复方式","攻击确实伤害敌人时，可以恢复体力。选择与防御消耗一致，恢复量就和防御扣费相同；选择按最大体力比例，则使用下方的攻击命中体力恢复比例。挥空或完全被格挡不会恢复。",CONFIG_CHOICE,0,0,1,1,NULL,"guard|percent",CONFIG_APPLY_FRAME},
+    P(CONFIG_RECOVERY_PERCENT,"recovery_percent","攻击命中体力恢复比例"),
     N(CONFIG_INSPECT_DISTANCE,"controller.interaction","max_distance","正面调查最大距离",
       "按调查键时，在角色周围多远的范围内寻找物品、人物、机关和换区点。调大可以更远选中，调小更容易区分靠近的目标。会优先选择较近和角色前方的目标；仍需满足原游戏的互动条件。默认160，最多480。",160,16,480,16,CONFIG_APPLY_FRAME),
     {CONFIG_LEGACY_ULTIMATE,"controller.combat","single_trigger_ultimate","旧必杀输入模式",
@@ -135,7 +135,7 @@ int RuntimeConfig_DefaultText(char *output,size_t capacity,size_t *size)
         position+=(size_t)n;
     }
     n=snprintf(output+position,capacity-position,
-        "\r\n[controller.bindings]\r\n# game跟随原游戏当前角色快捷绑定；自定义技能按游戏、角色、槽位分别保存。\r\ndefault = \"game\"\r\n"
+        "\r\n[controller.bindings]\r\n# 未设置是所有RT快捷位置的默认状态；明确设置的技能按游戏、角色、槽位分别保存。\r\ndefault = \"none\"\r\n"
         "# character_编号来自Player+0x348的创建角色selector；技能选择码须来自该角色实际技能。\r\n");
     if (n<0 || (size_t)n>=capacity-position) return 0;
     *size=position+(size_t)n;return 1;
@@ -208,7 +208,7 @@ invalid:
             continue;
         }
         if (!strcmp(e->table,"controller.bindings") && !strcmp(e->key,"default")) {
-            if (!Toml_String(doc,e,text,sizeof text) || strcmp(text,"game")) return error("默认技能绑定来源只能为game");
+            if (!Toml_String(doc,e,text,sizeof text) || (strcmp(text,"none") && strcmp(text,"game"))) return error("默认技能绑定只能为none");
             continue;
         }
         unsigned game,role,slot;
@@ -225,8 +225,8 @@ invalid:
         }
         ConfigBinding *binding=&bindings[index].binding;
         if (!strcmp(e->key,"mode")) {
-            if (!Toml_String(doc,e,text,sizeof text) || (strcmp(text,"game") && strcmp(text,"skill")))
-                return error("技能绑定mode只能为game或skill");
+            if (!Toml_String(doc,e,text,sizeof text) || (strcmp(text,"none") && strcmp(text,"game") && strcmp(text,"skill")))
+                return error("技能绑定mode只能为none或skill");
             binding->custom=!strcmp(text,"skill");
         } else if (!strcmp(e->key,"selector")) {
             if (!Toml_Integer(doc,e,&value) || value<0 || value>65535) return error("技能选择码范围为0..65535");
@@ -336,7 +336,7 @@ int RuntimeConfig_SetBinding(unsigned game,unsigned role,unsigned slot,ConfigBin
     /* 三个字段在内存里一起编辑，只进行一次原子保存，不留下半份技能绑定。 */
     candidate=document;
     const char *keys[]={"mode","selector","hand"};
-    const char *values[]={binding.custom ? "\"skill\"":"\"game\"",selector,binding.right ? "\"right\"":"\"left\""};
+    const char *values[]={binding.custom ? "\"skill\"":"\"none\"",selector,binding.right ? "\"right\"":"\"left\""};
     for (unsigned i=0;i<3;++i) {
         if (!Toml_Update(&candidate,table,keys[i],values[i],work,sizeof work,&size) ||
             !Toml_Parse(&candidate,work,size)) return error("无法生成完整技能绑定");
@@ -384,7 +384,7 @@ int RuntimeConfig_SaveBatch(const ConfigEdit *edits,size_t count,
         snprintf(table,sizeof table,"controller.bindings.%s.character_%u.slot_%u",edit->game==1 ? "daojian":"waizhuan",edit->role,edit->slot);
         snprintf(selector,sizeof selector,"%d",b.selector);
         const char *keys[]={"mode","selector","hand"};
-        const char *values[]={b.custom ? "\"skill\"":"\"game\"",selector,b.right ? "\"right\"":"\"left\""};
+        const char *values[]={b.custom ? "\"skill\"":"\"none\"",selector,b.right ? "\"right\"":"\"left\""};
         for(unsigned j=0;j<3;++j)
             if(!Toml_Update(&candidate,table,keys[j],values[j],work,sizeof work,&size) || !Toml_Parse(&candidate,work,size))
                 return error("无法生成完整批量技能绑定");

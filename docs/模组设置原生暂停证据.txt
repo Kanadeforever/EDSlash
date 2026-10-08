@@ -280,6 +280,26 @@ UI捕获与解除 004B4450
 004AB290 e83b130200                 call     0x4cc5d0
 004AB295 83c410                     add      esp, 0x10
 
+原学习页追加第15项描述句 004AB0BC
+004AB0BC 8bce                       mov      ecx, esi
+004AB0BE 6a0f                       push     0xf
+004AB0C0 e84b510200                 call     0x4d0210
+004AB0C5 3dffff0000                 cmp      eax, 0xffff
+004AB0CA 742e                       je       0x4ab0fa
+004AB0CC 6a01                       push     1
+004AB0CE 6a0f                       push     0xf
+004AB0D0 8bce                       mov      ecx, esi
+004AB0D2 e839510200                 call     0x4d0210
+004AB0D7 50                         push     eax
+004AB0D8 b9a8035600                 mov      ecx, 0x5603a8
+004AB0DD e88e590200                 call     0x4d0a70
+004AB0E2 50                         push     eax
+004AB0E3 8d4c2414                   lea      ecx, [esp + 0x14]
+004AB0E7 e814290700                 call     0x51da00
+004AB0EC 68305c5400                 push     0x545c30
+004AB0F1 8d4c2414                   lea      ecx, [esp + 0x14]
+004AB0F5 e806290700                 call     0x51da00
+
 原姓名读取器 004DC8F0
 004DC8F0 6aff                       push     -1
 004DC8F2 68a8675200                 push     0x5267a8
@@ -680,6 +700,26 @@ UI捕获与解除 004C7820
 004BDF30 52                         push     edx
 004BDF31 e85a340200                 call     0x4e1390
 004BDF36 83c410                     add      esp, 0x10
+
+原学习页追加第15项描述句 004BDD5D
+004BDD5D 8bce                       mov      ecx, esi
+004BDD5F 6a0f                       push     0xf
+004BDD61 e88a710200                 call     0x4e4ef0
+004BDD66 3dffff0000                 cmp      eax, 0xffff
+004BDD6B 742e                       je       0x4bdd9b
+004BDD6D 6a01                       push     1
+004BDD6F 6a0f                       push     0xf
+004BDD71 8bce                       mov      ecx, esi
+004BDD73 e878710200                 call     0x4e4ef0
+004BDD78 50                         push     eax
+004BDD79 b9c01a5900                 mov      ecx, 0x591ac0
+004BDD7E e81d7a0200                 call     0x4e57a0
+004BDD83 50                         push     eax
+004BDD84 8d4c2414                   lea      ecx, [esp + 0x14]
+004BDD88 e8406b0800                 call     0x5448cd
+004BDD8D 68c0515700                 push     0x5751c0
+004BDD92 8d4c2414                   lea      ecx, [esp + 0x14]
+004BDD96 e8326b0800                 call     0x5448cd
 
 原姓名读取器 004F3D40
 004F3D40 6aff                       push     -1
@@ -1082,6 +1122,26 @@ UI捕获与解除 004B4450
 004AB290 e83b130200                 call     0x4cc5d0
 004AB295 83c410                     add      esp, 0x10
 
+原学习页追加第15项描述句 004AB0BC
+004AB0BC 8bce                       mov      ecx, esi
+004AB0BE 6a0f                       push     0xf
+004AB0C0 e84b510200                 call     0x4d0210
+004AB0C5 3dffff0000                 cmp      eax, 0xffff
+004AB0CA 742e                       je       0x4ab0fa
+004AB0CC 6a01                       push     1
+004AB0CE 6a0f                       push     0xf
+004AB0D0 8bce                       mov      ecx, esi
+004AB0D2 e839510200                 call     0x4d0210
+004AB0D7 50                         push     eax
+004AB0D8 b9a8035600                 mov      ecx, 0x5603a8
+004AB0DD e88e590200                 call     0x4d0a70
+004AB0E2 50                         push     eax
+004AB0E3 8d4c2414                   lea      ecx, [esp + 0x14]
+004AB0E7 e814290700                 call     0x51da00
+004AB0EC 68305c5400                 push     0x545c30
+004AB0F1 8d4c2414                   lea      ecx, [esp + 0x14]
+004AB0F5 e806290700                 call     0x51da00
+
 原姓名读取器 004DC8F0
 004DC8F0 6aff                       push     -1
 004DC8F2 68a8675200                 push     0x5267a8
@@ -1482,6 +1542,26 @@ UI捕获与解除 004C7820
 004BDF30 52                         push     edx
 004BDF31 e85a340200                 call     0x4e1390
 004BDF36 83c410                     add      esp, 0x10
+
+原学习页追加第15项描述句 004BDD5D
+004BDD5D 8bce                       mov      ecx, esi
+004BDD5F 6a0f                       push     0xf
+004BDD61 e88a710200                 call     0x4e4ef0
+004BDD66 3dffff0000                 cmp      eax, 0xffff
+004BDD6B 742e                       je       0x4bdd9b
+004BDD6D 6a01                       push     1
+004BDD6F 6a0f                       push     0xf
+004BDD71 8bce                       mov      ecx, esi
+004BDD73 e878710200                 call     0x4e4ef0
+004BDD78 50                         push     eax
+004BDD79 b9c01a5900                 mov      ecx, 0x591ac0
+004BDD7E e81d7a0200                 call     0x4e57a0
+004BDD83 50                         push     eax
+004BDD84 8d4c2414                   lea      ecx, [esp + 0x14]
+004BDD88 e8406b0800                 call     0x5448cd
+004BDD8D 68c0515700                 push     0x5751c0
+004BDD92 8d4c2414                   lea      ecx, [esp + 0x14]
+004BDD96 e8326b0800                 call     0x5448cd
 
 原姓名读取器 004F3D40
 004F3D40 6aff                       push     -1

@@ -241,7 +241,9 @@
         "settings_skill_description": 5031376,
         "settings_string_destroy": 5363428,
         "settings_query_skill": 4711024,
-        "settings_empty_string": 5532040
+        "settings_empty_string": 5532040,
+        "settings_text_get": 5048944,
+        "settings_text_table": 5637032
       },
       "offsets": {
         "invalid_offset": 1082,
@@ -433,7 +435,8 @@
         "settings_skill_name": "6aff68a867520064a1000000",
         "settings_skill_description": "64a1000000006aff68686152",
         "settings_string_destroy": "568bf18b068d48f43b0d8c69",
-        "settings_query_skill": "56578bf96a018b8f08030000"
+        "settings_query_skill": "56578bf96a018b8f08030000",
+        "settings_text_get": "8b44240450e8e6ffffff85c0"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -685,7 +688,9 @@
         "settings_skill_description": 5116816,
         "settings_string_destroy": 5522865,
         "settings_query_skill": 4771888,
-        "settings_empty_string": 5725816
+        "settings_empty_string": 5725816,
+        "settings_text_get": 5134240,
+        "settings_text_table": 5839552
       },
       "offsets": {
         "invalid_offset": 1094,
@@ -877,7 +882,8 @@
         "settings_skill_name": "6aff68a8dc540064a1000000",
         "settings_skill_description": "64a1000000006aff68e8d554",
         "settings_string_destroy": "568bf18b068d48f43b0d7c5e",
-        "settings_query_skill": "56578bf1e8a7ffffff8b7c24"
+        "settings_query_skill": "56578bf1e8a7ffffff8b7c24",
+        "settings_text_get": "8b44240450e8a6ffffff85c0"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -1129,7 +1135,9 @@
         "settings_skill_description": 5031376,
         "settings_string_destroy": 5363428,
         "settings_query_skill": 4711024,
-        "settings_empty_string": 5532040
+        "settings_empty_string": 5532040,
+        "settings_text_get": 5048944,
+        "settings_text_table": 5637032
       },
       "offsets": {
         "invalid_offset": 1082,
@@ -1321,7 +1329,8 @@
         "settings_skill_name": "6aff68a867520064a1000000",
         "settings_skill_description": "64a1000000006aff68686152",
         "settings_string_destroy": "568bf18b068d48f43b0d8c69",
-        "settings_query_skill": "56578bf96a018b8f08030000"
+        "settings_query_skill": "56578bf96a018b8f08030000",
+        "settings_text_get": "8b44240450e8e6ffffff85c0"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -1573,7 +1582,9 @@
         "settings_skill_description": 5116816,
         "settings_string_destroy": 5522865,
         "settings_query_skill": 4771888,
-        "settings_empty_string": 5725816
+        "settings_empty_string": 5725816,
+        "settings_text_get": 5134240,
+        "settings_text_table": 5839552
       },
       "offsets": {
         "invalid_offset": 1094,
@@ -1765,7 +1776,8 @@
         "settings_skill_name": "6aff68a8dc540064a1000000",
         "settings_skill_description": "64a1000000006aff68e8d554",
         "settings_string_destroy": "568bf18b068d48f43b0d7c5e",
-        "settings_query_skill": "56578bf1e8a7ffffff8b7c24"
+        "settings_query_skill": "56578bf1e8a7ffffff8b7c24",
+        "settings_text_get": "8b44240450e8a6ffffff85c0"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
