@@ -11,7 +11,9 @@
 
 static BYTE menu_roots[15][0x300],menu_children[15][16][0xE4],menu_sprites[15][16][4*32];
 static BYTE unknown_root[0xD0],menu_resource[16];
-static uintptr_t menu_tables[16][26];
+static uintptr_t menu_tables[17][26];
+static BYTE settings_root[0x300],settings_children[8][0xF0];
+static unsigned settings_applies,settings_choices,settings_closes;
 static ControlState menu_control;
 static bool expansion_case,transition_after_action;
 static unsigned title_actions,system_actions,confirm_actions,native_hovers,tick_calls,animation_resets;
@@ -62,6 +64,7 @@ bool Memory_Patch(void *target,const void *data,size_t bytes)
 
 static int root_kind(void *self)
 {
+    if (self==settings_root) return 16;
     if (self==hud_data) return 15;
     for (int i=0;i<15;++i) if (self==menu_roots[i]) return i;
     CHECK(false);return -1;
@@ -113,6 +116,7 @@ static int __attribute__((thiscall)) skill_base_tick(void *self)
 static int __attribute__((thiscall)) menu_get_jm(void *self,int id)
 {
     CHECK(self==ui_data);
+    if (id==0xAA) return (int)(uintptr_t)settings_root;
     if (id==0x66) return (int)(uintptr_t)quest_list_data;
     for (unsigned i=0;i<15;++i) if (Read32(menu_roots[i],0x28)==(unsigned)id) return (int)(uintptr_t)menu_roots[i];
     return 0;
@@ -358,6 +362,7 @@ static void cursor_fixture(Profile *profile)
 static void activate_page(unsigned kind)
 {
     for (unsigned k=0;k<15;++k) if (k!=kind) Write32(menu_roots[k],0x64,0);
+    Write32(settings_root,0x64,0);
     Write32(unknown_root,0x64,0);
     ((This2)menu_tables[kind][0x1C/4])(menu_roots[kind],1,0);
 }
@@ -375,6 +380,48 @@ static void game_isolated(void)
     for (unsigned i=0;i<256;++i) CHECK(keys[i]==0);
     unsigned old_releases=(unsigned)releases;last_opcode=0;Game_Update();
     CHECK((unsigned)releases==old_releases && last_opcode==0);
+}
+/* 替身模拟原设置业务，验证手柄只提供焦点/数值而不接管保存内容。 */
+static int __attribute__((thiscall)) settings_slider(void *self,int value)
+{
+    CHECK(self==settings_children[0] || self==settings_children[1] || self==settings_children[2]);
+    Write32(self,0xDC,(unsigned)(value<0 ? 0:value>100 ? 100:value));return 1;
+}
+static int __attribute__((thiscall)) settings_apply(void *self,int e,int x,void *y)
+{
+    CHECK(self==settings_root && !e && !x && !y && !ReadPtr(self,0xA8));++settings_applies;return 1;
+}
+static int __attribute__((thiscall)) settings_close(void *self)
+{
+    CHECK(self==settings_root);++settings_closes;
+    ((This2)menu_tables[16][0x1C/4])(self,0,0);return 1;
+}
+static int __attribute__((thiscall)) settings_primary(void *self,int e,int x,void *y)
+{
+    CHECK(self==settings_root && !e && !x && !y);
+    unsigned id=Read32(ReadPtr(self,0xA8),0x28);CHECK(id>=0xAE && id<=0xB2);
+    if(id==0xB2)return settings_close(self);
+    ++settings_choices;Write32(self,id<=0xAF ? 0xC4:0xC8,id);return 1;
+}
+static void settings_fixture(Profile *profile)
+{
+    memset(settings_root,0,sizeof settings_root);memset(settings_children,0,sizeof settings_children);
+    ptr(settings_root,0,menu_tables[16]);Write32(settings_root,0x28,0xAA);ptr(settings_root,0x50,menu_resource);
+    ptr(settings_root,0x9C,settings_children[0]);
+    /* 按真实布局分行：三个滑块、两组选项、返回；业务仍按原控件ID。 */
+    for(unsigned i=0;i<8;++i) {
+        BYTE *c=settings_children[i];ptr(c,0xA4,settings_root);ptr(c,8,i<7 ? settings_children[i+1]:NULL);
+        Write32(c,0x28,0xAB+i);Write32(c,0x64,1);Write32(c,0x1C,i<3 ? 200:80);Write32(c,0x20,20);
+        Write32(c,0x14,i==4 || i==6 ? 220:100);Write32(c,0x18,50+(i<3 ? i:i<5 ? 3:i<7 ? 4:5)*40);
+        Write32(c,0xD8,100);Write32(c,0xDC,50);
+    }
+    menu_tables[16][1]=(uintptr_t)menu_tick;menu_tables[16][0x1C/4]=(uintptr_t)menu_show;
+    menu_tables[16][0x30/4]=(uintptr_t)menu_hover;menu_tables[16][0x24/4]=(uintptr_t)settings_primary;
+    profile->menu_settings_vtable=(uintptr_t)menu_tables[16];profile->menu_settings_tick=(uintptr_t)menu_tick;
+    profile->menu_settings_show=(uintptr_t)menu_show;profile->menu_settings_hover=(uintptr_t)menu_hover;
+    profile->menu_settings_primary=(uintptr_t)settings_primary;profile->menu_settings_close=(uintptr_t)settings_close;
+    profile->menu_settings_apply=(uintptr_t)settings_apply;profile->menu_settings_slider_set=(uintptr_t)settings_slider;
+    settings_applies=settings_choices=settings_closes=0;
 }
 static void menu_fixture(Profile *profile,bool expansion)
 {
@@ -519,6 +566,7 @@ static void menu_fixture(Profile *profile,bool expansion)
         Write32(slot,0x14,10+(i<6 ? i:i+2)*24);Write32(slot,0x18,350);
         Write32(slot,0x1C,24);Write32(slot,0x20,24);Write32(slot,0xCC,50+i);
     }
+    settings_fixture(profile);
     patch_attempt=patch_fail_at=0;CHECK(Menu_Initialize());cursor_fixture(profile);
 }
 static void menu_regression(bool expansion)
@@ -544,6 +592,7 @@ static void menu_regression(bool expansion)
     CHECK(ReadPtr(ui_data,0x20)==(void *)0x12345678);
     Write32(unknown_root,0x64,1);ptr(ui_data,0x40,unknown_root);
     unsigned routed_reason;CHECK(Menu_Context(&routed_reason)==menu_roots[0]);
+    Write32(settings_root,0x64,0);
     Write32(unknown_root,0x64,0);ptr(ui_data,0x40,NULL);
     neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(title_actions==1 && selected_action==0x20);
     for (unsigned i=0;i<7;++i) menu_step(KEY(PAD_A),0,0);
@@ -729,13 +778,14 @@ static void menu_regression(bool expansion)
     HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
     CHECK(!Menu_BlocksGameplay());
     /* 每个入口写失败都回滚，不能留下半套Tick/Show/hover。所有原槽先核对再允许重试。 */
-    for (unsigned fail=1;fail<=55;++fail) {
+    for (unsigned fail=1;fail<=58;++fail) {
         patch_attempt=0;patch_fail_at=fail;CHECK(!Menu_Initialize());
         for (unsigned k=0;k<15;++k) {
             CHECK(menu_tables[k][1]==(uintptr_t)menu_tick);
             CHECK(menu_tables[k][0x1C/4]==(uintptr_t)menu_show);
             CHECK(menu_tables[k][0x30/4]==(uintptr_t)menu_hover);
         }
+        CHECK(menu_tables[16][1]==(uintptr_t)menu_tick && menu_tables[16][0x1C/4]==(uintptr_t)menu_show && menu_tables[16][0x30/4]==(uintptr_t)menu_hover);
         CHECK(!Menu_BlocksGameplay());
     }
     patch_fail_at=0;patch_attempt=0;
@@ -911,6 +961,7 @@ static void __attribute__((noinline,noclone)) modal_region_regression(bool expan
     menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[9]);
     BYTE keys[256]={0};g_intent.pressed=KEY(PAD_R3);Game_Keyboard(keys);CHECK(keys[VK_TAB]==0x80);
     /* 依附已关闭页的过期辅助窗口不能继续截住世界输入。 */
+    Write32(settings_root,0x64,0);
     Write32(unknown_root,0x64,0);Write32(menu_roots[9],0x64,0);Write32(menu_roots[14],0x64,0);
     Write32(menu_roots[13],0xAC,0x14);ptr(ui_data,0x3C,menu_roots[13]);
     CHECK(Menu_Context(&reason)==NULL);neutral_menu();CHECK(!Game_Menu());
@@ -1208,6 +1259,44 @@ static void skill_visual_regression(bool expansion,const char *scenario)
     }
     Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
 }
+static void settings_regression(bool expansion)
+{
+    Profile profile;menu_fixture(&profile,expansion);
+    for(unsigned k=0;k<15;++k)Write32(menu_roots[k],0x64,0);
+    ptr(ui_data,0x3C,settings_root);((This2)menu_tables[16][0x1C/4])(settings_root,1,0);neutral_menu();
+    CHECK(Read32(ReadPtr(settings_root,0xA8),0x28)==0xAB && Menu_CapturesInput());game_isolated();
+    POINT anchor;RECT rect;CHECK(Menu_CursorAnchor(&anchor) && !Menu_FocusFrame(&rect) && !Menu_HidesCursor());
+    menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(settings_children[0],0xDC)==51 && settings_applies==1);
+    menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(settings_children[0],0xDC)==51);
+    g_input.now+=350;menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(settings_children[0],0xDC)==52);
+    neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(Read32(settings_children[0],0xDC)==52 && !settings_choices);
+    neutral_menu();Write32(settings_children[0],0xDC,100);menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(settings_children[0],0xDC)==100);
+    neutral_menu();Write32(settings_children[0],0xDC,0);menu_step(KEY(PAD_LEFT),0,0);CHECK(Read32(settings_children[0],0xDC)==0);
+    for(unsigned i=0;i<3;++i){neutral_menu();menu_step(KEY(PAD_DOWN),0,0);}
+    CHECK(Read32(ReadPtr(settings_root,0xA8),0x28)==0xAE);neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(ReadPtr(settings_root,0xA8),0x28)==0xAF && Read32(settings_root,0xC4)==0xAF);
+    neutral_menu();menu_step(KEY(PAD_LEFT),0,0);CHECK(Read32(ReadPtr(settings_root,0xA8),0x28)==0xAE && Read32(settings_root,0xC4)==0xAE);
+    neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(Read32(ReadPtr(settings_root,0xA8),0x28)==0xB0);
+    neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(ReadPtr(settings_root,0xA8),0x28)==0xB1 && Read32(settings_root,0xC8)==0xB1);
+    unsigned before=settings_choices;neutral_menu();menu_step(KEY(PAD_LB)|KEY(PAD_RB)|KEY(PAD_X)|KEY(PAD_Y),0,0);
+    CHECK(Read32(ReadPtr(settings_root,0xA8),0x28)==0xB1 && settings_choices==before);
+    neutral_menu();menu_step(KEY(PAD_B)|KEY(PAD_A)|KEY(PAD_RIGHT),0,0);CHECK(settings_closes==1 && settings_choices==before && !Read32(settings_root,0x64));
+    ptr(ui_data,0x3C,NULL);neutral_menu();CHECK(!Menu_Context(&before));
+    /* 无capture的标题入口也必须从登记链找到设置，不能只在游戏内可用。 */
+    void *head=ReadPtr(ui_data,0x18),*tail=ReadPtr(ui_data,0x1C);
+    ptr(ui_data,0x18,settings_root);ptr(ui_data,0x1C,settings_root);
+    ((This2)menu_tables[16][0x1C/4])(settings_root,1,0);neutral_menu();CHECK(Menu_Context(&before)==settings_root);
+    for(unsigned i=1;i<3;++i) {
+        neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(Read32(ReadPtr(settings_root,0xA8),0x28)==0xAB+i);
+        unsigned value=Read32(settings_children[i],0xDC);neutral_menu();menu_step(KEY(PAD_LEFT),0,0);CHECK(Read32(settings_children[i],0xDC)==value-1);
+    }
+    /* A返回仍调用原close；隐藏控件不进入导航，按住方向具有延迟后连发。 */
+    Write32(settings_children[3],0x64,0);Write32(settings_children[4],0x64,0);
+    Write32(settings_children[5],0x64,0);Write32(settings_children[6],0x64,0);
+    neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(Read32(ReadPtr(settings_root,0xA8),0x28)==0xB2);
+    neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(settings_closes==2 && !Read32(settings_root,0x64));
+    ptr(ui_data,0x18,head);ptr(ui_data,0x1C,tail);
+    Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
+}
 int main(int argc,char **argv)
 {
     if(argc>2 && !strcmp(argv[1],"--skill-focus")) {
@@ -1215,6 +1304,7 @@ int main(int argc,char **argv)
         printf("两作技能视觉导航/动作框/Y焦点场景通过：%s\n",argv[2]);return 0;
     }
     if(argc>1 && !strcmp(argv[1],"--containment")) {unsigned limit=argc>2 && !strcmp(argv[2],"bag") ? 9:15;containment_regression(false,limit);containment_regression(true,limit);printf("两作最终绘制边界格内、动画偏移与非格子指针回放通过\n");return 0;}
+    settings_regression(false);settings_regression(true);
     shared_focus_regression(false);shared_focus_regression(true);
     discard_regression(false);discard_regression(true);
     action_regression(false);action_regression(true);

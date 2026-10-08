@@ -39,6 +39,9 @@ typedef struct {
     /* PlayerInit确认的全局角色类别，不能使用对象分类字段代替。 */
     uintptr_t player_class_global,player_class_probe;
     /* 菜单入口成对来自两份准确基线；虚表槽另核原函数，不能猜其它GUI的回调。 */
+    /* 原版设置页：四版本分别核对原控件调值、实时应用和返回保存入口。 */
+    uintptr_t menu_settings_vtable,menu_settings_tick,menu_settings_show,menu_settings_hover;
+    uintptr_t menu_settings_primary,menu_settings_close,menu_settings_apply,menu_settings_slider_set;
     uintptr_t menu_title_vtable,menu_system_vtable,menu_confirm_vtable;
     uintptr_t menu_title_activate,menu_texture,menu_animation_reset;
     uintptr_t menu_system_primary,menu_confirm_submit;

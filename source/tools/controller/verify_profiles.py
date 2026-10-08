@@ -107,6 +107,29 @@ def verify_focus_sources(pe,profile):
     assert pe.read(a['menu_item_drop']+0xC5,3)==b'\xc2\x04\x00'
 
 
+def verify_native_settings(pe, profile):
+    """从原设置构造/虚表/子控件调用证明四版本地址，拒绝跨作混用。"""
+    a=profile['addresses']
+    constructor=0x4A55B0 if profile['game_id']==1 else 0x4B7D10
+    assert pe.read(constructor+8,2)==b'\xC7\x06'
+    assert struct.unpack('<I',pe.read(constructor+10,4))[0]==a['menu_settings_vtable']
+    for slot,key in [(4,'tick'),(0x1C,'show'),(0x24,'primary'),(0x30,'hover'),(0x20,'apply')]:
+        assert struct.unpack('<I',pe.read(a['menu_settings_vtable']+slot,4))[0]==a['menu_settings_'+key]
+    def called(address):
+        b=pe.read(address,5)
+        assert b[0]==0xE8
+        return address+5+struct.unpack('<i',b[1:])[0]
+    # Show读取原运行值后，三个位置均调用同一个滑块setter。
+    for offset in (0x41,0x5F,0x7C):
+        assert called(a['menu_settings_show']+offset)==a['menu_settings_slider_set']
+    # 返回按钮和Esc Tick必须抵达同一个原关闭函数。
+    assert called(a['menu_settings_primary']+0x33)==a['menu_settings_close']
+    assert called(a['menu_settings_tick']+0x1C)==a['menu_settings_close']
+    slider=a['menu_settings_slider_set']
+    assert pe.read(slider+6,6)==b'\x8B\x86\xD8\0\0\0'
+    assert pe.read(slider+0x21,6)==b'\x89\x8E\xDC\0\0\0'
+
+
 def verify_baselines(data):
     base = ROOT / '参考资料/刀剑封魔录系列反编译资料库_v0.31/基线程序'
     # 四份 EXE 必须同时存在才做本地证据检查。源码构建不携带游戏 EXE，也不下载游戏。
@@ -125,6 +148,7 @@ def verify_baselines(data):
         verify_static_sources(pe,profile)
         verify_action_sources(pe,profile)
         verify_focus_sources(pe,profile)
+        verify_native_settings(pe,profile)
         assert pe.read(profile['addresses']['resolver_call'], 5).hex() == profile['call_bytes']
         # 把调用点真正解码回目标，而不是只核对一串由同一数据源复制的字节。
         call = pe.read(profile['addresses']['resolver_call'], 5)

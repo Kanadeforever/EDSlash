@@ -243,7 +243,15 @@
         "settings_query_skill": 4711024,
         "settings_empty_string": 5532040,
         "settings_text_get": 5048944,
-        "settings_text_table": 5637032
+        "settings_text_table": 5637032,
+        "menu_settings_vtable": 5414860,
+        "menu_settings_tick": 4873184,
+        "menu_settings_show": 4874288,
+        "menu_settings_hover": 4878240,
+        "menu_settings_primary": 4873040,
+        "menu_settings_close": 4873280,
+        "menu_settings_apply": 4872816,
+        "menu_settings_slider_set": 5018976
       },
       "offsets": {
         "invalid_offset": 1082,
@@ -436,7 +444,14 @@
         "settings_skill_description": "64a1000000006aff68686152",
         "settings_string_destroy": "568bf18b068d48f43b0d8c69",
         "settings_query_skill": "56578bf96a018b8f08030000",
-        "settings_text_get": "8b44240450e8e6ffffff85c0"
+        "settings_text_get": "8b44240450e8e6ffffff85c0",
+        "menu_settings_tick": "a0e389540056a8f08bf17415",
+        "menu_settings_show": "8b44240856578b7c240c508b",
+        "menu_settings_hover": "568bf18b8ea800000085c974",
+        "menu_settings_primary": "568bf18b8ea800000085c974",
+        "menu_settings_close": "a1a48354005683f8038bf175",
+        "menu_settings_apply": "56578bf98b8fa800000085c9",
+        "menu_settings_slider_set": "568bf133d2578b86d8000000"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -690,7 +705,15 @@
         "settings_query_skill": 4771888,
         "settings_empty_string": 5725816,
         "settings_text_get": 5134240,
-        "settings_text_table": 5839552
+        "settings_text_table": 5839552,
+        "menu_settings_vtable": 5583584,
+        "menu_settings_tick": 4948912,
+        "menu_settings_show": 4950016,
+        "menu_settings_hover": 4954320,
+        "menu_settings_primary": 4948768,
+        "menu_settings_close": 4949008,
+        "menu_settings_apply": 4948544,
+        "menu_settings_slider_set": 5103760
       },
       "offsets": {
         "invalid_offset": 1094,
@@ -883,7 +906,14 @@
         "settings_skill_description": "64a1000000006aff68e8d554",
         "settings_string_destroy": "568bf18b068d48f43b0d7c5e",
         "settings_query_skill": "56578bf1e8a7ffffff8b7c24",
-        "settings_text_get": "8b44240450e8a6ffffff85c0"
+        "settings_text_get": "8b44240450e8a6ffffff85c0",
+        "menu_settings_tick": "a09b8f570056a8f08bf17415",
+        "menu_settings_show": "8b44240856578b7c240c508b",
+        "menu_settings_hover": "568bf18b8ea800000085c974",
+        "menu_settings_primary": "568bf18b8ea800000085c974",
+        "menu_settings_close": "a1348957005683f8038bf175",
+        "menu_settings_apply": "56578bf98b8fa800000085c9",
+        "menu_settings_slider_set": "568bf133d2578b86d8000000"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -1137,7 +1167,15 @@
         "settings_query_skill": 4711024,
         "settings_empty_string": 5532040,
         "settings_text_get": 5048944,
-        "settings_text_table": 5637032
+        "settings_text_table": 5637032,
+        "menu_settings_vtable": 5414860,
+        "menu_settings_tick": 4873184,
+        "menu_settings_show": 4874288,
+        "menu_settings_hover": 4878240,
+        "menu_settings_primary": 4873040,
+        "menu_settings_close": 4873280,
+        "menu_settings_apply": 4872816,
+        "menu_settings_slider_set": 5018976
       },
       "offsets": {
         "invalid_offset": 1082,
@@ -1330,7 +1368,14 @@
         "settings_skill_description": "64a1000000006aff68686152",
         "settings_string_destroy": "568bf18b068d48f43b0d8c69",
         "settings_query_skill": "56578bf96a018b8f08030000",
-        "settings_text_get": "8b44240450e8e6ffffff85c0"
+        "settings_text_get": "8b44240450e8e6ffffff85c0",
+        "menu_settings_tick": "a0e389540056a8f08bf17415",
+        "menu_settings_show": "8b44240856578b7c240c508b",
+        "menu_settings_hover": "568bf18b8ea800000085c974",
+        "menu_settings_primary": "568bf18b8ea800000085c974",
+        "menu_settings_close": "a1a48354005683f8038bf175",
+        "menu_settings_apply": "56578bf98b8fa800000085c9",
+        "menu_settings_slider_set": "568bf133d2578b86d8000000"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -1584,7 +1629,15 @@
         "settings_query_skill": 4771888,
         "settings_empty_string": 5725816,
         "settings_text_get": 5134240,
-        "settings_text_table": 5839552
+        "settings_text_table": 5839552,
+        "menu_settings_vtable": 5583584,
+        "menu_settings_tick": 4948912,
+        "menu_settings_show": 4950016,
+        "menu_settings_hover": 4954320,
+        "menu_settings_primary": 4948768,
+        "menu_settings_close": 4949008,
+        "menu_settings_apply": 4948544,
+        "menu_settings_slider_set": 5103760
       },
       "offsets": {
         "invalid_offset": 1094,
@@ -1777,7 +1830,14 @@
         "settings_skill_description": "64a1000000006aff68e8d554",
         "settings_string_destroy": "568bf18b068d48f43b0d7c5e",
         "settings_query_skill": "56578bf1e8a7ffffff8b7c24",
-        "settings_text_get": "8b44240450e8a6ffffff85c0"
+        "settings_text_get": "8b44240450e8a6ffffff85c0",
+        "menu_settings_tick": "a09b8f570056a8f08bf17415",
+        "menu_settings_show": "8b44240856578b7c240c508b",
+        "menu_settings_hover": "568bf18b8ea800000085c974",
+        "menu_settings_primary": "568bf18b8ea800000085c974",
+        "menu_settings_close": "a1348957005683f8038bf175",
+        "menu_settings_apply": "56578bf98b8fa800000085c9",
+        "menu_settings_slider_set": "568bf133d2578b86d8000000"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
