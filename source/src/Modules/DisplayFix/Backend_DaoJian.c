@@ -554,7 +554,9 @@ static void log_int(const char* label, LONG value)
 static void log_text(const char* label, const char* text)
 {
     str_append(g_log_buffer, (DWORD)sizeof(g_log_buffer), label);
-    str_append(g_log_buffer, (DWORD)sizeof(g_log_buffer), text ? text : "(null)");
+    /* 系统A版路径按当前代码页返回；先转UTF-8再与中文标签拼接。 */
+    if(!RuntimeLog_AppendAnsi(g_log_buffer,sizeof g_log_buffer,text ? text:"(null)"))
+        str_append(g_log_buffer,(DWORD)sizeof g_log_buffer,"[路径转换失败]");
     str_append(g_log_buffer, (DWORD)sizeof(g_log_buffer), "\r\n");
 }
 

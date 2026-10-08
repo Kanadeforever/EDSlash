@@ -55,7 +55,7 @@ static const ConfigDescriptor fields[CONFIG_COUNT]={
     {CONFIG_LEGACY_ULTIMATE,"controller.combat","single_trigger_ultimate","旧必杀输入模式",
      "关闭时使用较安全的新方式：同时按住LT和RT，再按A/B/X/Y准备必杀；松开面键后再次按同一个键才释放。开启后只需LT加面键，较容易误触，连招切换也固定使用LT加方向键。",
      CONFIG_BOOL,0,0,1,1,NULL,NULL,CONFIG_APPLY_FRAME},
-    {CONFIG_COMBO_SWITCH,"controller.combat","combo_switch_input","新模式连招切换输入",
+    {CONFIG_COMBO_SWITCH,"controller.combat","combo_switch_input","连招切换输入",
      "选择四套连招的切换方法。面键方式为按住LT，再按Y/B/A/X选择第1/2/3/4套；方向键方式为LT加上/右/下/左。只有旧必杀输入模式关闭时可以选择；旧模式固定用方向键。",
      CONFIG_CHOICE,0,0,1,1,NULL,"face|dpad",CONFIG_APPLY_FRAME},
     N(CONFIG_AIM_EXPAND_MS,"controller.skill_aim","expand_time_ms","技能落点扩散耗时",

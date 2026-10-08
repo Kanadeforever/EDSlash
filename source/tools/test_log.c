@@ -19,6 +19,14 @@ int main(void)
     CHECK(RuntimeLog_Initialize(GetModuleHandleW(NULL)));
     CHECK(RuntimeLog_Flush(0));
     RuntimeLogStats before;RuntimeLog_GetStats(&before);CHECK(before.file_opens==1);
+    /* 构造系统代码页中文路径，追加到UTF-8标签；整体必须严格可解码。 */
+    char native[256],mixed[512]="[路径] ";
+    CHECK(WideCharToMultiByte(CP_ACP,0,L"C:\\游戏目录\\EDSlash.toml",-1,native,sizeof native,NULL,NULL)>0);
+    CHECK(RuntimeLog_AppendAnsi(mixed,sizeof mixed,native));
+    CHECK(strstr(mixed,"游戏目录")!=NULL);
+    CHECK(MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,mixed,-1,NULL,0)>0);
+    char tiny[8]="保留";CHECK(!RuntimeLog_AppendAnsi(tiny,sizeof tiny,native) && !strcmp(tiny,"保留"));
+    RuntimeLog_Line(mixed);
     CHECK(RuntimeLog_Start());
     HANDLE threads[4];
     LARGE_INTEGER begin,end,frequency;QueryPerformanceFrequency(&frequency);QueryPerformanceCounter(&begin);
@@ -46,6 +54,7 @@ int main(void)
         char *first=strstr(bytes,expected);CHECK(first && !strstr(first+strlen(expected),expected));
     }
     for(size_t i=0;i<size;++i)if(bytes[i]=='\n')CHECK(i>0 && bytes[i-1]=='\r');
+    CHECK(MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,bytes,(int)size,NULL,0)>0);
     RuntimeLog_Shutdown();CHECK(DeleteFileW(path));
     printf("后台日志并发、单次打开、批量写入、中文和完整收尾通过：%u项，512条生产耗时%.3f毫秒\n",
         checks,(double)(end.QuadPart-begin.QuadPart)*1000.0/frequency.QuadPart);

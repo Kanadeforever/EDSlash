@@ -514,7 +514,7 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         if(model.page==2) {
             static const char *names[]={"A","B","X","Y","上","下","左","右","LB","RB","Back","Start","L3","R3"};
             snprintf(label,sizeof label,"RT + %s",names[i]);ConfigBinding b=model.draft_bindings[i];
-            value_text_buffer[0]=0;ConfigBinding shown=effective_binding(i);
+            strcpy(value_text_buffer,"未设置");ConfigBinding shown=effective_binding(i);
             if(shown.custom)for(unsigned n=0;n<skill_count;++n)if(skills[n].selector==shown.selector)snprintf(value_text_buffer,sizeof value_text_buffer,"%s",skills[n].name);
             dirty=memcmp(&b,&model.saved_bindings[i],sizeof b)!=0;
         } else {

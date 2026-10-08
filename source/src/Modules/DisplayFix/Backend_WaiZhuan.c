@@ -576,7 +576,9 @@ static void log_int(const char* label, LONG value)
 static void log_text(const char* label, const char* text)
 {
     str_append(g_log_buffer, (DWORD)sizeof(g_log_buffer), label);
-    str_append(g_log_buffer, (DWORD)sizeof(g_log_buffer), text ? text : "(null)");
+    /* 系统A版路径按当前代码页返回；先转UTF-8再与中文标签拼接。 */
+    if(!RuntimeLog_AppendAnsi(g_log_buffer,sizeof g_log_buffer,text ? text:"(null)"))
+        str_append(g_log_buffer,(DWORD)sizeof g_log_buffer,"[路径转换失败]");
     str_append(g_log_buffer, (DWORD)sizeof(g_log_buffer), "\r\n");
 }
 
@@ -1838,7 +1840,7 @@ static HANDLE __stdcall steam_create_file_a_shim(LPCSTR name,
             char line[1400];
             line[0] = '\0';
             str_copy(line, (DWORD)sizeof(line), "[运行] Steam原始ResJM.Lib重定向 -> ");
-            str_append(line, (DWORD)sizeof(line), localized_path);
+            if(!RuntimeLog_AppendAnsi(line,sizeof line,localized_path))str_append(line,(DWORD)sizeof line,"[路径转换失败]");
             str_append(line,
                        (DWORD)sizeof(line),
                        (localized_file != INVALID_HANDLE_VALUE)

@@ -13,6 +13,18 @@ static HANDLE file=INVALID_HANDLE_VALUE,worker,wake,drained;
 static volatile LONG worker_state,stopping,in_flight;
 static LONG written_bytes,dropped_messages,file_writes;
 static int initialized;
+int RuntimeLog_AppendAnsi(char *output,size_t capacity,const char *text)
+{
+    if(!output || !capacity || !text)return 0;
+    /* 先找到已有文本的末尾；没有结束标记时拒绝追加，避免越界。 */
+    size_t used=0;while(used<capacity && output[used])++used;if(used==capacity)return 0;
+    /* 只转换来自A版接口的片段，已有UTF-8标签保持原样。 */
+    WCHAR wide[2048];int count=MultiByteToWideChar(CP_ACP,0,text,-1,wide,2048);if(!count)return 0;
+    /* 先计算含结束标记的完整字节数，空间不足时不改变输出。 */
+    int required=WideCharToMultiByte(CP_UTF8,0,wide,-1,NULL,0,NULL,NULL);
+    if(required<=0 || (size_t)required>capacity-used)return 0;
+    return WideCharToMultiByte(CP_UTF8,0,wide,-1,output+used,(int)(capacity-used),NULL,NULL)>0;
+}
 /* 一个持久句柄、一份有界队列。游戏线程只复制文本，磁盘写入由低优先级线程完成。 */
 int RuntimeLog_Initialize(void *module)
 {
