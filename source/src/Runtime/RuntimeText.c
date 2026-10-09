@@ -156,7 +156,7 @@ const char RuntimeText_AboutFaq[] =
     "这玩意收费？\n"
     "   本模组使用MIT协议开源，被偷已经是预料之中的事情了。不懂自己问豆包这啥意思。\n   还不懂自己想办法，没人天生该伺候你；\n   如果你是买的资源里看到这个消息，那容我嘲笑一下你。\n   如果看到这个不高兴了可以删了换别人做的或者你自己上。\n   厚脸皮那我也没法了。\n\n"
     "既然知道会被偷那还放这个？\n"
-    "   放点信息当最后的挣扎了，还能让看到的人一起嘲笑\n   被人骗钱或者主动送钱给“不劳而获的狗”的傻子了。\n\n"
+    "   放点信息当最后的挣扎了，还能让看到的人一起嘲笑\n   被人骗钱或者主动送钱给“不劳而获的草履虫”的傻子了。\n\n"
     "话说的太难听了，不适合放进来\n"
     "   我做的东西我怎么处理都行，我都开源了你让我diss下\n   某种懒狗和偷东西的畜生不行啊？还受不了自己想办法\n\n"
     "如果要整合这个MOD或者要用这个MOD的代码？\n"
@@ -169,7 +169,7 @@ const char RuntimeText_AboutFaq[] =
     "技能快捷是每个存档单独保存的吗？\n"
     "   本体与外传分别保存。\n每个职业共用一组14个快捷位置，\n同职业的不同存档共用这一组。\n\n"
     "遇到问题怎样反馈？\n"
-    "   1、先开启插件日志；\n2、重新进游戏触发BUG；\n3、把触发BUG后的EDSlash.log和本页的构建编号提交到Github的issues板块。\n4、等我修，或者你自己修；\n5、修复期间别嚎，嚎破嗓子没用，再叫老子不干了！\n\n"
+    "   1、先开启插件日志；\n2、重新进游戏触发BUG；\n3、把触发BUG后的EDSlash.log和本页的构建编号提交到Github的issues板块。\n4、等我修，或者你自己修；\n5、修复期间别催，嚎破嗓子没用，再叫老子不干了。\n\n"
     "Github以外不接受任何BUG反馈！！！！！！\n\n"
     "Github以外不接受任何BUG反馈！！！！！！\n\n"
     "Github以外不接受任何BUG反馈！！！！！！\n\n"
@@ -289,6 +289,6 @@ const char RuntimeText_Key_BackUppercase[] = "BACK";
 const char RuntimeText_DevelopmentVersion[] = "开发版";
 const char RuntimeText_UnspecifiedBuild[] = "未指定源码摘要";
 const char RuntimeText_Author[] = "Luminous / のの不想想名字";
-const char RuntimeText_ComboFaceKeys[] = "LT＋Y/B/A/X";
+const char RuntimeText_ComboFaceKeys[] = "LT + Y/B/A/X";
 const char RuntimeText_SkillSlotFormat[] = "RT + %s";
 const char RuntimeText_ConfirmCancelKeys[] = "A/B";

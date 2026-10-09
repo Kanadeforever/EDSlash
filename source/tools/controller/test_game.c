@@ -174,7 +174,13 @@ static int __fastcall native_submit(void *self, void *unused_edx,int opcode,int 
 static int __fastcall native_stop(void *self, void *unused_edx,int state,int a,int b,int c)
 { (void)unused_edx; CHECK(self==roles[0] && state==1 && a==0 && b==0 && c==0);Write32(self,0x73,1);return 1; }
 static int __fastcall native_release(void *self, void *unused_edx,int method,int policy,void *target)
-{ (void)unused_edx; (void)self;(void)method;(void)policy;(void)target;CHECK(0 && "禁止回到鼠标技能入口");return 0; }
+{
+    (void)unused_edx; (void)self;(void)method;(void)policy;(void)target;
+    /* 此替身不允许被调用；直接终止回归，避免用复合常量条件触发编译器警告。 */
+    ++checks;
+    fprintf(stderr,"适配检查失败，行 %d：禁止回到鼠标技能入口。\n",__LINE__);
+    exit(1);
+}
 static int __fastcall native_left(void *self, void *unused_edx) { (void)unused_edx; CHECK(self==hud_data);return 111; }
 static int __fastcall native_right(void *self, void *unused_edx)
 { (void)unused_edx;
