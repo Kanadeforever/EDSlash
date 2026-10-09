@@ -56,6 +56,16 @@ python source/tools/build.py --upx
 
 ## 工具与许可
 
+### GitHub Actions自动构建
+
+仓库的`.github/workflows/build.yml`在main推送或手动触发时运行。Windows runner安装Python 3.13、MSYS2的32位MinGW GCC/G++、原生CMake/Ninja及UPX 5.2.1，再调用同一个`source/tools/build.py`；SDL直接使用thirdparty完整源码，不额外下载SDL。只有main成功构建更新dev-auto标签与开发版，其它分支手动构建仅保存Actions附件。构建任务只读仓库，发布任务单独取得contents: write。
+
+自动构建内部仍验证同次优化链接的正式/debug双产物，但**不发布debug版**。`tools/package_release.py`输出的`EDSlash-dev-auto.zip`根目录严格只有四个文件：EDSlash.asi、EDSlash.toml、LICENSE.txt、LICENSE-SDL.txt。项目许可来自根LICENSE；SDL许可文件使用现有第三方许可汇总，保留HIDAPI及静态运行库声明。源码、完整SDL、文档、报告、文件清单和额外校验附件均不进入ZIP或自动发布附件。
+
+在项目根运行`python source/tools/package_release.py --output .workspace/release/EDSlash-dev-auto.zip`可生成同结构本地包。须先完成正式构建；正式件/默认配置/源码摘要与报告必须一致，个人配置不能打包。工具不修改输入或上传文件，回读ZIP检查根目录严格四件、CRC与输入字节；ZIP SHA-256只通过工作流内部输出传给发布任务，不生成额外文件。`python source/tools/test_package_release.py`验证四件清单、debug/源码/文档等排除，以及旧件/个人配置/源码变化/缺许可/输出位置错误拒绝。
+
+CI不携带原游戏EXE，真实四样本复核明确跳过，不能记录成通过。Actions成功仍不代表真实设备、Steam DLL或游戏实机验收。首次远程构建及发布状态以Actions运行记录为准。
+
 自有构建／验证工具都在tools；详细使用、输入输出和限制见[工具说明](tools/工具说明.md)。旧run_runtime_checks.py和run_notice_checks.py已统一到CTest，不恢复独立构建别名。
 
 配置标量核心改编自Castle Reforge Runtime TOML v1，已纳入本项目，无外部项目路径依赖。SDL完整固定源码及原始许可保留，版权和实际编译器声明见[配置与SDL第三方许可](../docs/第三方许可/配置与SDL第三方许可.txt)。

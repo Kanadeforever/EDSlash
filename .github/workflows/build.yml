@@ -1,0 +1,177 @@
+# 自动构建复用本地入口，SDL直接取仓库源码；只有main的成功构建可以更新开发版。
+name: 自动构建并发布 dev-auto 版
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 同一分支串行完成构建和发布，避免并发改写同一个开发版标签。
+concurrency:
+  group: edslash-dev-auto-${{ github.ref }}
+  cancel-in-progress: false
+
+# 编译阶段只读仓库；写入标签和Release的权限只交给最后的发布任务。
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: 构建、验证与打包
+    runs-on: windows-2022
+    timeout-minutes: 90
+    outputs:
+      package_sha256: ${{ steps.package.outputs.sha256 }}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: 检出完整项目（包含SDL源码）
+        uses: actions/checkout@v7
+
+      - name: 配置Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: 安装32位MinGW与原生构建工具
+        uses: msys2/setup-msys2@v2
+        id: msys2
+        with:
+          msystem: MINGW32
+          update: true
+          install: >-
+            mingw-w64-i686-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+
+      - name: 配置编译器与构建工具路径
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          # 使用操作明确返回的安装根，不猜测shell包装脚本的位置或runner盘符。
+          $msysRoot = $env:MSYS2_LOCATION
+          $cc = Join-Path $msysRoot 'mingw32/bin/gcc.exe'
+          $tools = Join-Path $msysRoot 'ucrt64/bin'
+          foreach ($file in @($cc, (Join-Path $tools 'cmake.exe'), (Join-Path $tools 'ninja.exe'))) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "缺少构建工具：$file" }
+          }
+          "MSYS2_ROOT=$msysRoot" >> $env:GITHUB_ENV
+          "EDSLASH_CC=$cc" >> $env:GITHUB_ENV
+          $tools >> $env:GITHUB_PATH
+          (Split-Path $cc) >> $env:GITHUB_PATH
+
+      - name: 安装UPX
+        run: |
+          # 仅下载压缩工具，SDL已在thirdparty中；固定版本避免压缩器悄然变化。
+          $version = '5.2.1'
+          $zip = Join-Path $env:RUNNER_TEMP 'upx.zip'
+          $directory = Join-Path $env:RUNNER_TEMP 'edslash-upx'
+          Invoke-WebRequest "https://github.com/upx/upx/releases/download/v$version/upx-$version-win64.zip" -OutFile $zip
+          $expected = 'eabc6792a347d45e945be7748423e7868fd01b0d2bcaa2f4b1031fd71ff69bda'
+          if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) {
+            throw 'UPX下载文件与官方SHA-256不一致'
+          }
+          Expand-Archive -LiteralPath $zip -DestinationPath $directory
+          $upx = Join-Path $directory "upx-$version-win64/upx.exe"
+          if (-not (Test-Path -LiteralPath $upx -PathType Leaf)) { throw 'UPX压缩包缺少upx.exe' }
+          "UPX_BIN=$upx" >> $env:GITHUB_ENV
+
+      - name: 调用统一构建与全部离线验证
+        run: python source/tools/build.py
+
+      - name: 验证发行包边界与错误拒绝
+        run: python source/tools/test_package_release.py
+
+      - name: 打包ASI、TOML与两份许可
+        id: package
+        run: python source/tools/package_release.py --output "$env:RUNNER_TEMP/edslash-package/EDSlash-dev-auto.zip"
+
+      - name: 保存四文件正式发行包
+        uses: actions/upload-artifact@v7
+        with:
+          name: EDSlash-dev-auto
+          path: ${{ runner.temp }}/edslash-package/EDSlash-dev-auto.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  publish:
+    name: 更新dev-auto开发版
+    needs: build
+    # 手动选择其它分支仍可构建取件，但不能覆盖main的公开开发版。
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: 下载本次通过验证的发行包
+        uses: actions/download-artifact@v8
+        with:
+          name: EDSlash-dev-auto
+          path: package
+
+      - name: 更新标签与发行资产
+        uses: actions/github-script@v9
+        env:
+          EXPECTED_SHA256: ${{ needs.build.outputs.package_sha256 }}
+        with:
+          script: |
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const repo = context.repo;
+            const tag = 'dev-auto';
+            const name = 'EDSlash-dev-auto.zip';
+            // 先检查跨任务传递的文件，任何缺失或损坏都在改写公开标签之前失败。
+            const data = fs.readFileSync(`package/${name}`);
+            const actual = crypto.createHash('sha256').update(data).digest('hex');
+            if (actual !== process.env.EXPECTED_SHA256) {
+              throw new Error('发行包SHA-256不匹配');
+            }
+            // 只有不存在时新建；认证、网络和权限错误不能被当成首次发布吞掉。
+            try {
+              await github.rest.git.getRef({ ...repo, ref: `tags/${tag}` });
+              await github.rest.git.updateRef({ ...repo, ref: `tags/${tag}`, sha: context.sha, force: true });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.git.createRef({ ...repo, ref: `refs/tags/${tag}`, sha: context.sha });
+            }
+            const run = `${context.serverUrl}/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              '自动构建的 dev-auto 开发版。', '',
+              `提交：${context.sha}`, `构建记录：${run}`, '',
+              'ZIP根目录只有EDSlash.asi、EDSlash.toml、LICENSE.txt和LICENSE-SDL.txt四个文件。',
+              '不发布源码、SDL源码或debug版，不附带游戏本体；SDL静态链接，无需SDL3.dll。',
+              '仅完成构建与离线验证；缺少原版EXE的样本检查会明确跳过，真实游戏仍需实机验收。',
+              '解压后将四个文件放入ASI加载器扫描目录；源码、完整SDL源码、文档和工具保留在仓库中。'
+            ].join('\n');
+            let release;
+            try {
+              release = (await github.rest.repos.getReleaseByTag({ ...repo, tag })).data;
+              release = (await github.rest.repos.updateRelease({
+                ...repo, release_id: release.id, name: 'dev-auto 开发版（自动构建）',
+                body, prerelease: true, draft: false, target_commitish: context.sha
+              })).data;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              release = (await github.rest.repos.createRelease({
+                ...repo, tag_name: tag, target_commitish: context.sha,
+                name: 'dev-auto 开发版（自动构建）', body, prerelease: true
+              })).data;
+            }
+            // 开发版资产只有正式ZIP；重跑时清除旧资产，也不留下debug或额外校验附件。
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
+              ...repo, release_id: release.id, per_page: 100
+            });
+            for (const asset of assets) {
+              await github.rest.repos.deleteReleaseAsset({ ...repo, asset_id: asset.id });
+            }
+            await github.rest.repos.uploadReleaseAsset({
+              ...repo, release_id: release.id, name, data,
+              headers: { 'content-type': 'application/zip', 'content-length': data.length }
+            });
+            core.info(`开发版已更新：${release.html_url}`);
