@@ -80,7 +80,7 @@ Guard设置应用测试使用真实TOML与双版本运动回放；test_menu链�
 
 正式构建成功后默认清理根.build；--checks-only或失败保留诊断，--keep-build保留增量缓存。随机核心195611项脚本回归和新名称窗口适配纳入构建，原始证据/正式产物不放缓存。
 
-设置的第四页“关于”显示CMake项目版本、当前源码摘要和作者；版本由PROJECT_VERSION提供，作者在Runtime/RuntimeText.c维护，BuildInfo.h提供统一引用。关于文案在Runtime/RuntimeText.c，只读滚动在SettingsWindow.c，不改变TOML配置格式。
+设置的第五页“关于”显示CMake项目版本、当前源码摘要和作者；版本由PROJECT_VERSION提供，作者在Runtime/RuntimeText.c维护，BuildInfo.h提供统一引用。关于文案在Runtime/RuntimeText.c，只读滚动在SettingsWindow.c，不改变TOML配置格式。
 
 ## 开发阶段文本维护
 
@@ -93,3 +93,5 @@ Guard设置应用测试使用真实TOML与双版本运动回放；test_menu链�
 原游戏thiscall接口在C中通过fastcall空EDX参数桥接：self进入ECX、第二参数NULL进入EDX，其余参数保持原栈布局并由游戏清栈。三处裸Hook使用MSVC x86汇编。不要删去类型或调用中的空EDX参数。默认启用/W4和/WX；局部兼容诊断允许Win32地址/函数指针转换、C聚合初始化以及已有的显式类型收窄。
 
 调试时使用release/debug/EDSlash_debug.asi与同目录EDSlash.pdb；只加载一份ASI。源码符号在PDB中，ASI本身仍有CodeView身份记录，文件名固定为EDSlash.pdb而非本机绝对路径。构建会核对GUID/age，错误或旧PDB停止交付。
+
+手柄键位图为默认首页，用户提供并声明CC0授权的SVG副本在source/assets，已生成像素嵌入ASI。普通构建不需要Qt或Pillow；重新生成图时用generate_controller_art.py，需PySide6与Pillow。图示读取草稿，所以世界改键、菜单AB和连招切换可在保存前查看。

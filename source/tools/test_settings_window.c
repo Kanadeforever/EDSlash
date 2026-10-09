@@ -117,7 +117,11 @@ int wmain(void)
     /* 战斗中并推杆仍可打开，由原Show暂停；不再以待机拒绝。 */
     wr(fake_actor,0x359,123);wr(fake_actor,0x73,17);
     CHECK(SettingsWindow_Pad(1u<<4,1u<<4,1,1,1,0,0,0,10));
-    CHECK(active && pauses==1 && model.role==50);
+    CHECK(active && pauses==1 && model.role==50 && model.page==SETTINGS_PAGE_KEYMAP);
+    char keymap_description[1024];int keymap_selection,keymap_icon;keymap_state=0;keymap_effect(14,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(strstr(keymap_description,"调查"));
+    int old_interact=model.draft.values[CONFIG_WORLD_INTERACT];model.draft.values[CONFIG_WORLD_INTERACT]=1;
+    keymap_effect(14,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strstr(keymap_description,"调查"));keymap_effect(15,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(strstr(keymap_description,"调查"));
+    model.draft.values[CONFIG_WORLD_INTERACT]=old_interact;model.page=0;
     CHECK(capture_primary(fake_root,NULL,0,0,NULL)==1 && original_actions==0);
     SettingsWindow_Pad(0,0,0,0,0,0,0,0,20);CHECK(!barrier);
     SettingsWindow_Pad(1u<<3,1u<<3,0,0,0,0,0,0,30);CHECK(model.help);
@@ -156,7 +160,7 @@ int wmain(void)
     CHECK(releases==2 && origin_x==176 && origin_y==76);
     dc_failed=1;paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);CHECK(releases==2);
     dc_failed=0;wr(surface,0xC,320);paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);CHECK(releases==3);
-    /* 第四页鼠标/手柄可达；带说明状态进入不解引用不存在的配置项。 */
+    /* 信息页鼠标/手柄可达；带说明状态进入不解引用不存在的配置项。 */
     model.page=2;model.help=1;editing=picker=footer=0;
     SettingsWindow_Pad(0,0,0,0,0,0,0,0,100);
     SettingsWindow_Pad(1u<<10,1u<<10,0,0,0,0,0,0,110);CHECK(model.page==SETTINGS_PAGE_ABOUT);
@@ -191,9 +195,28 @@ int wmain(void)
     paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
     snapshot_path="settings_about_bottom_fixture.bmp";CHECK(snapshot(&info.bmiHeader,pixels));
     move(2);CHECK(footer==1);move(4);CHECK(footer==2);move(4);CHECK(footer==2);move(1);CHECK(!footer);
-    SettingsWindow_Pad(0,0,0,0,0,0,0,0,140);SettingsWindow_Pad(1u<<10,1u<<10,0,0,0,0,0,0,150);CHECK(model.page==0);
-    mouse_click(520,50);CHECK(model.page==SETTINGS_PAGE_ABOUT);mouse_click(440,50);CHECK(model.page==SETTINGS_PAGE_ABOUT); /* 页签间隙不切页 */
-    mouse_click(50,50);CHECK(model.page==0);model.help=0;footer=0;
+    SettingsWindow_Pad(0,0,0,0,0,0,0,0,140);SettingsWindow_Pad(1u<<10,1u<<10,0,0,0,0,0,0,150);CHECK(model.page==SETTINGS_PAGE_KEYMAP);
+    mouse_click(520,50);CHECK(model.page==SETTINGS_PAGE_ABOUT);mouse_click(470,50);CHECK(model.page==SETTINGS_PAGE_ABOUT); /* 页签间隙不切页 */
+    mouse_click(50,50);CHECK(model.page==SETTINGS_PAGE_KEYMAP);
+    model.help=1;footer=0;ConfigSnapshot diagram_before=model.draft;activate();
+    SettingsWindow_Pad(0,1u<<4,0,0,0,0,0,0,160);CHECK(!editing && !picker && !confirm_reset && !memcmp(&diagram_before,&model.draft,sizeof diagram_before));
+    FillRect(fixture_dc,&about_canvas,(HBRUSH)GetStockObject(WHITE_BRUSH));
+    paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
+    snapshot_path="settings_keymap_fixture.bmp";CHECK(snapshot(&info.bmiHeader,pixels));
+    for(unsigned state=0;state<4;++state){keymap_state=state;
+        for(unsigned key=0;key<18;++key){keymap_effect(key,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(keymap_description[0]);}
+        FillRect(fixture_dc,&about_canvas,(HBRUSH)GetStockObject(WHITE_BRUSH));paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
+        const char *paths[]={"keymap_normal.bmp","keymap_lt.bmp","keymap_rt.bmp","keymap_dual.bmp"};snapshot_path=paths[state];CHECK(snapshot(&info.bmiHeader,pixels));
+    }
+    keymap_state=2;model.draft_bindings[0]=(ConfigBinding){0,0,0};keymap_effect(14,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,RuntimeText_KeymapNoEffect));
+    model.draft_bindings[0]=(ConfigBinding){1,123,1};skill_count=1;skills[0].selector=123;skills[0].icon=2;strcpy(skills[0].name,"测试技能");
+    keymap_effect(14,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"测试技能") && keymap_selection==123 && keymap_icon==2);SettingsModel_Discard(&model);
+    keymap_state=1;keymap_effect(14,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,RuntimeText_KeymapNoEffect));
+    static BYTE shown_combo_node[16];wr(fake_hud,(3+13)*16,1);wr(fake_hud,(3+13)*16+4,(uint32_t)(uintptr_t)shown_combo_node);
+    keymap_effect(14,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(strstr(keymap_description,"第3套"));
+    wr(fake_hud,(3+13)*16,0);keymap_state=0;move(4);CHECK(keymap_state==1);move(3);CHECK(keymap_state==0);mouse_click(410,100);CHECK(keymap_state==1);mouse_click(195,100);CHECK(keymap_state==0);
+    move(2);CHECK(footer==1);move(4);CHECK(footer==2);move(4);CHECK(footer==2);
+    mouse_click(16+TAB_STEP+20,50);CHECK(model.page==0);model.help=0;footer=0;
     /* 数值编辑取消只撤销当前字段；技能候选取消不改绑定，选中才写草稿。 */
     model.page=1;model.focus[1]=0;activate();CHECK(editing);move(4);cancel();CHECK(!editing && !SettingsModel_Dirty(&model));
     model.page=2;skill_count=1;skills[0].selector=123;strcpy(skills[0].name,"测试技能");activate();
@@ -326,6 +349,7 @@ int wmain(void)
     SelectObject(fixture_dc,previous_bitmap);DeleteObject(bitmap);DeleteDC(fixture_dc);
     if(font){DeleteObject(font);font=NULL;}
     if(help_font){DeleteObject(help_font);help_font=NULL;}
+    if(keymap_font){DeleteObject(keymap_font);keymap_font=NULL;}
     for(unsigned i=0;i<brush_count;++i)DeleteObject(brushes[i].brush);
     CHECK(DeleteFileW(path));printf("原生设置暂停/捕获/关闭链与模型入口回放通过：%u项\n",checks);return 0;
 }

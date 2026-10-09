@@ -11,7 +11,7 @@ const char RuntimeText_Config_GuardStaminaPercentDescription[] = "设置防御�
 const char RuntimeText_Config_HitRecoveryPercentDescription[] = "设置每次攻击造成实际伤害后恢复的体力。100%代表整条最大体力；1%代表其中百分之一。0表示不恢复。需要将攻击命中体力恢复方式设为按最大体力比例。没有伤害敌人时不恢复，恢复也不能超过体力上限。";
 const char RuntimeText_Config_InteractButtonDescription[] = "按下后与附近的人物、物品、机关或换区点互动。会优先选择较近和角色前方的目标。" "这是没有按住LT、RT等组合键时的按钮。菜单确认取消不随它改变。七项不能用同一个按钮；交换两键时，先把两项改好再保存。";
 const char RuntimeText_Config_AimButtonDescription[] = "按住时预览动作落点，用左摇杆调整方向，松开后执行。默认用于跳跃，外传长老默认是瞬移。" "这是没有按住LT、RT等组合键时的按钮。菜单确认取消不随它改变。七项不能用同一个按钮；交换两键时，先把两项改好再保存。";
-const char RuntimeText_Config_LeftActionButtonDescription[] = "执行左手动作，通常是普通攻击。左右手动作可在同时按住LT和RT、拨动右摇杆打开的菜单中选择。" "这是没有按住LT、RT等组合键时的按钮。菜单确认取消不随它改变。七项不能用同一个按钮；交换两键时，先把两项改好再保存。";
+const char RuntimeText_Config_LeftActionButtonDescription[] = "执行左手动作，通常是普通攻击。左右手动作可在按住LT和RT后，按L3打开左手菜单或按R3打开右手菜单中选择。" "这是没有按住LT、RT等组合键时的按钮。菜单确认取消不随它改变。七项不能用同一个按钮；交换两键时，先把两项改好再保存。";
 const char RuntimeText_Config_RightActionButtonDescription[] = "执行右手当前选择的技能或连招套组。可以连续按下，按游戏原来的规则衔接动作。" "这是没有按住LT、RT等组合键时的按钮。菜单确认取消不随它改变。七项不能用同一个按钮；交换两键时，先把两项改好再保存。";
 const char RuntimeText_Config_RunButtonDescription[] = "移动中按下后开始跑步；松开左摇杆停止移动，再移动时恢复走路。不改变跑步速度。" "这是没有按住LT、RT等组合键时的按钮。菜单确认取消不随它改变。七项不能用同一个按钮；交换两键时，先把两项改好再保存。";
 const char RuntimeText_Config_MapButtonDescription[] = "按下显示或隐藏小地图，方便查看周围道路和位置。" "这是没有按住LT、RT等组合键时的按钮。菜单确认取消不随它改变。七项不能用同一个按钮；交换两键时，先把两项改好再保存。";
@@ -163,17 +163,17 @@ const char RuntimeText_AboutFaq[] =
     "   在我能看得到的地方打个招呼，外带发布的时候声明一下，\n   都MIT协议了，署名是应该的好吧，就算代码是AI写的插件那也全部是我设计的。\n\n\n"
     "========== 下面是正式的Q&A ==========\n\n\n"
     "怎样操作设置菜单？\n"
-    "   LB/RB切页，方向键浏览。\n默认A确认、B取消；\n可在按键设置中交换确认和取消。\n\n"
+    "   LB/RB切页，方向键浏览。\n   默认A确认、B取消；\n   可在按键设置中交换确认和取消。\n\n"
     "修改设置后怎样生效？\n"
-    "   按START保存修改。\n标有重启提示的项目，要退出并重新启动游戏才会生效。\n\n"
+    "   按START保存修改。\n   标有重启提示的项目，要退出并重新启动游戏才会生效。\n\n"
     "技能快捷是每个存档单独保存的吗？\n"
-    "   本体与外传分别保存。\n每个职业共用一组14个快捷位置，\n同职业的不同存档共用这一组。\n\n"
+    "   本体与外传分别保存。\n   每个职业共用一组14个快捷位置，\n   同职业的不同存档共用这一组。\n\n"
     "遇到问题怎样反馈？\n"
-    "   1、先开启插件日志；\n2、重新进游戏触发BUG；\n3、把触发BUG后的EDSlash.log和本页的构建编号提交到Github的issues板块。\n4、等我修，或者你自己修；\n5、修复期间别催，嚎破嗓子没用，再叫老子不干了。\n\n"
-    "Github以外不接受任何BUG反馈！！！！！！\n\n"
-    "Github以外不接受任何BUG反馈！！！！！！\n\n"
-    "Github以外不接受任何BUG反馈！！！！！！\n\n"
-    "Github以外不接受任何BUG反馈！！！！！！\n\n"
+    "   1、先开启插件日志；\n   2、重新进游戏触发BUG；\n   3、把触发BUG后的EDSlash.log和本页的构建编号提交到Github的issues板块。\n   4、等我修，或者你自己修；\n   5、修复期间别催，嚎破嗓子没用，再叫老子不干了。\n\n"
+    "      Github以外不接受任何BUG反馈！！！！！！\n\n"
+    "      Github以外不接受任何BUG反馈！！！！！！\n\n"
+    "      Github以外不接受任何BUG反馈！！！！！！\n\n"
+    "      Github以外不接受任何BUG反馈！！！！！！\n\n"
     "上面的信息非常重要，说四遍。\n\n\n"
     "========== 下面是必要信息 ==========\n\n\n"
     "项目地址：\n\n"
@@ -187,7 +187,7 @@ const char RuntimeText_AboutFaqTitle[] = "常见问题解答";
 const char RuntimeText_AboutDependencies[] = "第三方组件";
 const char RuntimeText_Settings_AboutIntroductionBody[] = "为《刀剑封魔录》、《刀剑封魔录外传：上古传说》提供手柄操作、现代化画面适配和便利功能。";
 const char RuntimeText_Settings_AboutVersionBuildFormat[] = "版本：%s\n构建：%s";
-const char RuntimeText_Settings_AboutDependenciesBody[] = "使用 SDL 3.4.16 官方库。随发行提供第三方许可说明；本插件不包含游戏文件与ASI加载器。";
+const char RuntimeText_Settings_AboutDependenciesBody[] = "使用 SDL 3.4.16 官方库。随发行提供第三方许可说明；本插件不包含游戏文件与ASI加载器。\n\n手柄图标作者：Jishenaz（CC0 1.0）。";
 const wchar_t RuntimeText_Settings_FontFace[] = L"宋体";
 const char RuntimeText_Settings_SavedRestartRequiredMessage[] = "设置已保存。待重启的项目在下次启动时生效。";
 const char RuntimeText_Settings_SavedAwaitingSafeApplyMessage[] = "设置已保存。修改会在对应操作安全结束后生效。";
@@ -292,3 +292,47 @@ const char RuntimeText_Author[] = "Luminous / のの不想想名字";
 const char RuntimeText_ComboFaceKeys[] = "LT + Y/B/A/X";
 const char RuntimeText_SkillSlotFormat[] = "RT + %s";
 const char RuntimeText_ConfirmCancelKeys[] = "A/B";
+
+/* 手柄键位图只预留图与说明区域，真实图片和指示点在资源接入时配置。 */
+const char RuntimeText_KeymapPage[]="手柄键位";
+const char RuntimeText_KeymapImagePlaceholder[]="手柄图片预留区";
+const char RuntimeText_KeymapImageNote[]="图片接入后在此显示";
+const char RuntimeText_KeymapCalloutPlaceholder[]="文字与指示点预留";
+const char *const RuntimeText_KeymapCallouts[6]={"LT / LB","左摇杆 / L3","BACK / START","RT / RB","A / B / X / Y","右摇杆 / R3"};
+
+const char RuntimeText_KeymapNavigationHint[]="图中为当前设置草稿；START保存，取消键关闭";
+
+const char *const RuntimeText_KeymapActions[7]={"调查","落点预览","左手动作","右手动作","奔跑切换","小地图","系统菜单"};
+
+const char RuntimeText_KeymapUnassigned[]="未分配";
+const char RuntimeText_KeymapLeftShoulderBody[]="LT：防御／组合\nLB：物品快捷";
+const char RuntimeText_KeymapLeftStickFormat[]="摇杆：移动\n十字键：快捷物品\nL3：%s\nLT+RT+L3：左选单";
+const char RuntimeText_KeymapSystemFormat[]="BACK：%s\nSTART：%s";
+const char RuntimeText_KeymapRightShoulderBody[]="RT：技能快捷\nRB：投掷快捷";
+const char RuntimeText_KeymapFaceFormat[]="A：%s\nB：%s\nX：%s\nY：%s";
+const char RuntimeText_KeymapRightStickFormat[]="摇杆：选单浏览\nR3：%s\nLT+RT+R3：右选单";
+const char RuntimeText_KeymapMenuFormat[]="菜单：%s确认／%s取消";
+const char RuntimeText_KeymapComboFormat[]="LT连招：%s";
+
+const char RuntimeText_KeymapDpadLabel[]="方向键";
+
+/* 状态页统一用无效果表示该键没有当前动作，未加载角色则沿技能快捷页禁用提示。 */
+const char *const RuntimeText_KeymapStates[4]={"一般状态","按住LT时","按住RT时","按住LT＋RT时"};
+const char *const RuntimeText_KeymapKeys[18]={"LT","LB","左摇杆","L3","BACK","↑","RT","RB","右摇杆","R3","START","↓","←","→","A","B","X","Y"};
+const char RuntimeText_KeymapNoEffect[]="无效果";
+const char RuntimeText_KeymapStateHint[]="左右或图上箭头翻状态；LB/RB切主页面；START保存";
+const char RuntimeText_KeymapComboSlotFormat[]="第%u套连招";
+
+const char RuntimeText_KeymapJump[]="跳跃";
+const char RuntimeText_KeymapMoveAim[]="移动／落点方向";
+const char RuntimeText_KeymapDualMode[]="双扳机组合";
+const char RuntimeText_KeymapGuard[]="防御";
+const char RuntimeText_KeymapItems[]="展开物品";
+const char RuntimeText_KeymapMove[]="移动";
+const char RuntimeText_KeymapSkills[]="展开技能";
+const char RuntimeText_KeymapThrow[]="展开投掷";
+const char RuntimeText_KeymapQuickItem[]="快捷物品";
+const char RuntimeText_KeymapGuardDirection[]="防御方向";
+const char RuntimeText_KeymapLeftMenu[]="左手选单";
+const char RuntimeText_KeymapRightMenu[]="右手选单";
+const char RuntimeText_KeymapBrowse[]="选单浏览";

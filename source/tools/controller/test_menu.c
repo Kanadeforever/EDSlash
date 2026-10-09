@@ -1068,12 +1068,18 @@ static void action_regression(bool expansion)
     Write32(hud_data,0x128,111);Write32(hud_data,0x12C,111);
     action_step(0,0,0);action_step(0,0,0);g_input.lt=g_input.rt=true;
     action_step(0,0,0);CHECK(!ActionMenu_Active() && g_intent.layer==LAYER_DUAL);
-    action_step(0,1,0);CHECK(ActionMenu_Active() && action_builds==1 && Read32(action_root,0xC8)==0);
+    action_step(0,1,0);CHECK(!ActionMenu_Active() && action_builds==0);
+    action_step(KEY(PAD_L3)|KEY(PAD_R3),0,0);CHECK(!ActionMenu_Active());action_step(0,0,0);
+    action_step(KEY(PAD_R3),0,0);CHECK(ActionMenu_Active() && action_builds==1 && Read32(action_root,0xC8)==0);
     CHECK(((This0)action_table[1])(action_root, NULL)==7 && ReadPtr(action_root,0xC0)==action_nodes[0][0]);
     action_step(0,0,0);action_step(0,1,0);CHECK(ReadPtr(action_root,0xC0)==action_nodes[0][1]);
     CHECK(Menu_HidesCursor());emit_focus();CHECK(focus_draws>1 && focus_rectangle.left==133 && focus_rectangle.top==101 && focus_rectangle.right==161 && focus_rectangle.bottom==129);
     CHECK(Read32(hud_data,0x12C)==111); /* 预览不能直接改右手 */
-    action_step(KEY(PAD_R3),0,0);CHECK(Read32(action_root,0xC8)==1 && action_commits==0);
+    action_step(KEY(PAD_L3),0,0);CHECK(Read32(action_root,0xC8)==1 && action_commits==0);
+    unsigned builds_before=action_builds;action_step(KEY(PAD_L3),0,0);CHECK(action_builds==builds_before);
+    action_step(0,0,0);action_step(KEY(PAD_L3)|KEY(PAD_R3),0,0);CHECK(Read32(action_root,0xC8)==1 && action_builds==builds_before);
+    action_step(0,0,0);action_step(KEY(PAD_R3),0,0);CHECK(Read32(action_root,0xC8)==0 && action_builds==builds_before+1);
+    action_step(0,0,0);action_step(KEY(PAD_L3),0,0);CHECK(Read32(action_root,0xC8)==1 && action_commits==0);
     action_step(0,0,0);action_step(0,1,0);CHECK(ReadPtr(action_root,0xC0)==action_nodes[1][1]);
     BYTE keys[256]={0};g_intent.pressed=KEY(PAD_R3)|KEY(PAD_A)|KEY(PAD_START);Game_Keyboard(keys);
     for (unsigned i=0;i<256;++i) CHECK(keys[i]==0);
@@ -1081,14 +1087,14 @@ static void action_regression(bool expansion)
     g_input.rt=false;action_step(KEY(PAD_A),1,0);
     CHECK(!ActionMenu_Active() && action_commits==1 && Read32(hud_data,0x128)==222 && Read32(hud_data,0x12C)==111);
     action_step(KEY(PAD_A),1,0);CHECK(g_intent.layer==LAYER_GUARD && !g_intent.held && !g_intent.rx);
-    action_step(0,0,0);g_input.rt=true;action_step(0,1,0);CHECK(ActionMenu_Active());
+    action_step(0,0,0);g_input.rt=true;action_step(KEY(PAD_L3),0,0);CHECK(ActionMenu_Active());
     g_input.lt=false;action_step(0,0,0);CHECK(!ActionMenu_Active() && action_commits==2);
     /* 换图、角色变化只关闭，绝不提交尚未确认的候选。 */
-    action_step(0,0,0);g_input.lt=true;action_step(0,1,0);CHECK(ActionMenu_Active());
+    action_step(0,0,0);g_input.lt=true;action_step(KEY(PAD_L3),0,0);CHECK(ActionMenu_Active());
     Write32(manager_data,0x0C,2);action_step(0,0,0);CHECK(!ActionMenu_Active() && action_commits==2);
-    Write32(manager_data,0x0C,1);action_step(0,0,0);action_step(0,1,0);CHECK(ActionMenu_Active());
+    Write32(manager_data,0x0C,1);action_step(0,0,0);action_step(KEY(PAD_L3),0,0);CHECK(ActionMenu_Active());
     Write32(world_data,0x58,0);action_step(0,0,0);CHECK(!ActionMenu_Active() && action_commits==2);
-    Write32(world_data,0x58,1);action_step(0,0,0);action_step(0,1,0);CHECK(ActionMenu_Active());
+    Write32(world_data,0x58,1);action_step(0,0,0);action_step(KEY(PAD_L3),0,0);CHECK(ActionMenu_Active());
     g_intent.layer=LAYER_NATIVE;CHECK(!ActionMenu_Update() && !ActionMenu_Active() && Read32(action_root,0x64));
     ActionMenu_Shutdown();CHECK(action_table[1]==(uintptr_t)action_base && action_table[12]==(uintptr_t)menu_hover);
     Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);

@@ -7,7 +7,7 @@
 #include "ControllerText.h"
 
 /* ActionMenu：对应源文件使用的显示文字与诊断信息。 */
-const char ControllerText_ActionMenu_OpenedLog[] = "[动作菜单] 原右手菜单展开；长期槽位保留，松任一扳机确认当前侧。";
+const char ControllerText_ActionMenu_OpenedLog[] = "[动作菜单] 原%s手菜单展开；长期槽位保留，松任一扳机确认当前侧。";
 const char ControllerText_ActionMenu_SelectionConfirmedLog[] = "[动作菜单] 原%s手选择=%d已确认。";
 const char ControllerText_LeftSideLabel[] = "左";
 const char ControllerText_RightSideLabel[] = "右";

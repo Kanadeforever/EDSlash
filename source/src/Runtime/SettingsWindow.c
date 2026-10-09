@@ -7,6 +7,7 @@
 #include <math.h>
 #include "SettingsWindow.h"
 #include "BuildInfo.h"
+#include "ControllerArtData.h"
 #include "SettingsModel.h"
 #include "Win32Bridge.h"
 #include "Log.h"
@@ -30,6 +31,8 @@ typedef struct {
 static SettingsBackend backend;
 static SettingsModel model;
 static unsigned game;
+static unsigned keymap_state;
+static void keymap_collect_specials(void);
 static int ready,active,editing,footer,confirm_discard,picker,pick_focus,pick_scroll,barrier;
 static int draw_subscribed,input_subscribed,menu_swap,error_modal,picker_footer,scroll_drag;
 static ConfigId edit_id;static int edit_before;static char edit_text_before[40];
@@ -38,7 +41,7 @@ static int native_host;
 static void paint(RuntimeEventId,void *,unsigned long,unsigned long,void *);
 static void clear_icon_cache(void);
 static void about_clear_layout(void);
-static HFONT font,help_font;static int origin_x,origin_y,logical_width,logical_height;
+static HFONT font,help_font,keymap_font;static int origin_x,origin_y,logical_width,logical_height;
 static struct {COLORREF color;HBRUSH brush;} brushes[32];static unsigned brush_count;
 static uint32_t repeat_at,hold_since;static int previous_direction;
 static int pointer_mode;static POINT previous_pointer;
@@ -216,8 +219,10 @@ static int open_on(void *native_page)
     menu_swap=RuntimeConfig_GetInt(CONFIG_MENU_SWAP_AB);
     active=1;barrier=1;editing=footer=picker=confirm_discard=confirm_reset=error_modal=picker_footer=scroll_drag=0;previous_direction=0;message[0]=0;
     clear_icon_cache();
+    keymap_state=0;
     if(!native_host)((This2)host_show)(root, NULL,1,0);
     skill_count=skill_view_count=0;if(selector)build_skills();
+    keymap_collect_specials();
     RuntimeLog_Write(RuntimeText_Settings_OpenedLog,selector);return 1;
 }
 static int open_window(void) {return open_on(NULL);}
@@ -311,7 +316,7 @@ static void scaled_icon(unsigned long context,void *icons,void *animation,int ic
 /* FAQ引用RuntimeText.c中的完整正文；按实际字高排版，长度不受固定卡片或临时窄字符缓冲限制。 */
 static const char *about_faq=
     RuntimeText_AboutFaq;
-enum {ABOUT_SECTION_COUNT=5,ABOUT_VIEW_HEIGHT=288,TAB_STEP=144,TAB_WIDTH=136};
+enum {ABOUT_SECTION_COUNT=5,ABOUT_VIEW_HEIGHT=288,TAB_STEP=115,TAB_WIDTH=107};
 static const char *about_titles[ABOUT_SECTION_COUNT]={RuntimeText_AboutIntroduction,RuntimeText_AboutBuild,RuntimeText_AboutAuthor,RuntimeText_AboutFaqTitle,RuntimeText_AboutDependencies};
 static WCHAR *about_wide[ABOUT_SECTION_COUNT];
 static unsigned about_heights[ABOUT_SECTION_COUNT],about_total,about_step=16;
@@ -361,6 +366,85 @@ static void about_scroll(int delta)
     if(value>maximum)value=maximum;
     model.scroll[SETTINGS_PAGE_ABOUT]=(unsigned)value;
 }
+enum {KEYMAP_STATE_COUNT=4,KEYMAP_KEY_COUNT=18};
+static struct {int selector,icon;char name[128];} keymap_finishers[4];
+static char keymap_jump_name[128];
+static const int keymap_world_buttons[18]={-1,-1,-1,6,4,-1,-1,-1,-1,7,5,-1,-1,-1,0,1,2,3};
+static const int keymap_skill_slots[18]={-1,8,-1,12,10,4,-1,9,-1,13,11,5,6,7,0,1,2,3};
+static COLORREF keymap_color(void)
+{static const COLORREF colors[4]={RGB(231,206,154),RGB(132,186,255),RGB(212,154,255),RGB(255,143,150)};return colors[keymap_state];}
+static RECT keymap_cell(unsigned i)
+{
+    int x,y,w=144;
+    if(i<12){x=i<6 ? 16:448;y=82+(int)(i%6)*36;}
+    else {x=16+(int)((i-12)%3)*192;y=302+(int)((i-12)/3)*36;w=184;}
+    return (RECT){x,y,x+w,y+32};
+}
+/* 必杀顺序沿原角色选择表和资格，缓存只存名称/整数编号，不保存游戏对象。 */
+static void keymap_collect_specials(void)
+{
+    for(unsigned i=0;i<4;++i){keymap_finishers[i].selector=-1;keymap_finishers[i].icon=-1;keymap_finishers[i].name[0]=0;}
+    snprintf(keymap_jump_name,sizeof keymap_jump_name,RuntimeText_KeymapJump);
+    void *role=actor(),*choices=ptr(role,0x193);if(!model.role || !readable(choices,12))return;
+    int count=((This1)backend.ui_property)(choices,NULL,1);if(count<0 || count>1024)return;
+    unsigned at=0;void *hud=ptr((void *)backend.skill_global,0),*record=ptr(hud,0xC18);int jump=-1;
+    for(unsigned i=0;record && i<128;++i){if(!readable(record,0x20))break;if(rd(record,0x18)=='Q'){jump=(int)rd(record,0x14);break;}record=ptr(record,8);}
+    for(int i=0;i<count;++i){int id=((This1)backend.ui_property)(choices,NULL,i+2);void *group=(void *)(uintptr_t)((This1)backend.lookup)((void *)backend.skill_groups,NULL,id);
+        if(!readable(group,0x36))continue;
+        int selector=(int)(rd(group,0x24)&0xFFFFu);
+        if(selector==jump){const char *name=(const char *)(uintptr_t)((This0)backend.settings_skill_name)(group,NULL);copy_game_text(name,keymap_jump_name,sizeof keymap_jump_name);}
+        if((int)rd(group,0x32)<1000 || at>=4)continue;
+        unsigned index=at++;if(((This1)backend.skill_eligibility)(role,NULL,id)==-1)continue;
+        const char *name=(const char *)(uintptr_t)((This0)backend.settings_skill_name)(group,NULL);
+        if(copy_game_text(name,keymap_finishers[index].name,sizeof keymap_finishers[index].name)){
+            keymap_finishers[index].selector=selector;keymap_finishers[index].icon=(int)(rd(group,0x22)&0xFFFFu);
+        }
+    }
+}
+/* 每格同时给出当前状态的文字和原技能图标身份；只读当前草稿，不提交游戏动作。 */
+static void keymap_effect(unsigned key,char *output,size_t capacity,int *selector,int *icon)
+{
+    *selector=*icon=-1;snprintf(output,capacity,"%s",RuntimeText_KeymapNoEffect);
+    if(key>=KEYMAP_KEY_COUNT)return;
+    if(keymap_state==2){
+        int slot=keymap_skill_slots[key];
+        if(slot>=0){if(!model.role){snprintf(output,capacity,"%s",RuntimeText_Settings_UnavailableValue);return;}
+            ConfigBinding binding=model.draft_bindings[slot];if(!binding.custom)return;
+            for(unsigned i=0;i<skill_count;++i)if(skills[i].selector==binding.selector){snprintf(output,capacity,"%s",skills[i].name);*selector=skills[i].selector;*icon=skills[i].icon;return;}
+        } else if(key==2)snprintf(output,capacity,RuntimeText_KeymapMoveAim);else if(key==0)snprintf(output,capacity,RuntimeText_KeymapDualMode);
+        return;
+    }
+    if(keymap_state==0){
+        int button=keymap_world_buttons[key];output[0]=0;
+        if(button>=0)for(unsigned i=0;i<7;++i)if(model.draft.values[CONFIG_WORLD_INTERACT+i]==button){size_t used=strlen(output);snprintf(output+used,capacity-used,"%s%s",used ? "/":"",i==1 ? keymap_jump_name:RuntimeText_KeymapActions[i]);}
+        if(output[0])return;
+        const char *fixed=key==0 ? RuntimeText_KeymapGuard:key==1 ? RuntimeText_KeymapItems:key==2 ? RuntimeText_KeymapMove:key==6 ? RuntimeText_KeymapSkills:key==7 ? RuntimeText_KeymapThrow:(key==5 || key==11 || key==12 || key==13) ? RuntimeText_KeymapQuickItem:RuntimeText_KeymapNoEffect;
+        snprintf(output,capacity,"%s",fixed);return;
+    }
+    if(key==0){snprintf(output,capacity,RuntimeText_KeymapGuard);return;}
+    if(key==2){snprintf(output,capacity,RuntimeText_KeymapGuardDirection);return;}
+    if(keymap_state==1 && key==6){snprintf(output,capacity,RuntimeText_KeymapDualMode);return;}
+    if(keymap_state==3){if(key==3){snprintf(output,capacity,RuntimeText_KeymapLeftMenu);return;}if(key==9){snprintf(output,capacity,RuntimeText_KeymapRightMenu);return;}if(key==8){snprintf(output,capacity,RuntimeText_KeymapBrowse);return;}}
+    int face=key>=14 ? (int)key-14:-1;int legacy=model.draft.values[CONFIG_LEGACY_ULTIMATE];
+    if(face>=0 && (keymap_state==3 || legacy)){
+        if(!model.role){snprintf(output,capacity,"%s",RuntimeText_Settings_UnavailableValue);return;}
+        if(keymap_finishers[face].selector>=0){snprintf(output,capacity,"%s",keymap_finishers[face].name);*selector=keymap_finishers[face].selector;*icon=keymap_finishers[face].icon;}return;
+    }
+    if(keymap_state==1){int dpad=legacy || model.draft.values[CONFIG_COMBO_SWITCH];unsigned combo=0;
+        if(dpad){if(key==5)combo=1;else if(key==13)combo=2;else if(key==11)combo=3;else if(key==12)combo=4;}
+        else {static const unsigned slots[4]={3,2,4,1};if(face>=0)combo=slots[face];}
+        if(combo){
+            /* 两作原combo_get(index)均返回HUD+(index+14)*16；空套组没有可提交动作。 */
+            void *hud=ptr((void *)backend.skill_global,0),*sequence=(BYTE *)hud+(combo+13u)*16u;
+            unsigned amount=rd(sequence,0);
+            if(model.role && readable(sequence,12) && amount && amount<=64 && readable(ptr(sequence,4),12))
+                snprintf(output,capacity,RuntimeText_KeymapComboSlotFormat,combo);
+        }
+    }
+}
+/* 两个信息页只读；共同处理关闭/保存，不向配置描述表查询不存在的字段。 */
+static int information_page(void)
+{return model.page==SETTINGS_PAGE_KEYMAP || model.page==SETTINGS_PAGE_ABOUT;}
 static void cancel(void)
 {
     if(error_modal){error_modal=0;return;}
@@ -401,11 +485,11 @@ static void activate(void)
     }
     if(footer) {
         if(footer==2){cancel();return;}
-        if(footer==3){if(model.page!=SETTINGS_PAGE_ABOUT)confirm_reset=1;return;}
+        if(footer==3){if(!information_page())confirm_reset=1;return;}
         save_settings();
         return;
     }
-    if(model.page==SETTINGS_PAGE_ABOUT)return;
+    if(information_page())return;
     message[0]=0;
     if(model.page==2){if(!model.role){strcpy(message,RuntimeText_Settings_UnavailableValue);model.help=1;return;}picker=1;pick_focus=pick_scroll=picker_footer=0;model.help=0;
         ConfigBinding selected=effective_binding(model.focus[2]);picker_rebuild(selected.custom ? selected.selector:-1);
@@ -448,7 +532,7 @@ static void move(int dir)
     if(footer) {
         if(dir==1){footer=0;return;}
         if(dir==3 && footer>1)--footer;
-        if(dir==4 && footer<(model.page==SETTINGS_PAGE_ABOUT ? 2:3))++footer;
+        if(dir==4 && footer<(information_page() ? 2:3))++footer;
         return;
     }
     if(model.page==SETTINGS_PAGE_ABOUT) {
@@ -457,6 +541,7 @@ static void move(int dir)
         if(dir==2){if(*top<about_max_scroll())about_scroll((int)about_step);else footer=1;}
         return;
     }
+    if(model.page==SETTINGS_PAGE_KEYMAP){if(dir==3)keymap_state=(keymap_state+3)%4;else if(dir==4)keymap_state=(keymap_state+1)%4;else if(dir==2)footer=1;return;}
     unsigned before=model.focus[model.page];SettingsModel_Move(&model,dir,6);
     if(dir==2 && before==model.focus[model.page])footer=1;
 }
@@ -498,14 +583,14 @@ int SettingsWindow_Pad(uint32_t held,uint32_t pressed,int lt,int rt,float lx,flo
     /* 已有模态确认优先，普通设置页BACK重置、START保存；不占用战斗键。 */
     if(pressed&(1u<<6)){if(picker)activate();save_settings();return 1;}
     if(pressed&(1u<<4)) {
-        if(model.page==SETTINGS_PAGE_ABOUT)return 1;
+        if(information_page())return 1;
         if(editing || picker){reset_item();if(picker){picker=0;model.help=1;}}
         else confirm_reset=1;
         return 1;
     }
     if(pressed&(1u<<9)){editing=picker=footer=0;message[0]=0;SettingsModel_Page(&model,-1);}
     if(pressed&(1u<<10)){editing=picker=footer=0;message[0]=0;SettingsModel_Page(&model,1);}
-    if(!picker && model.page!=SETTINGS_PAGE_ABOUT && (pressed&(1u<<3)))model.help=!model.help;
+    if(!picker && !information_page() && (pressed&(1u<<3)))model.help=!model.help;
     if(pressed&(1u<<(menu_swap ? 1:0)))activate();
     if(pressed&(1u<<(menu_swap ? 0:1)))cancel();
     int dir=held&(1u<<11) ? 1:held&(1u<<12) ? 2:held&(1u<<13) ? 3:held&(1u<<14) ? 4:0;
@@ -578,6 +663,7 @@ static RECT help_rectangle(void)
 static void scroll_metrics(unsigned *total,unsigned *visible,unsigned *top,RECT *track)
 {
     if(picker){*total=skill_view_count;*visible=5;*top=(unsigned)pick_scroll;*track=(RECT){308,122,316,362};}
+    else if(model.page==SETTINGS_PAGE_KEYMAP){*total=0;*visible=ABOUT_VIEW_HEIGHT;*top=0;*track=(RECT){596,82,604,370};}
     else if(model.page==SETTINGS_PAGE_ABOUT){about_layout();*total=about_total;*visible=ABOUT_VIEW_HEIGHT;*top=model.scroll[model.page];*track=(RECT){596,82,604,370};}
     else {*total=(SettingsModel_Count(model.page)+1)/2;*visible=6;*top=model.scroll[model.page];*track=(RECT){596,82,604,370};}
 }
@@ -653,8 +739,8 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
     HGDIOBJ previous=font ? SelectObject(dc,font):NULL;
     int x=origin_x,y=origin_y;box(dc,x,y,608,448,RGB(20,18,15),RGB(164,124,59));
     text(dc,x+16,y+10,450,24,RuntimeText_Settings_Title,RGB(231,206,154));
-    const char *pages[]={RuntimeText_TabSettings,RuntimeText_TabControls,RuntimeText_TabSkills,RuntimeText_TabAbout};
-    for(unsigned i=0;i<SETTINGS_PAGE_COUNT;++i){box(dc,x+16+(int)i*TAB_STEP,y+38,TAB_WIDTH,30,RGB(40,32,23),i==model.page ? RGB(218,168,80):RGB(104,78,38));button_text(dc,x+24+(int)i*TAB_STEP,y+38,TAB_WIDTH-16,30,pages[i],RGB(226,210,174),DT_LEFT);}
+    const char *pages[]={RuntimeText_KeymapPage,RuntimeText_TabSettings,RuntimeText_TabControls,RuntimeText_TabSkills,RuntimeText_TabAbout};
+    for(unsigned i=0;i<SETTINGS_PAGE_COUNT;++i){box(dc,x+16+(int)i*TAB_STEP,y+38,TAB_WIDTH,30,RGB(40,32,23),SettingsModel_PageAtTab(i)==model.page ? RGB(218,168,80):RGB(104,78,38));button_text(dc,x+24+(int)i*TAB_STEP,y+38,TAB_WIDTH-16,30,pages[i],RGB(226,210,174),DT_LEFT);}
     unsigned start=model.scroll[model.page]*2,count=SettingsModel_Count(model.page);
     for(unsigned i=start;i<count && i<start+12;++i) {
         int cx=x+16+(int)(i%2)*288,cy=y+82+(int)((i-start)/2)*48;int focused=!footer && model.focus[model.page]==i && (model.page!=2 || model.role);
@@ -681,6 +767,34 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         button_text(dc,cx+(model.page==2 ? 54:8),group_y,model.page==2 ? 218:264,line,label,RGB(222,205,172),DT_LEFT);
         button_text(dc,cx+(model.page==2 ? 54:8),group_y+line+2,model.page==2 ? 218:264,line,value_text_buffer,model.page==2 && !model.role ? RGB(112,112,112):dirty ? RGB(255,178,76):RGB(154,198,149),DT_LEFT);
     }
+    if(model.page==SETTINGS_PAGE_KEYMAP) {
+        /* 各键独立成格，方向操作与按下摇杆分开；不画覆盖图片和文字的指示线。 */
+        COLORREF state_color=keymap_color();RECT image_rect={182,132,426,285};
+        BITMAPINFO bitmap={0};bitmap.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bitmap.bmiHeader.biWidth=CONTROLLER_ART_WIDTH;
+        bitmap.bmiHeader.biHeight=-CONTROLLER_ART_HEIGHT;bitmap.bmiHeader.biPlanes=1;bitmap.bmiHeader.biBitCount=32;
+        /* 在预留区域内等比例缩放并上下左右居中，图片尺寸改变时不挤占按键格子。 */
+        int art_width=image_rect.right-image_rect.left,art_height=art_width*CONTROLLER_ART_HEIGHT/CONTROLLER_ART_WIDTH;
+        if(art_height>image_rect.bottom-image_rect.top){art_height=image_rect.bottom-image_rect.top;art_width=art_height*CONTROLLER_ART_WIDTH/CONTROLLER_ART_HEIGHT;}
+        int art_x=image_rect.left+(image_rect.right-image_rect.left-art_width)/2;
+        int art_y=image_rect.top+(image_rect.bottom-image_rect.top-art_height)/2;
+        StretchDIBits(dc,x+art_x,y+art_y,art_width,art_height,0,0,CONTROLLER_ART_WIDTH,CONTROLLER_ART_HEIGHT,controller_art_pixels,&bitmap,DIB_RGB_COLORS,SRCCOPY);
+        button_text(dc,x+218,y+86,172,30,RuntimeText_KeymapStates[keymap_state],state_color,DT_CENTER);
+        action_button(dc,x+182,y+86,30,28,"←","",0);action_button(dc,x+396,y+86,30,28,"→","",0);
+        if(!keymap_font)keymap_font=CreateFontW(-12,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,GB2312_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,DEFAULT_QUALITY,DEFAULT_PITCH,L"宋体");
+        HGDIOBJ prior=keymap_font ? SelectObject(dc,keymap_font):NULL;
+        for(unsigned i=0;i<KEYMAP_KEY_COUNT;++i){RECT cell=keymap_cell(i);char effect[256];int selection,icon;keymap_effect(i,effect,sizeof effect,&selection,&icon);
+            box(dc,x+cell.left,y+cell.top,cell.right-cell.left,32,RGB(28,25,19),state_color);
+            int key_width=i==2 || i==8 || i==10 || i==4 ? 48:30;
+            button_text(dc,x+cell.left+6,y+cell.top,key_width,32,RuntimeText_KeymapKeys[i],RGB(236,218,178),DT_LEFT);
+            RECT text_rect={x+cell.left+key_width+8+(icon>=0 ? 26:0),y+cell.top+2,x+cell.right-5,y+cell.bottom-2};
+            WCHAR wide[256];MultiByteToWideChar(CP_UTF8,0,effect,-1,wide,256);SetTextColor(dc,state_color);SetBkMode(dc,TRANSPARENT);
+            RECT measured={0,0,text_rect.right-text_rect.left,0};DrawTextW(dc,wide,-1,&measured,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
+            int remaining=text_rect.bottom-text_rect.top-measured.bottom;
+            if(remaining>0)text_rect.top+=remaining/2;
+            DrawTextW(dc,wide,-1,&text_rect,DT_LEFT|DT_TOP|DT_WORDBREAK|DT_NOPREFIX);
+        }
+        if(prior)SelectObject(dc,prior);
+    }
     if(model.page==SETTINGS_PAGE_ABOUT) {
         about_layout();
         HGDIOBJ prior=help_font ? SelectObject(dc,help_font):NULL;
@@ -699,6 +813,8 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         }
         if(clip)RestoreDC(dc,clip);
         if(prior)SelectObject(dc,prior);
+    }
+    if(information_page()){
         action_button(dc,x+16,y+378,280,30,RuntimeText_Settings_SaveButton,RuntimeText_Key_StartUppercase,footer==1);
         action_button(dc,x+304,y+378,288,30,RuntimeText_Settings_CloseButton,menu_swap ? RuntimeText_Key_A:RuntimeText_Key_B,footer==2);
     } else {
@@ -707,9 +823,9 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         action_button(dc,x+304,y+378,136,30,editing ? RuntimeText_ResetCurrent:RuntimeText_ResetPage,RuntimeText_Key_BackUppercase,footer==3);
         if(!picker)action_button(dc,x+448,y+378,144,30,model.help ? RuntimeText_Settings_HideHelpButton:RuntimeText_Settings_ShowHelpButton,RuntimeText_Key_Y,0);
     }
-    const char *hint=model.page==SETTINGS_PAGE_ABOUT ? RuntimeText_Settings_AboutNavigationHint:editing ? RuntimeText_Settings_ValueEditorNavigationHint:RuntimeText_Settings_SettingsNavigationHint;
+    const char *hint=model.page==SETTINGS_PAGE_KEYMAP ? RuntimeText_KeymapStateHint:model.page==SETTINGS_PAGE_ABOUT ? RuntimeText_Settings_AboutNavigationHint:editing ? RuntimeText_Settings_ValueEditorNavigationHint:RuntimeText_Settings_SettingsNavigationHint;
     text(dc,x+16,y+416,576,26,message[0] ? message:hint,RGB(207,188,154));
-    paint_scrollbar(dc,x,y);
+    if(model.page!=SETTINGS_PAGE_KEYMAP)paint_scrollbar(dc,x,y);
     if(picker) {
         box(dc,x+16,y+82,576,322,RGB(24,22,18),RGB(194,146,65));
         text(dc,x+24,y+90,280,24,RuntimeText_Settings_SkillPickerTitle,RGB(228,206,167));
@@ -734,7 +850,7 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         action_button(dc,x+164,y+306,140,36,RuntimeText_Settings_CancelEditingButton,menu_swap ? RuntimeText_Key_A:RuntimeText_Key_B,0);
         if(!model.help)text(dc,x+328,y+138,256,190,RuntimeText_Settings_ValueEditorHelp,RGB(207,188,154));
     }
-    if((picker || (model.help && model.page!=SETTINGS_PAGE_ABOUT)) && !confirm_discard && !confirm_reset && !error_modal) {
+    if((picker || (model.help && !information_page())) && !confirm_discard && !confirm_reset && !error_modal) {
         const char *description;
         if(picker)description=pick_focus>0 && (unsigned)pick_focus<skill_view_count ? skills[skill_view[pick_focus]].description:RuntimeText_Settings_UnsetSkillHelp;
         else description=model.page==2 ? RuntimeText_Settings_SkillBindingHelp:RuntimeConfig_Descriptor(SettingsModel_Field(model.page,model.focus[model.page]))->description;
@@ -761,6 +877,13 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
     if(previous)SelectObject(dc,previous);
     if(saved_dc)RestoreDC(dc,saved_dc);
     ((ReleaseDCFn)(uintptr_t)rd(table,0x68))(dd,dc);
+    if(model.page==SETTINGS_PAGE_KEYMAP && model.role && (keymap_state==2 || keymap_state==3 || (keymap_state==1 && model.draft.values[CONFIG_LEGACY_ULTIMATE])) && !confirm_discard && !error_modal){
+        void *icons=ptr((void *)backend.settings_icon_global,0);unsigned art_icon_count=rd(icons,0x24);void *sprites=ptr(icons,0x28);
+        if(readable(icons,0x2C) && art_icon_count<=4096)for(unsigned i=0;i<KEYMAP_KEY_COUNT;++i){char effect_text[256];int selection,icon;keymap_effect(i,effect_text,sizeof effect_text,&selection,&icon);
+            if(icon>=0 && (unsigned)icon<art_icon_count && readable((BYTE *)sprites+(unsigned)icon*32u,32)){RECT cell=keymap_cell(i);int kw=i==2 || i==8 || i==10 || i==4 ? 48:30;
+                scaled_icon(context,icons,(BYTE *)sprites+(unsigned)icon*32u,icon,selection,cell.left+kw-8-8,cell.top,32,24,RGB(28,25,19));}
+        }
+    }
     if(!confirm_discard && !confirm_reset && !error_modal && !editing && model.page==2 && model.role) {
         /* DC释放后补原图标；避开说明框，不能把后画的图标盖到说明文字上。 */
         void *icons=ptr((void *)backend.settings_icon_global,0),*hud=ptr((void *)backend.skill_global,0);
@@ -807,8 +930,9 @@ static void mouse_click(int x,int y)
             if(row<skill_view_count){picker_footer=0;pick_focus=(int)row;activate();}}
                 return;
     }
-    if(y>=38 && y<68 && x>=16 && x<592){unsigned tab=(unsigned)((x-16)/TAB_STEP);if((x-16)%TAB_STEP<TAB_WIDTH){model.page=tab;footer=0;}return;}
-    if(model.page==SETTINGS_PAGE_ABOUT) {
+    if(y>=38 && y<68 && x>=16 && x<592){unsigned tab=(unsigned)((x-16)/TAB_STEP);if((x-16)%TAB_STEP<TAB_WIDTH){model.page=SettingsModel_PageAtTab(tab);footer=0;}return;}
+    if(model.page==SETTINGS_PAGE_KEYMAP && y>=86 && y<114){if(x>=182 && x<212)move(3);else if(x>=396 && x<426)move(4);return;}
+    if(information_page()) {
         if(y>=378 && y<408){if(x>=16 && x<296)footer=1;else if(x>=304 && x<592)footer=2;else return;activate();}
         return;
     }
@@ -825,7 +949,7 @@ static void mouse_hover(int x,int y)
 {
     /* 只在物理指针移动时更新焦点，静止的鼠标不能抢走手柄正在浏览的项目。 */
     if(editing || confirm_discard || confirm_reset || error_modal || scroll_drag)return;
-    if(model.page==SETTINGS_PAGE_ABOUT)return;
+    if(information_page())return;
     if(picker) {
         if(x>=24 && x<304 && y>=122 && y<362) {
             unsigned row=(unsigned)(y-122)/48+(unsigned)pick_scroll;
@@ -851,7 +975,7 @@ static void keyboard(RuntimeEventId event,void *subject,unsigned long result,uns
     int direction=now_keys&1 ? 1:now_keys&2 ? 2:now_keys&4 ? 3:now_keys&8 ? 4:0;
     if(active){if(direction)pointer_mode=1;repeat_direction(direction,GetTickCount(),&keyboard_direction,&keyboard_started,&keyboard_next);}
     else keyboard_direction=0;
-    if(active)for(unsigned i=4;i<6;++i)if((now_keys&~old_keys)&(1u<<i)){pointer_mode=1;if(i==4)activate();else if(!picker && model.page!=SETTINGS_PAGE_ABOUT)model.help=!model.help;}
+    if(active)for(unsigned i=4;i<6;++i)if((now_keys&~old_keys)&(1u<<i)){pointer_mode=1;if(i==4)activate();else if(!picker && !information_page())model.help=!model.help;}
     old_keys=now_keys;
     int open_key=(GetAsyncKeyState(VK_OEM_3)&0x8000)!=0,escape=(GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0;
     if(open_key && !previous_open_key){if(active)cancel();else if(open_window())pointer_mode=1;}

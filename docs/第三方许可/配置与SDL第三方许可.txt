@@ -3,6 +3,15 @@
 EDSlash复用Castle Reforge配置标量核心并作修改，使用完整固定SDL 3.4.16官方源码静态构建。上游SDL文件未改，项目构建选项位于source/CMakeLists.txt。HIDAPI采用上游提供的BSD许可选项。编译器为原生MSVC，运行库静态链接/MT；旧MinGW/GCC声明保留在历史运行库许可文件中；Windows系统DLL不随包复制。社区gamecontrollerdb.txt当前未分发，用户自行提供文件时需同时保留对应来源与许可。下列原文保留版权、条件和免责声明。
 
 
+========== 手柄示意图（CC0） ==========
+
+source/assets/360_controller_clean.svg为用户提供并声明CC0授权的替换素材。
+手柄键位页使用由该SVG转换的嵌入像素，运行时不依赖外部图片文件。
+授权名称：CC0 1.0 Universal。
+授权说明：https://creativecommons.org/publicdomain/zero/1.0/
+作者署名：Jishenaz（与关于页面的现有署名一致）。
+此处记录用户提供的许可信息；素材未附原始发布地址，不推定其发布来源。
+
 ========== Castle Reforge TOML核心（MIT） ==========
 
 MIT License

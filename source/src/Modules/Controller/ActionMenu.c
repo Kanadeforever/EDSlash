@@ -93,19 +93,21 @@ bool ActionMenu_Update(void)
         ActionMenu_Suspend();return true;
     }
     bool held=g_input.lt && g_input.rt;
+    unsigned request=g_intent.pressed&(KEY(PAD_L3)|KEY(PAD_R3));
+    bool choose_left=request==KEY(PAD_L3),choose_right=request==KEY(PAD_R3);
     int direction=fabsf(g_intent.rx)<0.55f && fabsf(g_intent.ry)<0.55f ? 0:
         fabsf(g_intent.ry)>=fabsf(g_intent.rx) ? (g_intent.ry<0 ? 1:2):(g_intent.rx<0 ? 3:4);
     if (!active) {
         void *root=ReadPtr((void *)g_profile->menu_action_global,0);if (!valid_root(root)) return false;
         unsigned reason;bool resume_native=g_intent.layer==LAYER_MENU && Menu_Context(&reason)==root;
-        if ((g_intent.layer!=LAYER_DUAL && !resume_native) || !held || !direction ||
+        if ((g_intent.layer!=LAYER_DUAL && !resume_native) || !held || (!choose_left && !choose_right) ||
             (g_input.menu && !resume_native) || !Game_Player()) return false;
-        selection.root=root;selection.side=0;active=true;
+        selection.root=root;selection.side=choose_left ? 1u:0u;active=true;
         selection.world=ReadPtr((void *)g_profile->world_global,0);selection.actor=Game_Player();
-        /* 原Open生成当前侧技能/非空连招并捕获UI，第一次拨杆只展开，不额外跳一项。 */
-        ((This1)g_profile->menu_action_open)(root, NULL,0);seed();selection.direction=direction;
+        /* 两个按钮指定同一个原菜单的侧别，展开当帧只建立候选，不额外移动焦点。 */
+        ((This1)g_profile->menu_action_open)(root, NULL,(int)selection.side);seed();selection.direction=direction;
         g_intent.layer=LAYER_ACTION_MENU;
-        Log_Write(ControllerText_ActionMenu_OpenedLog);return false;
+        Log_Write(ControllerText_ActionMenu_OpenedLog,selection.side ? ControllerText_LeftSideLabel:ControllerText_RightSideLabel);return false;
     }
     g_intent.layer=LAYER_ACTION_MENU;
     if (!held) {
@@ -113,10 +115,15 @@ bool ActionMenu_Update(void)
         Log_Write(ControllerText_ActionMenu_SelectionConfirmedLog,selection.side ? ControllerText_LeftSideLabel:ControllerText_RightSideLabel,selection.selector);
         ActionMenu_Suspend();return true;
     }
-    if (g_intent.pressed&KEY(PAD_R3)) {
-        /* 同一个原菜单换侧只重建候选链，未聚焦侧的浏览不会顺带提交。 */
-        selection.side^=1;((This1)g_profile->menu_action_rebuild)(selection.root, NULL,(int)selection.side);seed();
-        Log_Write(ControllerText_ActionMenu_FocusSideChangedLog,selection.side ? ControllerText_LeftSideLabel:ControllerText_RightSideLabel);return false;
+    /* 同帧双键没有唯一侧别，保持当前焦点；长按同一键不会重复重建菜单。 */
+    if(request==(KEY(PAD_L3)|KEY(PAD_R3)))return false;
+    if(choose_left || choose_right) {
+        unsigned side=choose_left ? 1u:0u;
+        if(side!=selection.side) {
+            selection.side=side;((This1)g_profile->menu_action_rebuild)(selection.root,NULL,(int)selection.side);seed();
+            Log_Write(ControllerText_ActionMenu_FocusSideChangedLog,selection.side ? ControllerText_LeftSideLabel:ControllerText_RightSideLabel);
+        }
+        return false;
     }
     if (direction && (direction!=selection.direction || (int32_t)(g_input.now-selection.repeat)>=0)) {
         ActionNode list[128];unsigned count=nodes(selection.root,list),at=0;

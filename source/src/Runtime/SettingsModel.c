@@ -26,14 +26,22 @@ int SettingsModel_Open(SettingsModel *m,unsigned game,unsigned role)
 {
     const ConfigSnapshot *saved=RuntimeConfig_Saved();
     if(!m || !saved || (game!=1 && game!=2) || role>65535)return 0;
-    memset(m,0,sizeof *m);m->game=game;m->role=role;m->saved=m->draft=*saved;
+    memset(m,0,sizeof *m);m->page=SETTINGS_PAGE_KEYMAP;m->game=game;m->role=role;m->saved=m->draft=*saved;
     for(unsigned i=0;i<14;++i)m->saved_bindings[i]=m->draft_bindings[i]=role ? RuntimeConfig_GetSavedBinding(game,role,i+1):(ConfigBinding){0,0,0};
     return 1;
+}
+/* 显示顺序独立于配置页内部编号，键位图在最左，关于始终在最右。 */
+unsigned SettingsModel_PageAtTab(unsigned tab)
+{
+    static const unsigned order[SETTINGS_PAGE_COUNT]={SETTINGS_PAGE_KEYMAP,0,1,2,SETTINGS_PAGE_ABOUT};
+    return tab<SETTINGS_PAGE_COUNT ? order[tab]:SETTINGS_PAGE_KEYMAP;
 }
 void SettingsModel_Page(SettingsModel *m,int delta)
 {
     if(!m)return;
-    m->page=(m->page+(delta<0 ? SETTINGS_PAGE_COUNT-1u:1u))%SETTINGS_PAGE_COUNT; /* 大类循环，每页独立保留焦点与滚动 */
+    unsigned at=0;for(unsigned i=0;i<SETTINGS_PAGE_COUNT;++i)if(SettingsModel_PageAtTab(i)==m->page)at=i;
+    at=(at+(delta<0 ? SETTINGS_PAGE_COUNT-1u:1u))%SETTINGS_PAGE_COUNT;
+    m->page=SettingsModel_PageAtTab(at);
 }
 void SettingsModel_Move(SettingsModel *m,int direction,unsigned visible)
 {
