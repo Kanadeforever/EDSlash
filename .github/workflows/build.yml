@@ -61,7 +61,7 @@ jobs:
       - name: 调用统一构建与全部离线验证
         run: python source/tools/build.py
 
-      - name: 验证发行包边界与错误拒绝
+      - name: 验证临时目录路径、许可原件与发行包拒绝规则
         run: python source/tools/test_package_release.py
 
       - name: 打包正式产物、独立声明与原样许可证

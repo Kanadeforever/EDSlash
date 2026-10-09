@@ -8,7 +8,7 @@ import tempfile
 import unittest
 import zipfile
 
-from package_release import LICENSE_FILES, PACKAGE_FILES, license_contents, package, source_digest, write_license_files
+from package_release import LICENSE_FILES, PACKAGE_FILES, license_contents, package, safe_file, source_digest, write_license_files
 
 
 class PackageTests(unittest.TestCase):
@@ -68,6 +68,26 @@ class PackageTests(unittest.TestCase):
         # 隐去成功包路径，失败断言仍保留原始异常以便定位。
         with contextlib.redirect_stdout(io.StringIO()):
             package(self.root, self.output)
+
+    def test_unresolved_root_license_copy(self):
+        # 临时目录可通过另一种路径写法到达；解析输入后必须与同样解析的根比较。
+        alias = self.root / "source" / ".."
+        self.assertTrue((alias / "LICENSE").is_file())
+        directory = self.root / "alias-output"
+        write_license_files(alias, directory)
+        self.assertEqual((directory / "LICENSE.txt").read_bytes(), (self.root / "LICENSE").read_bytes())
+
+    def test_relative_root_license_copy(self):
+        # 调用工具时传入相对根也必须有效，不能把实际存在的许可误报成越界。
+        # CI工作区和系统临时目录可能在不同盘，不用跨盘relpath；退出时自动还原工作目录。
+        with contextlib.chdir(self.root.parent):
+            relative = Path(self.root.name)
+            self.assertEqual(license_contents(relative), license_contents(self.root))
+
+    def test_resolved_root_still_rejects_escape(self):
+        # 规范化根目录不会放宽边界：从source向上读取项目LICENSE仍属于越界。
+        with self.assertRaisesRegex(RuntimeError, "路径越界"):
+            safe_file(self.root / "source", "../LICENSE")
 
     def test_exact_file_manifest_and_original_bytes(self):
         self.pack()

@@ -42,6 +42,8 @@ def source_digest(root):
 
 def safe_file(root, relative):
     """文件必须留在输入根内，目录链接不能把私人文件引入发行包。"""
+    # 文件与根必须使用相同的实际路径写法，临时目录的短路径或目录别名不能误报越界。
+    root = root.resolve()
     path = root / relative
     if not path.is_file() or not path.resolve().is_relative_to(root):
         raise RuntimeError(f"缺少文件或路径越界：{relative}")
