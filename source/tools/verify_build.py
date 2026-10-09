@@ -194,6 +194,9 @@ def verify_upx_roundtrip(original,unpacked):
             ignored.append((debug_rva,debug_rva+debug_size))
             for offset in range(0,debug_size,28):
                 record=pe.read(pe.base+debug_rva+offset,28)
+                # UPX可保留目录位置/长度并把槽位全部清零；空记录没有数据区可忽略。
+                # 不能仅按Type=0放行，因为非空未知记录可能指向普通业务数据。
+                if not any(record):continue
                 kind,size,data_rva=struct.unpack_from('<III',record,12)
                 if kind not in (2,12,13):
                     raise RuntimeError('UPX调试元数据包含未支持类型，不能跳过：'+str(kind))
@@ -239,6 +242,33 @@ def test_upx_roundtrip_rejections(original,unpacked):
         finally:temporary.unlink()
         if not rejected:raise RuntimeError('压缩验证没有拒绝'+label+'损坏')
     return '代码、只读业务数据和导入DLL变更均被拒绝；没有执行损坏副本'
+
+def test_upx_debug_record_compatibility(original,unpacked):
+    """真实PE回放UPX保留全零调试槽的情况，并拒绝非空的未知类型记录。"""
+    source,pe=PE(original),PE(unpacked)
+    rva,size=source.directory(6)
+    if not rva or not size or size%28:raise RuntimeError('调试槽回归需要完整MSVC调试目录')
+    for start,length,raw in pe.sections:
+        if start<=rva and rva+size<=start+length:
+            at=raw+rva-start;break
+    else:raise RuntimeError('调试槽回归目录不在实际文件段内')
+    data=bytearray(pe.data)
+    # PE32可选头的数据目录从96字节开始，第6项为调试目录；恢复其位置与长度。
+    struct.pack_into('<II',data,pe.opt+96+6*8,rva,size)
+    data[at:at+size]=b'\0'*size
+    temporary=Path(unpacked).with_name('EDSlash-debug-slot-check.asi')
+    try:
+        temporary.write_bytes(data)
+        verify_upx_roundtrip(original,temporary)
+        # Type仍为0但填入一个非零数据长度，必须拒绝，不能扩展忽略范围。
+        struct.pack_into('<I',data,at+16,1)
+        temporary.write_bytes(data)
+        try:verify_upx_roundtrip(original,temporary)
+        except RuntimeError:pass
+        else:raise RuntimeError('未知非空调试记录没有被拒绝')
+    finally:
+        temporary.unlink()
+    return '保留目录的全零槽位通过，未知非空记录被拒绝；未执行回放副本'
 
 if __name__ == "__main__":
     verify(Path(sys.argv[1]), Path(sys.argv[2]))

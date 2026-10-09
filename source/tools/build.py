@@ -12,7 +12,7 @@ sys.dont_write_bytecode = True
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 from toolchain import compiler, program
 from controller.verify_profiles import verify_baselines
-from verify_build import verify_upx_roundtrip, test_upx_roundtrip_rejections, verify, verify_variants, verify_debug_info, test_pdb_rejections
+from verify_build import verify_upx_roundtrip, test_upx_roundtrip_rejections, verify, verify_variants, verify_debug_info, test_pdb_rejections, test_upx_debug_record_compatibility
 from sync_config import plan as config_plan, apply as config_apply
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -167,6 +167,7 @@ def main():
         verify(unpacked, config)
         evidence["UPX解压与压缩前运行段一致"] = verify_upx_roundtrip(release_asi, unpacked)
         evidence["UPX损坏拒绝回放"] = test_upx_roundtrip_rejections(release_asi, unpacked)
+        evidence["UPX空调试槽兼容回放"] = test_upx_debug_record_compatibility(release_asi, unpacked)
         evidence["压缩前发行件"] = {"SHA256": evidence["ASI_SHA256"], "字节数": evidence["ASI字节数"]}
         evidence["ASI_SHA256"] = hashlib.sha256(packed.read_bytes()).hexdigest()
         evidence["ASI字节数"] = packed.stat().st_size
