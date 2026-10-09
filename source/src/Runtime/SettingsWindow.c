@@ -36,6 +36,7 @@ static void *root;static uintptr_t old_primary,old_draw,host_table,host_show;
 static int native_host;
 static void paint(RuntimeEventId,void *,unsigned long,unsigned long,void *);
 static void clear_icon_cache(void);
+static void about_clear_layout(void);
 static HFONT font,help_font;static int origin_x,origin_y,logical_width,logical_height;
 static struct {COLORREF color;HBRUSH brush;} brushes[32];static unsigned brush_count;
 static uint32_t repeat_at,hold_since;static int previous_direction;
@@ -107,6 +108,7 @@ void SettingsWindow_Close(void)
     }
     old_draw=0;
     if(!native_host && readable(root,0x68))((This2)host_show)(root,0,0);
+    about_clear_layout();
     active=editing=picker=confirm_discard=confirm_reset=0;root=NULL;old_primary=0;message[0]=0;
     RuntimeLog_Write("[模组设置] 关闭并释放原菜单捕获，原游戏恢复。");
 }
@@ -305,22 +307,74 @@ static void scaled_icon(unsigned long context,void *icons,void *animation,int ic
     StretchBlt(dc,origin_x+target.left,origin_y+target.top,target.right-target.left,target.bottom-target.top,work,0,0,sw,sh,SRCCOPY);
     SetStretchBltMode(dc,old_mode);SelectObject(work,old);DeleteDC(work);DeleteDC(backup);release(dd,dc);
 }
-/* 关于页按完整信息段滚动，没有可修改设置，不能将正文当成配置条目。 */
-enum {ABOUT_SECTION_COUNT=7,ABOUT_VISIBLE=4,TAB_STEP=144,TAB_WIDTH=136};
-static const char *about_titles[ABOUT_SECTION_COUNT]={"插件说明","版本与构建","作者","使用与保存","技能快捷配置","调试与反馈","第三方组件"};
-static void about_text(unsigned section,char *output,size_t capacity)
+/* FAQ集中在这一段追加。正文按实际字高排版，长度不受固定卡片或临时窄字符缓冲限制。 */
+static const char *about_faq=
+    "这玩意收费？\n"
+    "   MIT协议开源，被偷已经是预料之中的事情了。\n   不懂自己问豆包这啥意思，还不懂自己想办法，没人天生该伺候你；\n   如果你是买的资源里看到这个消息，那容我嘲笑一下你。\n   如果看到这个不高兴了可以删了换别人做的或者你自己上。\n   厚脸皮那我也没法了\n\n"
+    "既然知道会被偷那还放这个？\n"
+    "   放点信息当最后的挣扎了，还能让看到的人一起嘲笑\n   被人骗钱或者主动送钱给“不劳而获的狗”的傻子了。\n\n"
+    "话说的太难听了，不适合放进来\n"
+    "   我做的东西我怎么处理都行，我都开源了你让我diss下\n   某种懒狗和偷东西的畜生不行啊？还受不了自己想办法\n\n"
+    "如果要整合这个MOD或者要用这个MOD的代码？\n"
+    "   在我能看得到的地方打个招呼，外带发布的时候声明一下，\n   都MIT协议了，署名是应该的好吧，就算代码是AI写的插件那也全部是我设计的。\n\n"
+    "========== 下面是正式的Q&A ==========\n\n"
+    "怎样操作设置菜单？\n"
+    "   LB/RB切页，方向键浏览。默认A确认、B取消；可在按键设置中交换确认和取消。\n\n"
+    "修改设置后怎样生效？\n"
+    "   按START保存修改。标有重启提示的项目，要退出并重新启动游戏才会生效。\n\n"
+    "技能快捷是每个存档单独保存的吗？\n"
+    "   本体与外传分别保存，每个职业共用一组14个快捷位置。同职业的不同存档共用这一组。\n\n"
+    "遇到问题怎样反馈？\n"
+    "   先开启插件日志，再提供EDSlash.log和本页的构建编号，便于确认正在使用的版本。";
+enum {ABOUT_SECTION_COUNT=5,ABOUT_VIEW_HEIGHT=288,TAB_STEP=144,TAB_WIDTH=136};
+static const char *about_titles[ABOUT_SECTION_COUNT]={"插件说明","版本与构建","作者","常见问题解答","第三方组件"};
+static WCHAR *about_wide[ABOUT_SECTION_COUNT];
+static unsigned about_heights[ABOUT_SECTION_COUNT],about_total,about_step=16;
+static const char *about_text(unsigned section,char *output,size_t capacity)
 {
-    const char *body="";
     switch(section) {
-    case 0:body="为《刀剑封魔录》及外传提供手柄操作、画面适配和便利功能。";break;
-    case 1:snprintf(output,capacity,"版本：%s\n构建：%s",EDSLASH_VERSION,EDSLASH_BUILD_ID);return;
-    case 2:body=EDSLASH_AUTHOR;break;
-    case 3:snprintf(output,capacity,"LB/RB切页，方向键浏览；%s确认、%s取消。\n修改后按START保存，重启项在下次启动时生效。",menu_swap ? "B":"A",menu_swap ? "A":"B");return;
-    case 4:body="本体与外传分别保存，每个职业共用一组14个快捷位置；同职业的不同存档共用这组设置。";break;
-    case 5:body="遇到问题时开启插件日志。提供EDSlash.log和本页的构建编号，便于确认正在使用的版本。";break;
-    case 6:body="使用官方SDL 3.4.16。随发行提供第三方许可说明；插件不包含游戏文件。";break;
+    case 0:return "为《刀剑封魔录》及外传提供手柄操作、画面适配和便利功能。";
+    case 1:snprintf(output,capacity,"版本：%s\n构建：%s",EDSLASH_VERSION,EDSLASH_BUILD_ID);return output;
+    case 2:return EDSLASH_AUTHOR;
+    case 3:return about_faq;
+    case 4:return "使用官方SDL 3.4.16。随发行提供第三方许可说明；插件不包含游戏文件。";
+    default:return "";
     }
-    snprintf(output,capacity,"%s",body);
+}
+static void about_clear_layout(void)
+{
+    for(unsigned i=0;i<ABOUT_SECTION_COUNT;++i){if(about_wide[i])HeapFree(GetProcessHeap(),0,about_wide[i]);about_wide[i]=NULL;}
+    about_total=0;
+}
+static void about_layout(void)
+{
+    if(about_total)return;
+    if(!help_font)help_font=CreateFontW(-14,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,GB2312_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,DEFAULT_QUALITY,DEFAULT_PITCH,L"宋体");
+    HDC dc=CreateCompatibleDC(NULL);if(!dc || !help_font){if(dc)DeleteDC(dc);return;}
+    HGDIOBJ old=SelectObject(dc,help_font);TEXTMETRICW metrics;
+    if(GetTextMetricsW(dc,&metrics) && metrics.tmHeight>0)about_step=(unsigned)metrics.tmHeight;
+    for(unsigned i=0;i<ABOUT_SECTION_COUNT;++i) {
+        char scratch[256];const char *body=about_text(i,scratch,sizeof scratch);
+        int length=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,body,-1,NULL,0);
+        /* 只在首次阅读时转换并测量；关闭窗口释放缓存，帧绘制不反复分配长FAQ。 */
+        if(length>0 && length<=65536) {
+            about_wide[i]=HeapAlloc(GetProcessHeap(),0,(size_t)length*sizeof(WCHAR));
+            if(about_wide[i])MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,body,-1,about_wide[i],length);
+        }
+        RECT r={0,0,560,0};if(about_wide[i])DrawTextW(dc,about_wide[i],-1,&r,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
+        about_heights[i]=(unsigned)(r.bottom+28);if(about_heights[i]<64)about_heights[i]=64;
+        about_total+=about_heights[i]+4;
+    }
+    about_total-=4;SelectObject(dc,old);DeleteDC(dc);
+}
+static unsigned about_max_scroll(void)
+{about_layout();return about_total>ABOUT_VIEW_HEIGHT ? about_total-ABOUT_VIEW_HEIGHT:0;}
+static void about_scroll(int delta)
+{
+    unsigned maximum=about_max_scroll();int64_t value=(int64_t)model.scroll[SETTINGS_PAGE_ABOUT]+delta;
+    if(value<0)value=0;
+    if(value>maximum)value=maximum;
+    model.scroll[SETTINGS_PAGE_ABOUT]=(unsigned)value;
 }
 static void cancel(void)
 {
@@ -336,20 +390,20 @@ static void cancel(void)
 static void save_settings(void)
 {
     if(SettingsModel_Save(&model)) {
-        strcpy(message,RuntimeConfig_NeedsRestart() ? "设置已保存。标有待重启的项目会在下次启动游戏时生效。":"设置已保存。修改会在对应操作安全结束后生效。");
+        strcpy(message,RuntimeConfig_NeedsRestart() ? "设置已保存。待重启的项目在下次启动时生效。":"设置已保存。修改会在对应操作安全结束后生效。");
         editing=0;model.help=1;
     } else {snprintf(message,sizeof message,"%s",RuntimeConfig_Error());error_modal=1;}
 }
 static void reset_item(void)
 {
     SettingsModel_ResetItem(&model,model.focus[model.page]);
-    strcpy(message,"当前项目已恢复默认值。按START保存后生效。");
+    strcpy(message,"当前项目已恢复默认值，保存后生效。");
 }
 static void activate(void)
 {
     /* 确认由内到外处理：关闭询问、技能候选、底部按钮、当前设置项。
      * 所有编辑都先改草稿，只有“保存并应用”才能写配置文件。 */
-    if(confirm_reset){SettingsModel_ResetPage(&model);confirm_reset=0;strcpy(message,"本页已恢复默认设置。按START保存后生效。");model.help=1;return;}
+    if(confirm_reset){SettingsModel_ResetPage(&model);confirm_reset=0;strcpy(message,"本页已恢复默认设置，保存后生效。");model.help=1;return;}
     if(confirm_discard){SettingsModel_Discard(&model);SettingsWindow_Close();return;}
     if(error_modal){error_modal=0;return;}
     if(picker) {
@@ -368,7 +422,7 @@ static void activate(void)
     }
     if(model.page==SETTINGS_PAGE_ABOUT)return;
     message[0]=0;
-    if(model.page==2){if(!model.role){strcpy(message,"请载入角色后设置技能快捷键。");model.help=1;return;}picker=1;pick_focus=pick_scroll=picker_footer=0;model.help=0;
+    if(model.page==2){if(!model.role){strcpy(message,"当前不可用");model.help=1;return;}picker=1;pick_focus=pick_scroll=picker_footer=0;model.help=0;
         ConfigBinding selected=effective_binding(model.focus[2]);picker_rebuild(selected.custom ? selected.selector:-1);
         return;}
     ConfigId id=SettingsModel_Field(model.page,model.focus[model.page]);const ConfigDescriptor *f=RuntimeConfig_Descriptor(id);
@@ -414,8 +468,8 @@ static void move(int dir)
     }
     if(model.page==SETTINGS_PAGE_ABOUT) {
         unsigned *top=&model.scroll[SETTINGS_PAGE_ABOUT];
-        if(dir==1 && *top)--*top;
-        if(dir==2){if(*top<ABOUT_SECTION_COUNT-ABOUT_VISIBLE)++*top;else footer=1;}
+        if(dir==1)about_scroll(-(int)about_step);
+        if(dir==2){if(*top<about_max_scroll())about_scroll((int)about_step);else footer=1;}
         return;
     }
     unsigned before=model.focus[model.page];SettingsModel_Move(&model,dir,6);
@@ -494,22 +548,27 @@ static void box(HDC dc,int x,int y,int w,int h,COLORREF fill,COLORREF edge)
     }
     RECT r={x,y,x+w,y+h};FillRect(dc,&r,selected[0]);FrameRect(dc,&r,selected[1]);
 }
-/* 弹窗和底部操作共用按钮外观；文字靠左，键位靠右，两部分互不抢空间。 */
+/* 所有单行按钮共用纵向居中。标签靠左、提示靠右，不依靠固定顶部偏移。 */
+static void button_text(HDC dc,int x,int y,int w,int h,const char *label,COLORREF color,UINT align)
+{
+    WCHAR wide[256];if(!MultiByteToWideChar(CP_UTF8,0,label,-1,wide,256))return;
+    RECT r={x,y,x+w,y+h};SetTextColor(dc,color);SetBkMode(dc,TRANSPARENT);
+    DrawTextW(dc,wide,-1,&r,align|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX);
+}
 static void action_button(HDC dc,int x,int y,int w,int h,const char *label,const char *key,int focused)
 {
     box(dc,x,y,w,h,RGB(45,36,24),focused ? RGB(204,69,36):RGB(164,124,59));
-    text(dc,x+8,y+4,w-64,h-8,label,RGB(236,218,178));
-    WCHAR wide[40];if(!MultiByteToWideChar(CP_UTF8,0,key,-1,wide,40))return;
-    RECT r={x+w-60,y+4,x+w-8,y+h-4};SetTextColor(dc,RGB(236,218,178));SetBkMode(dc,TRANSPARENT);
-    DrawTextW(dc,wide,-1,&r,DT_RIGHT|DT_TOP|DT_SINGLELINE|DT_NOPREFIX);
+    int reserved=key && key[0] ? 64:16;
+    button_text(dc,x+8,y,w-reserved,h,label,RGB(236,218,178),DT_LEFT);
+    if(key && key[0])button_text(dc,x+w-60,y,52,h,key,RGB(236,218,178),DT_RIGHT);
 }
 static void value_text(ConfigId id,char *out,size_t cap)
 {
     const ConfigDescriptor *f=RuntimeConfig_Descriptor(id);int v=model.draft.values[id];
-    if(id==CONFIG_GUARD_MODE)snprintf(out,cap,"%s",v ? "按最大体力比例":"原版数值");
-    else if(id==CONFIG_RECOVERY_MODE)snprintf(out,cap,"%s",v ? "按最大体力比例":"与防御消耗一致");
+    if(id==CONFIG_GUARD_MODE)snprintf(out,cap,"%s",v ? "按最大体力比例":"游戏原始数值");
+    else if(id==CONFIG_RECOVERY_MODE)snprintf(out,cap,"%s",v ? "按最大体力比例":"与防御消耗相同");
     else if(id==CONFIG_COMBO_SWITCH)snprintf(out,cap,"%s",v ? "LT＋方向键":"LT＋Y/B/A/X");
-    else if(id==CONFIG_PICKUP_MODE){const char *names[]={"关闭自动拾取","只拾取钱","钱和恢复道具","再加宝石护身石","全部物品"};snprintf(out,cap,"%s",names[v]);}
+    else if(id==CONFIG_PICKUP_MODE){const char *names[]={"关闭自动拾取","金钱","金钱+恢复道具","金钱+恢复道具+石头","全部掉落物"};snprintf(out,cap,"%s",names[v]);}
     else if(f->type==CONFIG_BOOL)snprintf(out,cap,"%s",v ? "开启":"关闭");
     else if(f->type==CONFIG_TEXT)snprintf(out,cap,"%s",model.draft.aspect_ratio);
     else if(f->type==CONFIG_PERCENT)snprintf(out,cap,"%d.%02d%%",v/100,v%100);
@@ -534,7 +593,7 @@ static RECT help_rectangle(void)
 static void scroll_metrics(unsigned *total,unsigned *visible,unsigned *top,RECT *track)
 {
     if(picker){*total=skill_view_count;*visible=5;*top=(unsigned)pick_scroll;*track=(RECT){308,122,316,362};}
-    else if(model.page==SETTINGS_PAGE_ABOUT){*total=ABOUT_SECTION_COUNT;*visible=ABOUT_VISIBLE;*top=model.scroll[model.page];*track=(RECT){596,82,604,370};}
+    else if(model.page==SETTINGS_PAGE_ABOUT){about_layout();*total=about_total;*visible=ABOUT_VIEW_HEIGHT;*top=model.scroll[model.page];*track=(RECT){596,82,604,370};}
     else {*total=(SettingsModel_Count(model.page)+1)/2;*visible=6;*top=model.scroll[model.page];*track=(RECT){596,82,604,370};}
 }
 static RECT scroll_thumb(void)
@@ -576,7 +635,7 @@ static void paint_native_entry(unsigned long context)
     logical_width=(int)rd(surface,0xC);logical_height=(int)rd(surface,0x10);
     HDC dc=NULL;SurfaceGetDC get=(SurfaceGetDC)(uintptr_t)rd(table,0x44);SurfaceReleaseDC release=(SurfaceReleaseDC)(uintptr_t)rd(table,0x68);
     if(get(dd,&dc)!=S_OK || !dc)return;
-    box(dc,r.left,r.top,r.right-r.left,r.bottom-r.top,RGB(12,12,12),RGB(70,59,40));release(dd,dc);
+    box(dc,r.left,r.top,r.right-r.left,r.bottom-r.top,RGB(0,0,0),RGB(70,59,40));release(dd,dc);
     static char caption[48];if(!caption[0])WideCharToMultiByte(936,0,L"EDSlash设置",-1,caption,sizeof caption,NULL,NULL);
     typedef int (__attribute__((thiscall)) *NativeText)(void *,unsigned long,const char *,int,int,int);
     /* 原文字接口以传入x为文字中心；底板和文字必须使用相同中心。
@@ -610,14 +669,14 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
     int x=origin_x,y=origin_y;box(dc,x,y,608,448,RGB(20,18,15),RGB(164,124,59));
     text(dc,x+16,y+10,450,24,"EDSlash 模组设置",RGB(231,206,154));
     const char *pages[]={"模组设置","按键设置","技能快捷","关于"};
-    for(unsigned i=0;i<SETTINGS_PAGE_COUNT;++i){box(dc,x+16+(int)i*TAB_STEP,y+38,TAB_WIDTH,30,RGB(40,32,23),i==model.page ? RGB(218,168,80):RGB(104,78,38));text(dc,x+24+(int)i*TAB_STEP,y+44,TAB_WIDTH-16,20,pages[i],RGB(226,210,174));}
+    for(unsigned i=0;i<SETTINGS_PAGE_COUNT;++i){box(dc,x+16+(int)i*TAB_STEP,y+38,TAB_WIDTH,30,RGB(40,32,23),i==model.page ? RGB(218,168,80):RGB(104,78,38));button_text(dc,x+24+(int)i*TAB_STEP,y+38,TAB_WIDTH-16,30,pages[i],RGB(226,210,174),DT_LEFT);}
     unsigned start=model.scroll[model.page]*2,count=SettingsModel_Count(model.page);
     for(unsigned i=start;i<count && i<start+12;++i) {
         int cx=x+16+(int)(i%2)*288,cy=y+82+(int)((i-start)/2)*48;int focused=!footer && model.focus[model.page]==i && (model.page!=2 || model.role);
         box(dc,cx,cy,280,42,RGB(31,27,21),focused ? RGB(204,69,36):RGB(96,75,43));
         char label[96],value_text_buffer[96];int dirty=0;
         if(model.page==2) {
-            static const char *names[]={"A","B","X","Y","上","下","左","右","LB","RB","Back","Start","L3","R3"};
+            static const char *names[]={"A","B","X","Y","↑","↓","←","→","LB","RB","Back","Start","L3","R3"};
             snprintf(label,sizeof label,"RT + %s",names[i]);ConfigBinding b=model.draft_bindings[i];
             strcpy(value_text_buffer,model.role ? "未设置":"载入角色后设置");ConfigBinding shown=effective_binding(i);
             if(shown.custom)for(unsigned n=0;n<skill_count;++n)if(skills[n].selector==shown.selector)snprintf(value_text_buffer,sizeof value_text_buffer,"%s",skills[n].name);
@@ -631,18 +690,29 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
             snprintf(label,sizeof label,"%s%s",f->label,state);value_text(id,value_text_buffer,sizeof value_text_buffer);
             dirty=f->type==CONFIG_TEXT ? strcmp(model.draft.aspect_ratio,model.saved.aspect_ratio)!=0:model.draft.values[id]!=model.saved.values[id];
         }
-        text(dc,cx+(model.page==2 ? 54:8),cy+3,model.page==2 ? 218:264,18,label,RGB(222,205,172));text(dc,cx+(model.page==2 ? 54:8),cy+21,model.page==2 ? 218:264,18,value_text_buffer,model.page==2 && !model.role ? RGB(112,112,112):dirty ? RGB(255,178,76):RGB(154,198,149));
+        /* 双行设置按钮把名称与数值视为一组，按实际字体高度放在42像素框的正中。 */
+        TEXTMETRICW metrics;int line=GetTextMetricsW(dc,&metrics) ? metrics.tmHeight:16;
+        int group_y=cy+(42-line*2-2)/2;
+        button_text(dc,cx+(model.page==2 ? 54:8),group_y,model.page==2 ? 218:264,line,label,RGB(222,205,172),DT_LEFT);
+        button_text(dc,cx+(model.page==2 ? 54:8),group_y+line+2,model.page==2 ? 218:264,line,value_text_buffer,model.page==2 && !model.role ? RGB(112,112,112):dirty ? RGB(255,178,76):RGB(154,198,149),DT_LEFT);
     }
     if(model.page==SETTINGS_PAGE_ABOUT) {
-        if(!help_font)help_font=CreateFontW(-14,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,GB2312_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,DEFAULT_QUALITY,DEFAULT_PITCH,L"宋体");
+        about_layout();
         HGDIOBJ prior=help_font ? SelectObject(dc,help_font):NULL;
-        unsigned top=model.scroll[SETTINGS_PAGE_ABOUT];
-        for(unsigned i=top;i<ABOUT_SECTION_COUNT && i<top+ABOUT_VISIBLE;++i) {
-            int row_y=y+82+(int)(i-top)*68;char body[1024];about_text(i,body,sizeof body);
-            box(dc,x+16,row_y,576,64,RGB(28,25,19),RGB(104,78,38));
-            text(dc,x+24,row_y+4,560,18,about_titles[i],RGB(231,206,154));
-            text(dc,x+24,row_y+23,560,39,body,RGB(222,205,172));
+        unsigned top=model.scroll[SETTINGS_PAGE_ABOUT];int row_y=y+82-(int)top;
+        /* 长卡片只显示正文视口内的部分；裁剪不会让FAQ盖住按钮或相邻页面。 */
+        int clip=SaveDC(dc);if(clip)IntersectClipRect(dc,x+16,y+82,x+592,y+370);
+        for(unsigned i=0;i<ABOUT_SECTION_COUNT;++i) {
+            int height=(int)about_heights[i];
+            if(clip && row_y+height>y+82 && row_y<y+370) {
+                box(dc,x+16,row_y,576,height,RGB(28,25,19),RGB(104,78,38));
+                text(dc,x+24,row_y+4,560,18,about_titles[i],RGB(231,206,154));
+                RECT body={x+24,row_y+23,x+584,row_y+height-5};SetTextColor(dc,RGB(222,205,172));SetBkMode(dc,TRANSPARENT);
+                if(about_wide[i])DrawTextW(dc,about_wide[i],-1,&body,DT_LEFT|DT_TOP|DT_WORDBREAK|DT_NOPREFIX);
+            }
+            row_y+=height+4;
         }
+        if(clip)RestoreDC(dc,clip);
         if(prior)SelectObject(dc,prior);
         action_button(dc,x+16,y+378,280,30,"保存","START",footer==1);
         action_button(dc,x+304,y+378,288,30,"关闭",menu_swap ? "A":"B",footer==2);
@@ -652,7 +722,7 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         action_button(dc,x+304,y+378,136,30,editing ? "当前默认":"本页默认","BACK",footer==3);
         if(!picker)action_button(dc,x+448,y+378,144,30,model.help ? "隐藏说明":"显示说明","Y",0);
     }
-    const char *hint=model.page==SETTINGS_PAGE_ABOUT ? "LB/RB切页，上下或滚轮浏览；START保存，取消键关闭":editing ? "左右×1，上下×10，长按加速；BACK默认，START保存":"LB/RB分类，BACK本页默认，START保存，Y说明";
+    const char *hint=model.page==SETTINGS_PAGE_ABOUT ? "LB/RB 换页 | ↑/↓ 浏览 | START 保存 | 取消键 关闭":editing ? "左右×1 | 上下×10 | 长按加速 | BACK 默认 | START 保存":"LB/RB 分类 | BACK 本页默认 | START 保存 | Y 说明";
     text(dc,x+16,y+416,576,26,message[0] ? message:hint,RGB(207,188,154));
     paint_scrollbar(dc,x,y);
     if(picker) {
@@ -662,7 +732,7 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         for(unsigned n=(unsigned)pick_scroll;n<skill_view_count && n<(unsigned)pick_scroll+5;++n) {
             int sy=y+122+(int)(n-(unsigned)pick_scroll)*48;
             box(dc,x+24,sy,280,48,RGB(37,32,25),!picker_footer && n==(unsigned)pick_focus ? RGB(204,69,36):RGB(88,71,42));
-            text(dc,x+80,sy+14,216,28,n ? skills[skill_view[n]].name:"未设置",RGB(225,207,177));
+            button_text(dc,x+80,sy,216,48,n ? skills[skill_view[n]].name:"未设置",RGB(225,207,177),DT_LEFT);
         }
         paint_scrollbar(dc,x,y);
     }
@@ -701,8 +771,7 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         box(dc,x+96,y+138,416,190,RGB(26,23,18),RGB(208,151,67));
         text(dc,x+112,y+152,384,24,"无法保存设置",RGB(255,178,76));
         text(dc,x+112,y+188,384,84,message,RGB(238,218,177));
-        box(dc,x+208,y+286,192,28,RGB(45,36,24),RGB(164,124,59));
-        text(dc,x+216,y+290,176,24,"返回修改 (A/B)",RGB(238,218,177));
+        action_button(dc,x+208,y+286,192,28,"返回修改","A/B",0);
     }
     if(previous)SelectObject(dc,previous);
     if(saved_dc)RestoreDC(dc,saved_dc);
@@ -730,7 +799,11 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
     }
 }
 int SettingsWindow_Wheel(int delta)
-{if(!active)return 0;pointer_mode=1;move(delta>0 ? 1:2);return 1;}
+{if(!active)return 0;pointer_mode=1;
+    if(model.page==SETTINGS_PAGE_ABOUT && !confirm_discard && !confirm_reset && !error_modal){about_layout();about_scroll((delta>0 ? -3:3)*(int)about_step);footer=0;}
+    else move(delta>0 ? 1:2);
+    return 1;
+}
 static void mouse_click(int x,int y)
 {
     /* 坐标已换算为面板坐标。先处理最上层，任何模态都不把点击漏给背后的设置。 */
@@ -847,5 +920,5 @@ int SettingsWindow_Initialize(const RuntimeContext *runtime)
     if(!draw_subscribed)draw_subscribed=Runtime_Subscribe(RUNTIME_EVENT_UI_DRAW_END,paint,NULL);
     if(!input_subscribed)input_subscribed=Runtime_Subscribe(RUNTIME_EVENT_INPUT_FRAME_END,keyboard,NULL);
     if(!draw_subscribed || !input_subscribed)return 0;
-    ready=1;RuntimeLog_Write("[模组设置] 原接口已校验；场景中LT+RT+Back或主键盘1左侧按键打开并使用原暂停。");return 1;
+    ready=1;RuntimeLog_Write("[模组设置] 原接口已校验；场景中LT+RT+Back或主键盘重音键（1左边的）打开并使用原暂停。");return 1;
 }

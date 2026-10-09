@@ -1,3 +1,4 @@
+#include "../src/Runtime/FileIO.h"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdio.h>
@@ -94,7 +95,12 @@ static int snapshot(const BITMAPINFOHEADER *header,const void *pixels)
 }
 int wmain(void)
 {
-    wchar_t path[1024];swprintf(path,1024,L"窗口配置回归_%lu.toml",GetCurrentProcessId());
+    /* 每次回放保留系统分配的独立文件名，写入默认配置后再读取。
+     * 即使检查失败留下文件、Windows复用进程编号，也不会读到其它回放的草稿。 */
+    wchar_t path[1024];CHECK(GetTempFileNameW(L".",L"ESW",0,path));
+    static char defaults[65536];size_t defaults_size;
+    CHECK(RuntimeConfig_DefaultText(defaults,sizeof defaults,&defaults_size));
+    CHECK(RuntimeFile_WriteAtomic(path,defaults,defaults_size,0));
     CHECK(RuntimeConfig_OpenPath(path));ready=1;game=2;
     backend=(SettingsBackend){.world_global=(uintptr_t)&world_ptr,.ui=(uintptr_t)fake_ui,.skill_global=(uintptr_t)&hud_ptr,
         .inventory_root=(uintptr_t)fake_player,.inventory_get=(uintptr_t)get_player,.get_jm=(uintptr_t)get_root,
@@ -159,13 +165,28 @@ int wmain(void)
     RECT about_canvas={0,0,960,600};FillRect(fixture_dc,&about_canvas,(HBRUSH)GetStockObject(WHITE_BRUSH));
     paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
     snapshot_path="settings_about_fixture.bmp";CHECK(snapshot(&info.bmiHeader,pixels));
-    char about_body[1024];about_text(1,about_body,sizeof about_body);CHECK(strstr(about_body,EDSLASH_VERSION) && strstr(about_body,EDSLASH_BUILD_ID));
-    about_text(2,about_body,sizeof about_body);CHECK(strstr(about_body,EDSLASH_AUTHOR));
+    char about_body[1024];const char *about_info=about_text(1,about_body,sizeof about_body);CHECK(strstr(about_info,EDSLASH_VERSION) && strstr(about_info,EDSLASH_BUILD_ID));
+    about_info=about_text(2,about_body,sizeof about_body);CHECK(strstr(about_info,EDSLASH_AUTHOR));
+    /* 验证超过2048宽字符的长FAQ完整转换且末尾可滚到，检查后恢复正式文案。 */
+    const char *saved_faq=about_faq;static char long_faq[32768];
+    for(unsigned n=0;n<100;++n)strcat(long_faq,"问：追加的问题。\n答：追加说明应完整显示，不能被固定缓存和高度裁掉。\n\n");
+    strcat(long_faq,"末尾验收标记");about_clear_layout();about_faq=long_faq;about_layout();
+    CHECK(about_heights[3]>ABOUT_VIEW_HEIGHT && wcsstr(about_wide[3],L"末尾验收标记") && wcslen(about_wide[3])>2048);
+    scroll_at(370);CHECK(model.scroll[SETTINGS_PAGE_ABOUT]==about_max_scroll());
+    about_clear_layout();about_faq=saved_faq;model.scroll[SETTINGS_PAGE_ABOUT]=0;about_layout();
+    /* 从实际字形像素检查28/30/36像素按钮，文字上下留白不能继续偏向顶部。 */
+    for(int height=28;height<=36;height+=2) {
+        FillRect(fixture_dc,&about_canvas,(HBRUSH)GetStockObject(WHITE_BRUSH));
+        action_button(fixture_dc,20,20,192,height,"完成","A",0);int first=height,last=-1;
+        for(int yy=0;yy<height;++yy)for(int xx=8;xx<184;++xx){COLORREF c=GetPixel(fixture_dc,20+xx,20+yy);
+            if(GetRValue(c)>120 && GetGValue(c)>120 && GetBValue(c)>90){if(yy<first)first=yy;if(yy>last)last=yy;}}
+        CHECK(last>=first && abs(first-(height-1-last))<=2);
+    }
     ConfigSnapshot about_before=model.draft;ConfigBinding about_bindings[14];memcpy(about_bindings,model.draft_bindings,sizeof about_bindings);
     activate();SettingsWindow_Pad(1u<<4,1u<<4,0,0,0,0,0,0,130);CHECK(!editing && !picker && !confirm_reset);
     CHECK(!memcmp(&about_before,&model.draft,sizeof about_before) && !memcmp(about_bindings,model.draft_bindings,sizeof about_bindings));
-    SettingsWindow_Wheel(-1);CHECK(model.scroll[SETTINGS_PAGE_ABOUT]==1);
-    scroll_at(370);CHECK(model.scroll[SETTINGS_PAGE_ABOUT]==ABOUT_SECTION_COUNT-ABOUT_VISIBLE);
+    SettingsWindow_Wheel(-1);CHECK(model.scroll[SETTINGS_PAGE_ABOUT]>0);
+    scroll_at(370);CHECK(model.scroll[SETTINGS_PAGE_ABOUT]==about_max_scroll());
     FillRect(fixture_dc,&about_canvas,(HBRUSH)GetStockObject(WHITE_BRUSH));
     paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
     snapshot_path="settings_about_bottom_fixture.bmp";CHECK(snapshot(&info.bmiHeader,pixels));
@@ -286,12 +307,16 @@ int wmain(void)
     native_settings_table[0x24/4]=(uintptr_t)native_action;wr(native_settings_root,0,(uint32_t)(uintptr_t)native_settings_table);
     wr(native_settings_root,0x28,0xAA);wr(native_settings_root,0x64,1);wr(fake_world,0x58,0);wr(fake_ui,0x3C,(uint32_t)(uintptr_t)native_settings_root);
     RuntimeFocusRect entry;CHECK(SettingsWindow_NativeEntryRect(native_settings_root,&entry));
-    paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);CHECK(native_captions==1);
+    paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);CHECK(native_captions==1 && GetPixel(fixture_dc,entry.left+5,entry.top+5)==RGB(0,0,0));
     SettingsWindow_NativeEntryFocus(native_settings_root,1);expected_caption_color=RGB(255,255,0);
     paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);CHECK(native_captions==2 && rd(native_settings_root,0x78)==0);
     SettingsWindow_NativeEntryFocus(NULL,0);expected_caption_color=0;
     unsigned pause_before=pauses;CHECK(SettingsWindow_OpenNative(native_settings_root) && !model.role && pauses==pause_before);
-    model.page=2;activate();CHECK(!picker && strstr(message,"载入角色"));
+    /* 验证无角色时拒绝编辑并给出提示，不将提示的具体措辞当成业务协议。 */
+    model.page=2;ConfigSnapshot disabled_draft=model.draft;ConfigBinding disabled_bindings[14];
+    memcpy(disabled_bindings,model.draft_bindings,sizeof disabled_bindings);
+    activate();CHECK(!picker && !editing && model.help && message[0]);
+    CHECK(!memcmp(&disabled_draft,&model.draft,sizeof disabled_draft) && !memcmp(disabled_bindings,model.draft_bindings,sizeof disabled_bindings));
     CHECK(!SettingsModel_SetBinding(&model,1,(ConfigBinding){1,123,1}));
     model.page=0;CHECK(SettingsModel_SetInt(&model,CONFIG_AIM_EXPAND_MS,700));save_settings();CHECK(!SettingsModel_Dirty(&model));
     model.page=SETTINGS_PAGE_ABOUT;model.help=1;activate();CHECK(!editing && !picker && !confirm_reset);

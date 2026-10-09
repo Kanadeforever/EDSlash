@@ -54,6 +54,8 @@ int main(void)
     backend.birthday=1;
     wr(fake_month,0,222);wr(fake_month,0x28,0xDF);wr(fake_month,0xA4,(uintptr_t)fake_page);
     wr(fake_day,0,222);wr(fake_day,0x28,0xE0);wr(fake_day,0xA4,(uintptr_t)fake_page);
+    /* 用固定种子复现同一组合法日期；测试覆盖不能依赖系统时间或随机抽中某一天。 */
+    birthday_state=1;
     unsigned seen_months=0;int leap_seen=0;
     for(unsigned i=0;i<1000;++i){CHECK(RandomNameUI_Request(fake_page));unsigned m=(unsigned)atoi(birth_month),d=(unsigned)atoi(birth_day);
         CHECK(m>=1 && m<=12 && d>=1 && d<=month_days[m-1]);seen_months|=1u<<(m-1);if(m==2 && d==29)leap_seen=1;}
