@@ -78,3 +78,5 @@ Guard设置应用测试使用真实TOML与双版本运动回放；test_menu链�
 GCC16的SDL HID单元使用-fno-ipa-cp-clone，避免编译器丢失被函数表引用的静态包装函数；其余单元和完整上游源码／后端不改。构建成功后清理源码内旧.build及Python字节缓存，当前根.build保留增量产物／诊断。
 
 正式构建成功后默认清理根.build；--checks-only或失败保留诊断，--keep-build保留增量缓存。随机核心195611项脚本回归和新名称窗口适配纳入构建，原始证据/正式产物不放缓存。
+
+设置的第四页“关于”显示CMake项目版本、当前源码摘要和作者；版本由PROJECT_VERSION提供，作者在Runtime/BuildInfo.h维护。关于文案和只读滚动在SettingsWindow.c，不改变TOML配置格式。

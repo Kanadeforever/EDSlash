@@ -33,7 +33,7 @@ int SettingsModel_Open(SettingsModel *m,unsigned game,unsigned role)
 void SettingsModel_Page(SettingsModel *m,int delta)
 {
     if(!m)return;
-    m->page=(m->page+(delta<0 ? 2u:1u))%3; /* 大类循环，每页独立保留焦点与滚动 */
+    m->page=(m->page+(delta<0 ? SETTINGS_PAGE_COUNT-1u:1u))%SETTINGS_PAGE_COUNT; /* 大类循环，每页独立保留焦点与滚动 */
 }
 void SettingsModel_Move(SettingsModel *m,int direction,unsigned visible)
 {

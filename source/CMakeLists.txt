@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 project(EDSlash VERSION 0.2.0 LANGUAGES C CXX)
+# 关于页读取项目唯一版本定义，不另抄一份版本号。
+add_compile_definitions(EDSLASH_VERSION=\"${PROJECT_VERSION}\")
 # 生产单元与SDL使用同一32位Windows工具链，避免架构和运行库混用。
 if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 4 OR NOT MINGW)
     message(FATAL_ERROR "EDSlash需要32位MinGW工具链；设置EDSLASH_CC或将i686编译器加入PATH。")
@@ -132,6 +134,7 @@ edslash_test(test_config tools/test_config.c src/Runtime/SettingsModel.c src/Run
 target_compile_options(test_config PRIVATE -municode)
 target_link_options(test_config PRIVATE -municode)
 edslash_test(test_settings_window tools/test_settings_window.c src/Runtime/SettingsModel.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c)
+target_compile_definitions(test_settings_window PRIVATE EDSLASH_BUILD_ID=\"${EDSLASH_BUILD_ID}\")
 target_compile_options(test_settings_window PRIVATE -municode)
 target_link_options(test_settings_window PRIVATE -municode)
 target_link_libraries(test_settings_window PRIVATE user32 gdi32)

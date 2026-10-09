@@ -110,6 +110,10 @@ int wmain(void)
     /* 双列模型在末行停留，滚动跟随焦点；Y说明不改变导航或候选保存。 */
     SettingsModel model;CHECK(SettingsModel_Open(&model,1,4));
     CHECK(SettingsModel_Count(0)+SettingsModel_Count(1)==CONFIG_COUNT && SettingsModel_Count(2)==14);
+    SettingsModel_Page(&model,-1);CHECK(model.page==SETTINGS_PAGE_ABOUT && !SettingsModel_Count(model.page));
+    CHECK(SettingsModel_Field(model.page,0)==CONFIG_COUNT);
+    ConfigSnapshot about_draft=model.draft;SettingsModel_ResetPage(&model);SettingsModel_Move(&model,2,4);
+    CHECK(!memcmp(&about_draft,&model.draft,sizeof about_draft));
     SettingsModel_Page(&model,-1);CHECK(model.page==2);
     model.help=1;
     for(unsigned i=0;i<20;++i)SettingsModel_Move(&model,2,4);

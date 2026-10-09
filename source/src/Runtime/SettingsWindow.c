@@ -5,6 +5,7 @@
 #include <string.h>
 #include <math.h>
 #include "SettingsWindow.h"
+#include "BuildInfo.h"
 #include "SettingsModel.h"
 #include "Win32Bridge.h"
 #include "Log.h"
@@ -304,6 +305,23 @@ static void scaled_icon(unsigned long context,void *icons,void *animation,int ic
     StretchBlt(dc,origin_x+target.left,origin_y+target.top,target.right-target.left,target.bottom-target.top,work,0,0,sw,sh,SRCCOPY);
     SetStretchBltMode(dc,old_mode);SelectObject(work,old);DeleteDC(work);DeleteDC(backup);release(dd,dc);
 }
+/* 关于页按完整信息段滚动，没有可修改设置，不能将正文当成配置条目。 */
+enum {ABOUT_SECTION_COUNT=7,ABOUT_VISIBLE=4,TAB_STEP=144,TAB_WIDTH=136};
+static const char *about_titles[ABOUT_SECTION_COUNT]={"插件说明","版本与构建","作者","使用与保存","技能快捷配置","调试与反馈","第三方组件"};
+static void about_text(unsigned section,char *output,size_t capacity)
+{
+    const char *body="";
+    switch(section) {
+    case 0:body="为《刀剑封魔录》及外传提供手柄操作、画面适配和便利功能。";break;
+    case 1:snprintf(output,capacity,"版本：%s\n构建：%s",EDSLASH_VERSION,EDSLASH_BUILD_ID);return;
+    case 2:body=EDSLASH_AUTHOR;break;
+    case 3:snprintf(output,capacity,"LB/RB切页，方向键浏览；%s确认、%s取消。\n修改后按START保存，重启项在下次启动时生效。",menu_swap ? "B":"A",menu_swap ? "A":"B");return;
+    case 4:body="本体与外传分别保存，每个职业共用一组14个快捷位置；同职业的不同存档共用这组设置。";break;
+    case 5:body="遇到问题时开启插件日志。提供EDSlash.log和本页的构建编号，便于确认正在使用的版本。";break;
+    case 6:body="使用官方SDL 3.4.16。随发行提供第三方许可说明；插件不包含游戏文件。";break;
+    }
+    snprintf(output,capacity,"%s",body);
+}
 static void cancel(void)
 {
     if(error_modal){error_modal=0;return;}
@@ -344,10 +362,11 @@ static void activate(void)
     }
     if(footer) {
         if(footer==2){cancel();return;}
-        if(footer==3){confirm_reset=1;return;}
+        if(footer==3){if(model.page!=SETTINGS_PAGE_ABOUT)confirm_reset=1;return;}
         save_settings();
         return;
     }
+    if(model.page==SETTINGS_PAGE_ABOUT)return;
     message[0]=0;
     if(model.page==2){if(!model.role){strcpy(message,"请载入角色后设置技能快捷键。");model.help=1;return;}picker=1;pick_focus=pick_scroll=picker_footer=0;model.help=0;
         ConfigBinding selected=effective_binding(model.focus[2]);picker_rebuild(selected.custom ? selected.selector:-1);
@@ -390,7 +409,13 @@ static void move(int dir)
     if(footer) {
         if(dir==1){footer=0;return;}
         if(dir==3 && footer>1)--footer;
-        if(dir==4 && footer<3)++footer;
+        if(dir==4 && footer<(model.page==SETTINGS_PAGE_ABOUT ? 2:3))++footer;
+        return;
+    }
+    if(model.page==SETTINGS_PAGE_ABOUT) {
+        unsigned *top=&model.scroll[SETTINGS_PAGE_ABOUT];
+        if(dir==1 && *top)--*top;
+        if(dir==2){if(*top<ABOUT_SECTION_COUNT-ABOUT_VISIBLE)++*top;else footer=1;}
         return;
     }
     unsigned before=model.focus[model.page];SettingsModel_Move(&model,dir,6);
@@ -434,13 +459,14 @@ int SettingsWindow_Pad(uint32_t held,uint32_t pressed,int lt,int rt,float lx,flo
     /* 已有模态确认优先，普通设置页BACK重置、START保存；不占用战斗键。 */
     if(pressed&(1u<<6)){if(picker)activate();save_settings();return 1;}
     if(pressed&(1u<<4)) {
+        if(model.page==SETTINGS_PAGE_ABOUT)return 1;
         if(editing || picker){reset_item();if(picker){picker=0;model.help=1;}}
         else confirm_reset=1;
         return 1;
     }
     if(pressed&(1u<<9)){editing=picker=footer=0;message[0]=0;SettingsModel_Page(&model,-1);}
     if(pressed&(1u<<10)){editing=picker=footer=0;message[0]=0;SettingsModel_Page(&model,1);}
-    if(!picker && (pressed&(1u<<3)))model.help=!model.help;
+    if(!picker && model.page!=SETTINGS_PAGE_ABOUT && (pressed&(1u<<3)))model.help=!model.help;
     if(pressed&(1u<<(menu_swap ? 1:0)))activate();
     if(pressed&(1u<<(menu_swap ? 0:1)))cancel();
     int dir=held&(1u<<11) ? 1:held&(1u<<12) ? 2:held&(1u<<13) ? 3:held&(1u<<14) ? 4:0;
@@ -508,6 +534,7 @@ static RECT help_rectangle(void)
 static void scroll_metrics(unsigned *total,unsigned *visible,unsigned *top,RECT *track)
 {
     if(picker){*total=skill_view_count;*visible=5;*top=(unsigned)pick_scroll;*track=(RECT){308,122,316,362};}
+    else if(model.page==SETTINGS_PAGE_ABOUT){*total=ABOUT_SECTION_COUNT;*visible=ABOUT_VISIBLE;*top=model.scroll[model.page];*track=(RECT){596,82,604,370};}
     else {*total=(SettingsModel_Count(model.page)+1)/2;*visible=6;*top=model.scroll[model.page];*track=(RECT){596,82,604,370};}
 }
 static RECT scroll_thumb(void)
@@ -529,6 +556,7 @@ static void scroll_at(int y)
     top=(unsigned)MulDiv(position,(int)(total-visible),length);
     /* 拖动时焦点保持在可见列表内，避免按确认修改已经滚出画面的项目。 */
     if(picker){pick_scroll=(int)top;picker_footer=0;if(pick_focus<(int)top || pick_focus>=(int)(top+visible))pick_focus=(int)top;}
+    else if(model.page==SETTINGS_PAGE_ABOUT){model.scroll[model.page]=top;footer=0;}
     else {model.scroll[model.page]=top;unsigned *focus=&model.focus[model.page];
         if(*focus/2<top || *focus/2>=top+visible)*focus=top*2+(*focus%2);
         footer=0;}
@@ -581,8 +609,8 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
     HGDIOBJ previous=font ? SelectObject(dc,font):NULL;
     int x=origin_x,y=origin_y;box(dc,x,y,608,448,RGB(20,18,15),RGB(164,124,59));
     text(dc,x+16,y+10,450,24,"EDSlash 模组设置",RGB(231,206,154));
-    const char *pages[]={"模组设置","按键设置","技能快捷"};
-    for(unsigned i=0;i<3;++i){box(dc,x+16+(int)i*192,y+38,184,30,RGB(40,32,23),i==model.page ? RGB(218,168,80):RGB(104,78,38));text(dc,x+24+(int)i*192,y+44,160,20,pages[i],RGB(226,210,174));}
+    const char *pages[]={"模组设置","按键设置","技能快捷","关于"};
+    for(unsigned i=0;i<SETTINGS_PAGE_COUNT;++i){box(dc,x+16+(int)i*TAB_STEP,y+38,TAB_WIDTH,30,RGB(40,32,23),i==model.page ? RGB(218,168,80):RGB(104,78,38));text(dc,x+24+(int)i*TAB_STEP,y+44,TAB_WIDTH-16,20,pages[i],RGB(226,210,174));}
     unsigned start=model.scroll[model.page]*2,count=SettingsModel_Count(model.page);
     for(unsigned i=start;i<count && i<start+12;++i) {
         int cx=x+16+(int)(i%2)*288,cy=y+82+(int)((i-start)/2)*48;int focused=!footer && model.focus[model.page]==i && (model.page!=2 || model.role);
@@ -605,11 +633,27 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         }
         text(dc,cx+(model.page==2 ? 54:8),cy+3,model.page==2 ? 218:264,18,label,RGB(222,205,172));text(dc,cx+(model.page==2 ? 54:8),cy+21,model.page==2 ? 218:264,18,value_text_buffer,model.page==2 && !model.role ? RGB(112,112,112):dirty ? RGB(255,178,76):RGB(154,198,149));
     }
-    action_button(dc,x+16,y+378,136,30,"保存","START",footer==1);
-    action_button(dc,x+160,y+378,136,30,"关闭",menu_swap ? "A":"B",footer==2);
-    action_button(dc,x+304,y+378,136,30,editing ? "当前默认":"本页默认","BACK",footer==3);
-    if(!picker)action_button(dc,x+448,y+378,144,30,model.help ? "隐藏说明":"显示说明","Y",0);
-    text(dc,x+16,y+416,576,26,message[0] ? message:(editing ? "左右×1，上下×10，长按加速；BACK默认，START保存":"LB/RB分类，BACK本页默认，START保存，Y说明"),RGB(207,188,154));
+    if(model.page==SETTINGS_PAGE_ABOUT) {
+        if(!help_font)help_font=CreateFontW(-14,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,GB2312_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,DEFAULT_QUALITY,DEFAULT_PITCH,L"宋体");
+        HGDIOBJ prior=help_font ? SelectObject(dc,help_font):NULL;
+        unsigned top=model.scroll[SETTINGS_PAGE_ABOUT];
+        for(unsigned i=top;i<ABOUT_SECTION_COUNT && i<top+ABOUT_VISIBLE;++i) {
+            int row_y=y+82+(int)(i-top)*68;char body[1024];about_text(i,body,sizeof body);
+            box(dc,x+16,row_y,576,64,RGB(28,25,19),RGB(104,78,38));
+            text(dc,x+24,row_y+4,560,18,about_titles[i],RGB(231,206,154));
+            text(dc,x+24,row_y+23,560,39,body,RGB(222,205,172));
+        }
+        if(prior)SelectObject(dc,prior);
+        action_button(dc,x+16,y+378,280,30,"保存","START",footer==1);
+        action_button(dc,x+304,y+378,288,30,"关闭",menu_swap ? "A":"B",footer==2);
+    } else {
+        action_button(dc,x+16,y+378,136,30,"保存","START",footer==1);
+        action_button(dc,x+160,y+378,136,30,"关闭",menu_swap ? "A":"B",footer==2);
+        action_button(dc,x+304,y+378,136,30,editing ? "当前默认":"本页默认","BACK",footer==3);
+        if(!picker)action_button(dc,x+448,y+378,144,30,model.help ? "隐藏说明":"显示说明","Y",0);
+    }
+    const char *hint=model.page==SETTINGS_PAGE_ABOUT ? "LB/RB切页，上下或滚轮浏览；START保存，取消键关闭":editing ? "左右×1，上下×10，长按加速；BACK默认，START保存":"LB/RB分类，BACK本页默认，START保存，Y说明";
+    text(dc,x+16,y+416,576,26,message[0] ? message:hint,RGB(207,188,154));
     paint_scrollbar(dc,x,y);
     if(picker) {
         box(dc,x+16,y+82,576,322,RGB(24,22,18),RGB(194,146,65));
@@ -635,7 +679,7 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         action_button(dc,x+164,y+306,140,36,"取消",menu_swap ? "A":"B",0);
         if(!model.help)text(dc,x+328,y+138,256,190,"左右调整最小单位，上下调整十倍。按住方向两秒后加快，百分比加速更快。\n\n完成只保留这次修改；返回主列表后，选择“保存并应用”才会保存。取消会恢复打开这个调整窗口前的值。\n\n按Y可查看本项的详细说明。",RGB(207,188,154));
     }
-    if((picker || model.help) && !confirm_discard && !confirm_reset && !error_modal) {
+    if((picker || (model.help && model.page!=SETTINGS_PAGE_ABOUT)) && !confirm_discard && !confirm_reset && !error_modal) {
         const char *description;
         if(picker)description=pick_focus>0 && (unsigned)pick_focus<skill_view_count ? skills[skill_view[pick_focus]].description:"未设置任何技能。选择并保存后，按这个RT组合键不会发动技能。";
         else description=model.page==2 ? "先选择一个RT组合键位置并确认，再从已学会的技能中选择。保存后，按住RT并按这个组合键就会直接发动技能，不需要再按鼠标右键。每个角色分别保存。":RuntimeConfig_Descriptor(SettingsModel_Field(model.page,model.focus[model.page]))->description;
@@ -705,7 +749,11 @@ static void mouse_click(int x,int y)
             if(row<skill_view_count){picker_footer=0;pick_focus=(int)row;activate();}}
                 return;
     }
-    if(y>=38 && y<68 && x>=16 && x<592){model.page=(unsigned)((x-16)/192);footer=0;return;}
+    if(y>=38 && y<68 && x>=16 && x<592){unsigned tab=(unsigned)((x-16)/TAB_STEP);if((x-16)%TAB_STEP<TAB_WIDTH){model.page=tab;footer=0;}return;}
+    if(model.page==SETTINGS_PAGE_ABOUT) {
+        if(y>=378 && y<408){if(x>=16 && x<296)footer=1;else if(x>=304 && x<592)footer=2;else return;activate();}
+        return;
+    }
     if(y>=82 && y<370 && x>=16 && x<592) {
         unsigned item=model.scroll[model.page]*2+(unsigned)((y-82)/48)*2+(unsigned)((x-16)/288);
         if(item<SettingsModel_Count(model.page)){model.focus[model.page]=item;footer=0;activate();}return;
@@ -719,6 +767,7 @@ static void mouse_hover(int x,int y)
 {
     /* 只在物理指针移动时更新焦点，静止的鼠标不能抢走手柄正在浏览的项目。 */
     if(editing || confirm_discard || confirm_reset || error_modal || scroll_drag)return;
+    if(model.page==SETTINGS_PAGE_ABOUT)return;
     if(picker) {
         if(x>=24 && x<304 && y>=122 && y<362) {
             unsigned row=(unsigned)(y-122)/48+(unsigned)pick_scroll;
@@ -744,7 +793,7 @@ static void keyboard(RuntimeEventId event,void *subject,unsigned long result,uns
     int direction=now_keys&1 ? 1:now_keys&2 ? 2:now_keys&4 ? 3:now_keys&8 ? 4:0;
     if(active){if(direction)pointer_mode=1;repeat_direction(direction,GetTickCount(),&keyboard_direction,&keyboard_started,&keyboard_next);}
     else keyboard_direction=0;
-    if(active)for(unsigned i=4;i<6;++i)if((now_keys&~old_keys)&(1u<<i)){pointer_mode=1;if(i==4)activate();else if(!picker)model.help=!model.help;}
+    if(active)for(unsigned i=4;i<6;++i)if((now_keys&~old_keys)&(1u<<i)){pointer_mode=1;if(i==4)activate();else if(!picker && model.page!=SETTINGS_PAGE_ABOUT)model.help=!model.help;}
     old_keys=now_keys;
     int open_key=(GetAsyncKeyState(VK_OEM_3)&0x8000)!=0,escape=(GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0;
     if(open_key && !previous_open_key){if(active)cancel();else if(open_window())pointer_mode=1;}

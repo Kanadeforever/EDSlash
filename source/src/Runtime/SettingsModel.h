@@ -1,9 +1,10 @@
 #ifndef EDSLASH_SETTINGS_MODEL_H
 #define EDSLASH_SETTINGS_MODEL_H
 #include "Config.h"
+enum {SETTINGS_PAGE_COUNT=4,SETTINGS_PAGE_ABOUT=3};
 /* 纯界面模型不读取游戏地址；角色上下文由原游戏适配器提供。 */
 typedef struct {
-    unsigned page,focus[3],scroll[3],game,role;
+    unsigned page,focus[SETTINGS_PAGE_COUNT],scroll[SETTINGS_PAGE_COUNT],game,role;
     int help;
     ConfigSnapshot saved,draft;
     ConfigBinding saved_bindings[14],draft_bindings[14];

@@ -150,6 +150,29 @@ int wmain(void)
     CHECK(releases==2 && origin_x==176 && origin_y==76);
     dc_failed=1;paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);CHECK(releases==2);
     dc_failed=0;wr(surface,0xC,320);paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);CHECK(releases==3);
+    /* 第四页鼠标/手柄可达；带说明状态进入不解引用不存在的配置项。 */
+    model.page=2;model.help=1;editing=picker=footer=0;
+    SettingsWindow_Pad(0,0,0,0,0,0,0,0,100);
+    SettingsWindow_Pad(1u<<10,1u<<10,0,0,0,0,0,0,110);CHECK(model.page==SETTINGS_PAGE_ABOUT);
+    SettingsWindow_Pad(0,0,0,0,0,0,0,0,120);
+    wr(surface,0xC,640);wr(surface,0x10,480);
+    RECT about_canvas={0,0,960,600};FillRect(fixture_dc,&about_canvas,(HBRUSH)GetStockObject(WHITE_BRUSH));
+    paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
+    snapshot_path="settings_about_fixture.bmp";CHECK(snapshot(&info.bmiHeader,pixels));
+    char about_body[1024];about_text(1,about_body,sizeof about_body);CHECK(strstr(about_body,EDSLASH_VERSION) && strstr(about_body,EDSLASH_BUILD_ID));
+    about_text(2,about_body,sizeof about_body);CHECK(strstr(about_body,EDSLASH_AUTHOR));
+    ConfigSnapshot about_before=model.draft;ConfigBinding about_bindings[14];memcpy(about_bindings,model.draft_bindings,sizeof about_bindings);
+    activate();SettingsWindow_Pad(1u<<4,1u<<4,0,0,0,0,0,0,130);CHECK(!editing && !picker && !confirm_reset);
+    CHECK(!memcmp(&about_before,&model.draft,sizeof about_before) && !memcmp(about_bindings,model.draft_bindings,sizeof about_bindings));
+    SettingsWindow_Wheel(-1);CHECK(model.scroll[SETTINGS_PAGE_ABOUT]==1);
+    scroll_at(370);CHECK(model.scroll[SETTINGS_PAGE_ABOUT]==ABOUT_SECTION_COUNT-ABOUT_VISIBLE);
+    FillRect(fixture_dc,&about_canvas,(HBRUSH)GetStockObject(WHITE_BRUSH));
+    paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
+    snapshot_path="settings_about_bottom_fixture.bmp";CHECK(snapshot(&info.bmiHeader,pixels));
+    move(2);CHECK(footer==1);move(4);CHECK(footer==2);move(4);CHECK(footer==2);move(1);CHECK(!footer);
+    SettingsWindow_Pad(0,0,0,0,0,0,0,0,140);SettingsWindow_Pad(1u<<10,1u<<10,0,0,0,0,0,0,150);CHECK(model.page==0);
+    mouse_click(520,50);CHECK(model.page==SETTINGS_PAGE_ABOUT);mouse_click(440,50);CHECK(model.page==SETTINGS_PAGE_ABOUT); /* 页签间隙不切页 */
+    mouse_click(50,50);CHECK(model.page==0);model.help=0;footer=0;
     /* 数值编辑取消只撤销当前字段；技能候选取消不改绑定，选中才写草稿。 */
     model.page=1;model.focus[1]=0;activate();CHECK(editing);move(4);cancel();CHECK(!editing && !SettingsModel_Dirty(&model));
     model.page=2;skill_count=1;skills[0].selector=123;strcpy(skills[0].name,"测试技能");activate();
@@ -271,6 +294,9 @@ int wmain(void)
     model.page=2;activate();CHECK(!picker && strstr(message,"载入角色"));
     CHECK(!SettingsModel_SetBinding(&model,1,(ConfigBinding){1,123,1}));
     model.page=0;CHECK(SettingsModel_SetInt(&model,CONFIG_AIM_EXPAND_MS,700));save_settings();CHECK(!SettingsModel_Dirty(&model));
+    model.page=SETTINGS_PAGE_ABOUT;model.help=1;activate();CHECK(!editing && !picker && !confirm_reset);
+    paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
+    CHECK(!model.role && !SettingsModel_Dirty(&model));
     SettingsWindow_Close();CHECK(!active && rd(native_settings_root,0x64) && rd(fake_ui,0x3C)==(uint32_t)(uintptr_t)native_settings_root);
     SelectObject(fixture_dc,previous_bitmap);DeleteObject(bitmap);DeleteDC(fixture_dc);
     if(font){DeleteObject(font);font=NULL;}
