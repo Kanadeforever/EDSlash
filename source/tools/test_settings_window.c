@@ -47,7 +47,7 @@ static int __attribute__((thiscall)) show_root(void *p,int show,int mode)
 }
 static int __attribute__((thiscall)) native_action(void *p,int e,int x,void *y){(void)p;(void)e;(void)x;(void)y;++original_actions;return 1;}
 static int __attribute__((thiscall)) native_caption(void *page,unsigned long context,const char *text,int x,int y,int mode)
-{CHECK(page!=native_settings_root && context && !strncmp(text,"EDSlash",7) && x==488 && y==314 && !mode);CHECK(rd(page,0x60)==expected_caption_color && rd(page,0x78)==0);++native_captions;return 1;}
+{CHECK(page!=native_settings_root && context && !strncmp(text,"EDSlash",7) && x==488 && y==318 && !mode);CHECK(rd(page,0x60)==expected_caption_color && rd(page,0x78)==0);++native_captions;return 1;}
 static BYTE fixture_record[0x40],fixture_choices[16];
 static int __attribute__((thiscall)) no_property(void *p,int i)
 {return p==fixture_record ? (i==2 ? 701:i==15 ? 11:0):p==fixture_choices ? (i==1 ? 1:i==2 ? 701:0):0;}

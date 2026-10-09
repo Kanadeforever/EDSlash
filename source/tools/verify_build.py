@@ -87,5 +87,57 @@ def verify_variants(debug_asi, release_asi):
     print("发行件／完整版运行段及虚拟布局逐段一致。")
     return True
 
+def import_symbols(path):
+    """导入描述表排列可变，真正业务依赖IAT地址及对应DLL/函数，必须逐项一致。"""
+    pe=PE(path);rva,_=pe.directory(1);result=[]
+    for _ in range(128):
+        block=pe.read(pe.base+rva,20)
+        if not any(block):return sorted(result)
+        original,_,_,name,first=struct.unpack('<5I',block)
+        library=pe.string(name).lower();lookup=original or first
+        for i in range(4096):
+            value=struct.unpack('<I',pe.read(pe.base+lookup+i*4,4))[0]
+            if not value:break
+            symbol=f'#{value&0xFFFF}' if value&0x80000000 else pe.string(value+2)
+            result.append((first+i*4,library,symbol))
+        else:raise RuntimeError('导入项数量异常，拒绝压缩件')
+        rva+=20
+    raise RuntimeError('导入描述表没有结束标记，拒绝压缩件')
+
+def verify_upx_roundtrip(original,unpacked):
+    """只允许UPX重排导入元数据；其余运行段字节和全部虚拟布局严格一致。"""
+    before,after=runtime_sections(original),runtime_sections(unpacked)
+    if before.keys()!=after.keys():raise RuntimeError('UPX解压段集合不一致')
+    for name,value in before.items():
+        if value[:2]!=after[name][:2] or (name!='.idata' and value[2]!=after[name][2]):
+            raise RuntimeError('UPX解压运行段变化：'+name)
+    a,b=PE(original),PE(unpacked)
+    if a.base!=b.base or a.machine!=b.machine or a.read(a.base+a.directory(0)[0],40)!=b.read(b.base+b.directory(0)[0],40):
+        raise RuntimeError('UPX解压映像或导出表不一致')
+    if struct.unpack_from('<I',a.data,a.opt+16)!=struct.unpack_from('<I',b.data,b.opt+16):
+        raise RuntimeError('UPX解压入口变化')
+    symbols=import_symbols(original)
+    if symbols!=import_symbols(unpacked):raise RuntimeError('UPX解压导入地址或DLL/函数变化')
+    print(f'UPX解压非导入段字节/布局与{len(symbols)}项导入地址及函数语义一致。')
+    return {'非导入运行段':'字节及虚拟布局完全一致','导入项数':len(symbols),'导入表':'IAT地址、DLL及函数语义一致，允许UPX重排元数据'}
+
+def test_upx_roundtrip_rejections(original,unpacked):
+    """用真实解压PE的两种损坏副本确认验证器拒绝代码或导入变化，不执行副本。"""
+    pe=PE(unpacked);sections=runtime_sections(unpacked);raw=Path(unpacked).read_bytes()
+    def offset(rva):
+        for start,size,at in pe.sections:
+            if start<=rva<start+size:return at+rva-start
+        raise RuntimeError('损坏回放地址不在文件内')
+    descriptor=pe.read(pe.base+pe.directory(1)[0],20)
+    points=[('代码字节',offset(sections['.text'][0])),('导入DLL',offset(struct.unpack_from('<I',descriptor,12)[0]))]
+    temporary=Path(unpacked).with_name('EDSlash-invalid-check.asi')
+    for label,at in points:
+        changed=bytearray(raw);changed[at]^=1;temporary.write_bytes(changed);rejected=False
+        try:verify_upx_roundtrip(original,temporary)
+        except RuntimeError:rejected=True
+        finally:temporary.unlink()
+        if not rejected:raise RuntimeError('压缩验证没有拒绝'+label+'损坏')
+    return '代码字节和导入DLL变更均被拒绝；没有执行损坏副本'
+
 if __name__ == "__main__":
     verify(Path(sys.argv[1]), Path(sys.argv[2]))

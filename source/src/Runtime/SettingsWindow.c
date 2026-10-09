@@ -556,7 +556,10 @@ static void paint_native_entry(unsigned long context)
     BYTE style[0xC0];memcpy(style,page,sizeof style);
     unsigned color=(native_entry_hover || native_entry_focus==page) ? RGB(255,255,0):rd(page,0x60);
     memcpy(style+0x60,&color,4);
-    ((NativeText)backend.menu_native_text_draw)(style,context,caption,(r.left+r.right)/2,r.top+8,0);
+    /* 当前原字体单行占12个逻辑像素；从按钮高度减去文字高度，两边平分留白。 */
+    const int text_height=12;
+    int text_y=r.top+(r.bottom-r.top-text_height)/2;
+    ((NativeText)backend.menu_native_text_draw)(style,context,caption,(r.left+r.right)/2,text_y,0);
 }
 static void paint(RuntimeEventId event,void *subject,unsigned long context,unsigned long value,void *user)
 {
