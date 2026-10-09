@@ -8,7 +8,7 @@ import tempfile
 import unittest
 import zipfile
 
-from package_release import package, source_digest
+from package_release import LICENSE_FILES, PACKAGE_FILES, license_contents, package, source_digest, write_license_files
 
 
 class PackageTests(unittest.TestCase):
@@ -30,7 +30,7 @@ class PackageTests(unittest.TestCase):
             "thirdparty/SDL-release-3.4.16/LICENSE.txt": b"sdl-license",
             "thirdparty/SDL-release-3.4.16/src/device.c": b"device-backend",
             "docs/文档/完整接档说明.md": "中文接档\r\n".encode("utf-8"),
-            "docs/第三方许可/配置与SDL第三方许可.txt": b"notices",
+            "docs/第三方许可/第三方声明.txt": b"own notices",
             "docs/证据/实机日志/原始数据.bin": b"\x00\xff\x0a\x0d",
             "release/EDSlash.asi": b"formal-build",
             "release/EDSlash.toml": config,
@@ -42,10 +42,15 @@ class PackageTests(unittest.TestCase):
             ".build/cache.obj": b"compiler-cache",
             "source/__pycache__/cache.pyc": b"python-cache",
         }
+        # 混合LF、CRLF和尾空格，验证原件复制不做任何排版或换行转换。
+        for name, relative in LICENSE_FILES.items():
+            files.setdefault(relative, (name + " original license \nsecond line\r\n").encode("utf-8"))
+        files["thirdparty/SDL-release-3.4.16/src/libm/e_sqrt.c"] = b"#include <math.h>\n/* SunPro full permission \n */\r\nvoid math(void);"
         for relative, data in files.items():
             path = self.root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
+        write_license_files(self.root, self.root / "release")
         self.report = {
             "ASI_SHA256": hashlib.sha256(files["release/EDSlash.asi"]).hexdigest(),
             "ASI字节数": len(files["release/EDSlash.asi"]),
@@ -64,14 +69,15 @@ class PackageTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             package(self.root, self.output)
 
-    def test_exactly_four_flat_files(self):
+    def test_exact_file_manifest_and_original_bytes(self):
         self.pack()
         with zipfile.ZipFile(self.output) as archive:
-            names = set(archive.namelist())
-            self.assertEqual(len(archive.namelist()), 4)
-            self.assertEqual(names, {"EDSlash.asi", "EDSlash.toml", "LICENSE.txt", "LICENSE-SDL.txt"})
-            self.assertEqual(archive.read("LICENSE.txt"), b"license")
-            self.assertEqual(archive.read("LICENSE-SDL.txt"), b"notices")
+            self.assertEqual(len(archive.namelist()), len(PACKAGE_FILES))
+            self.assertEqual(set(archive.namelist()), set(PACKAGE_FILES))
+            self.assertNotIn("LICENSE-SDL.txt", archive.namelist())
+            for name, original in license_contents(self.root).items():
+                self.assertEqual(archive.read(name), original)
+            self.assertEqual(archive.read("第三方声明.txt"), b"own notices")
             self.assertEqual(archive.read("EDSlash.asi"), b"formal-build")
         self.assertEqual({p.name for p in self.output.parent.iterdir()}, {self.output.name})
 
@@ -93,10 +99,41 @@ class PackageTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "源码与构建报告"):
             self.pack()
 
-    def test_missing_thirdparty_notices_rejected(self):
-        (self.root / "release/第三方许可.txt").unlink()
-        with self.assertRaisesRegex(RuntimeError, "缺少文件"):
+    def test_missing_license_rejected(self):
+        for name, body in license_contents(self.root).items():
+            with self.subTest(name=name):
+                target = self.root / "release" / name
+                target.unlink()
+                with self.assertRaisesRegex(RuntimeError, "缺少文件"):
+                    self.pack()
+                target.write_bytes(body)
+
+    def test_whitespace_only_license_change_rejected(self):
+        # 连换行或尾空格的差异也不能被忽略；每份许可证及提取声明分别测试。
+        for name, body in license_contents(self.root).items():
+            with self.subTest(name=name):
+                target = self.root / "release" / name
+                target.write_bytes(body + b"\n")
+                with self.assertRaisesRegex(RuntimeError, "字节不一致"):
+                    self.pack()
+                target.write_bytes(body)
+
+    def test_sunpro_fragment_exact(self):
+        self.assertEqual(license_contents(self.root)["licenses/SunPro-NOTICE.txt"],
+                         b"/* SunPro full permission \n */\r\n")
+
+    def test_notice_change_rejected(self):
+        (self.root / "release/第三方声明.txt").write_bytes(b"changed")
+        with self.assertRaisesRegex(RuntimeError, "第三方声明"):
             self.pack()
+
+    def test_old_aggregate_removed(self):
+        directory = self.root / "release"
+        (directory / "LICENSE-SDL.txt").write_bytes(b"old aggregate")
+        (directory / "第三方许可.txt").write_bytes(b"old aggregate")
+        write_license_files(self.root, directory)
+        self.assertFalse((directory / "LICENSE-SDL.txt").exists())
+        self.assertFalse((directory / "第三方许可.txt").exists())
 
     def test_output_inside_source_rejected(self):
         with self.assertRaisesRegex(RuntimeError, "输出不能"):

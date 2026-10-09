@@ -1,4 +1,4 @@
-"""打包正式ASI、默认TOML和两份许可，发行ZIP内严格只有四个文件。"""
+"""打包正式ASI、默认TOML、独立第三方声明和逐份保持原始字节的许可证。"""
 from pathlib import Path
 import argparse
 import hashlib
@@ -10,14 +10,23 @@ import tomllib
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
-# 左侧是玩家解压看到的名字，右侧是本地构建或仓库中的实际输入。
-# SDL许可汇总保留HIDAPI及静态运行库声明，不因缩减文件数量丢失许可。
+# 许可证来源是只读的仓库原件，发行副本不能转换编码、换行、空白或加入说明。
+LICENSE_FILES = {
+    "LICENSE.txt": "LICENSE",
+    "licenses/SDL-LICENSE.txt": "thirdparty/SDL-release-3.4.16/LICENSE.txt",
+    "licenses/HIDAPI-LICENSE-bsd.txt": "thirdparty/SDL-release-3.4.16/src/hidapi/LICENSE-bsd.txt",
+    "licenses/YUV-LICENSE.txt": "thirdparty/SDL-release-3.4.16/src/video/yuv2rgb/LICENSE",
+    "licenses/CC0-1.0.txt": "docs/第三方许可/手柄图示CC0许可.txt",
+}
+# ZIP逐项收集，不递归包含debug、源码、游戏或私人资料。
 PACKAGE_FILES = {
     "EDSlash.asi": "release/EDSlash.asi",
     "EDSlash.toml": "release/EDSlash.toml",
-    "LICENSE.txt": "LICENSE",
-    "LICENSE-SDL.txt": "release/第三方许可.txt",
+    "第三方声明.txt": "release/第三方声明.txt",
+    **{name: "release/" + name for name in LICENSE_FILES},
+    "licenses/SunPro-NOTICE.txt": "release/licenses/SunPro-NOTICE.txt",
 }
+
 
 
 def source_digest(root):
@@ -45,8 +54,45 @@ def safe_file(root, relative):
     return path
 
 
+
+def license_contents(root):
+    """读取原件字节；SunPro只有源码声明，保留注释块原字节并明确区别于独立许可证。"""
+    contents = {name: safe_file(root, relative).read_bytes() for name, relative in LICENSE_FILES.items()}
+    if any(not data for data in contents.values()):
+        raise RuntimeError("许可证原件为空")
+    math_source = safe_file(root, "thirdparty/SDL-release-3.4.16/src/libm/e_sqrt.c").read_bytes()
+    begin = math_source.find(b"/*")
+    end = math_source.find(b"*/", begin)
+    if begin < 0 or end < 0 or b"Sun" not in math_source[begin:end]:
+        raise RuntimeError("SunPro源码许可声明不存在")
+    end += 2
+    # 注释块后的原有行结束符属于提取片段，不添加或转换任何字节。
+    if math_source[end:end + 2] == b"\r\n":
+        end += 2
+    elif math_source[end:end + 1] == b"\n":
+        end += 1
+    contents["licenses/SunPro-NOTICE.txt"] = math_source[begin:end]
+    return contents
+
+
+def write_license_files(root, directory):
+    """本地发行与自动发行共享同一份原样复制清单，中文说明另存独立文件。"""
+    contents = license_contents(root)
+    contents["第三方声明.txt"] = safe_file(root, "docs/第三方许可/第三方声明.txt").read_bytes()
+    for name, data in contents.items():
+        target = directory / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    # 仅清理已停用的旧汇总文件，避免使用者误认为它是SDL上游原件。
+    for name in ("第三方许可.txt", "LICENSE-SDL.txt"):
+        old = directory / name
+        if old.is_file():
+            old.unlink()
+
+
+
 def package(root, output):
-    """校验报告只在打包时使用；固定四文件清单不递归收集任何目录。"""
+    """校验报告只在打包时使用；固定文件清单不递归收集任何目录。"""
     root = root.resolve()
     output = output.resolve()
     if any(output.is_relative_to(root / tree)
@@ -67,9 +113,13 @@ def package(root, output):
     if template != config or hashlib.sha256(template).hexdigest() != report["默认模板SHA256"]:
         raise RuntimeError("自动发行只能携带与报告匹配的默认配置，不能发布个人配置")
     tomllib.loads(config.decode("utf-8"))
-    notices = safe_file(root, "docs/第三方许可/配置与SDL第三方许可.txt").read_bytes()
-    if contents["LICENSE-SDL.txt"] != notices:
-        raise RuntimeError("发布许可与仓库第三方许可不匹配")
+    originals = license_contents(root)
+    for name, original in originals.items():
+        if contents[name] != original:
+            raise RuntimeError(f"许可证副本与原件字节不一致：{name}")
+    notices = safe_file(root, "docs/第三方许可/第三方声明.txt").read_bytes()
+    if contents["第三方声明.txt"] != notices:
+        raise RuntimeError("第三方声明与仓库不匹配")
     if source_digest(root) != report["构建身份"]["源码与构建输入SHA256"]:
         raise RuntimeError("源码与构建报告不匹配，请先运行统一构建入口")
 
@@ -83,8 +133,8 @@ def package(root, output):
             for name, data in contents.items():
                 archive.writestr(name, data)
         with zipfile.ZipFile(temporary) as archive:
-            if len(archive.namelist()) != 4 or set(archive.namelist()) != set(PACKAGE_FILES):
-                raise RuntimeError("ZIP必须只含平铺的ASI、TOML和两份许可")
+            if len(archive.namelist()) != len(PACKAGE_FILES) or set(archive.namelist()) != set(PACKAGE_FILES):
+                raise RuntimeError("ZIP文件清单与正式产物、独立声明及原件许可证清单不匹配")
             if archive.testzip() is not None:
                 raise RuntimeError("ZIP完整性校验失败")
             for name, data in contents.items():
@@ -95,13 +145,13 @@ def package(root, output):
         if temporary is not None and temporary.exists():
             temporary.unlink()
     checksum = hashlib.sha256(output.read_bytes()).hexdigest()
-    print(f"正式发行包完成：{output}；仅ASI、TOML与两份许可，共四个文件。")
+    print(f"正式发行包完成：{output}；ASI、TOML、独立声明与许可证原件，共{len(PACKAGE_FILES)}个文件。")
     return checksum
 
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
-    parser = argparse.ArgumentParser(description="只打包正式ASI、默认TOML与项目/SDL两份许可。")
+    parser = argparse.ArgumentParser(description="打包正式ASI、默认TOML、独立第三方声明及原样许可证。")
     parser.add_argument("--output", type=Path, required=True, help="目标ZIP路径；不能放入源码或只读参考目录")
     args = parser.parse_args()
     checksum = package(ROOT, args.output)

@@ -6,3 +6,10 @@ docs/第三方许可/** -text
 source/build.bat whitespace=-blank-at-eol,cr-at-eol
 # 历史许可逐字保留上游格式，包括原文中的尾空格。
 docs/第三方许可/历史MinGW与GCC运行库许可.txt whitespace=-blank-at-eol,-blank-at-eof,cr-at-eol
+
+# 上游许可证与源码内许可声明在各平台检出时保持原始字节。
+LICENSE -text
+thirdparty/SDL-release-3.4.16/LICENSE.txt -text
+thirdparty/SDL-release-3.4.16/src/hidapi/LICENSE-bsd.txt -text
+thirdparty/SDL-release-3.4.16/src/video/yuv2rgb/LICENSE -text
+thirdparty/SDL-release-3.4.16/src/libm/e_sqrt.c -text

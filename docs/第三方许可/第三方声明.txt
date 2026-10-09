@@ -1,0 +1,38 @@
+第三方组件与素材声明
+
+本文件是EDSlash自己的组件对应与来源说明，不是上游许可证原件，不替代licenses目录中的许可文件。
+项目原生MSVC构建，SDL 3.4.16官方源码静态链接；发行包不包含游戏文件或ASI加载器。
+
+项目与配置核心
+项目源码及改编的Castle Reforge配置标量核心适用MIT，版权人为Luminous。
+原件：仓库根LICENSE；发行副本：LICENSE.txt。
+
+SDL 3.4.16
+原件：thirdparty/SDL-release-3.4.16/LICENSE.txt。
+发行副本：licenses/SDL-LICENSE.txt。
+
+SDL内含HIDAPI
+使用BSD许可选项。原件：thirdparty/SDL-release-3.4.16/src/hidapi/LICENSE-bsd.txt。
+发行副本：licenses/HIDAPI-LICENSE-bsd.txt。
+
+SDL内含YUV转换
+原件：thirdparty/SDL-release-3.4.16/src/video/yuv2rgb/LICENSE。
+发行副本：licenses/YUV-LICENSE.txt。
+
+SDL内含SunPro数学代码
+上游未提供独立许可证文件，声明在thirdparty/SDL-release-3.4.16/src/libm/e_sqrt.c头部。
+发行文件licenses/SunPro-NOTICE.txt仅提取该注释块及其原有行结束符，保持原字节，不是上游独立许可证原件。
+
+手柄图示
+source/assets/360_controller_clean.svg由用户提供并声明CC0授权，作者署名为Jishenaz。
+CC0官方原文：https://raw.githubusercontent.com/creativecommons/cc-legal-tools-data/a0dac18d1a773b4cdb7d8dd5d9bf4efab7901030/docs/publicdomain/zero/1.0/legalcode.txt
+原文件SHA-256：a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499
+仓库原件副本：docs/第三方许可/手柄图示CC0许可.txt；发行副本：licenses/CC0-1.0.txt。
+官方原文件按下载字节保存，未转换编码、换行或排版；构建过程不联网。
+
+分发规则
+所有独立许可证均逐字节复制；版权、条款、免责声明、原有空白与换行不修改。
+源码内声明只原样提取许可片段，中文解释和作者署名仅写在本文件或关于页面。
+发行副本有任何字节差异、缺少文件或文件为空时停止打包。
+不分发的旧MinGW/GCC运行库许可留在历史文档中；Windows系统DLL不随包复制。
+社区gamecontrollerdb.txt未随包分发，用户自行引入时须保留对应来源与许可。

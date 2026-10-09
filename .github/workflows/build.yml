@@ -64,11 +64,11 @@ jobs:
       - name: 验证发行包边界与错误拒绝
         run: python source/tools/test_package_release.py
 
-      - name: 打包ASI、TOML与两份许可
+      - name: 打包正式产物、独立声明与原样许可证
         id: package
         run: python source/tools/package_release.py --output "$env:RUNNER_TEMP/edslash-package/EDSlash-dev-auto.zip"
 
-      - name: 保存四文件正式发行包
+      - name: 保存含许可证原件的正式发行包
         uses: actions/upload-artifact@v7
         with:
           name: EDSlash-dev-auto

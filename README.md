@@ -26,9 +26,9 @@ EDSlash 是一个面向这两款游戏 Windows 版的非官方开源项目。
 
 `main` 分支每次更新后，GitHub Actions 会自动构建、执行离线验证，并更新 [dev-auto 开发版](https://github.com/Kanadeforever/EDSlash/releases/tag/dev-auto)。也可以在 [Actions 页面](https://github.com/Kanadeforever/EDSlash/actions/workflows/build.yml) 手动运行构建；只有 `main` 的成功构建更新公开开发版，其它分支仅提供构建附件。
 
-自动发行附件为 `EDSlash-dev-auto.zip`，ZIP 根目录严格只有四个文件：`EDSlash.asi`、`EDSlash.toml`、`LICENSE.txt`（项目自身许可）与 `LICENSE-SDL.txt`（SDL 及其静态依赖许可声明）。**不发布 debug、源码、SDL 源码、文档或验证报告，也不附带额外校验文件。**
+自动发行附件为 `EDSlash-dev-auto.zip`，ZIP 根目录包含 `EDSlash.asi`、`EDSlash.toml`、`LICENSE.txt` 和独立的 `第三方声明.txt`，`licenses/` 目录包含各组件的许可证原件副本及明确标注的源码声明片段。**不发布 debug、源码、SDL 源码、文档或验证报告，也不附带额外校验文件。**
 
-下载后直接取 ZIP 根目录的四个文件安装，具体步骤见下文。自动构建只验证构建与离线行为，不代表实机验收完成。源码仓库中的 `release/` 为本地构建输出目录，不纳入 Git；源码构建方法见下文。
+下载后保留 ZIP 的文件与目录结构安装，具体步骤见下文。自动构建只验证构建与离线行为，不代表实机验收完成。源码仓库中的 `release/` 为本地构建输出目录，不纳入 Git；源码构建方法见下文。
 
 项目按以下四份准确的游戏可执行文件维护版本资料：
 
@@ -124,7 +124,7 @@ QOL 模块提供地面物品名称、分类自动拾取与成功提示。距离�
 
 1. 准备对应版本的游戏，先备份存档和现有模组配置。
 2. 准备可在该游戏进程中加载 **32 位 ASI** 的加载器。EDSlash 本身是插件，具体搜索目录与启动方式由所使用的加载器决定。
-3. 将发行 ZIP 根目录的四个文件放在加载器实际扫描的同一目录，保留 `LICENSE.txt` 与 `LICENSE-SDL.txt`。
+3. 将发行 ZIP 解压到加载器实际扫描的目录，保留 `LICENSE.txt`、`第三方声明.txt` 和 `licenses/` 目录。
 4. 停用旧独立 Controller 和与统一插件功能重叠的旧插件，避免重复修改同一处游戏逻辑。
 5. 启动游戏后检查 `EDSlash.log`，确认当前版本识别和模块初始化情况，再按实机清单测试。
 
@@ -219,7 +219,7 @@ python source/tools/build.py --checks-only
 
 工作流位于 [.github/workflows/build.yml](.github/workflows/build.yml)。Windows runner 安装 Python、32 位 MinGW、CMake、Ninja 与 UPX，然后调用相同的 `source/tools/build.py`。SDL 直接编译仓库内 `thirdparty/SDL-release-3.4.16/`，不另取运行库或上游源码。
 
-本地构建仍生成并验证发行与 debug 两件；自动打包使用固定四文件清单，只收集正式 ASI、默认 TOML 和项目／SDL 两份许可，平铺在 ZIP 根目录。验证报告仅用于打包核对，源码、完整 SDL、文档和工具继续保留在仓库中。ZIP 完整性与散列检查在 runner 内完成，公开附件只有这一个四文件 ZIP。
+本地构建仍生成并验证发行与 debug 两件；自动打包使用明确文件清单，只收集正式 ASI、默认 TOML、项目许可证、独立第三方声明和各组件的许可证原件副本；许可证文件按原始字节复制。验证报告仅用于打包核对，源码、完整 SDL、文档和工具继续保留在仓库中。ZIP 完整性与散列检查在 runner 内完成，公开附件只有这一个 ZIP。
 
 如需在本地生成相同结构的发行包，先完成正式构建，再执行：
 
@@ -257,7 +257,7 @@ python source/tools/package_release.py --output .workspace/release/EDSlash-dev-a
 - **[CastleReforge](https://github.com/Kanadeforever/castlereforge)**：本项目的配置标量核心基于其 Runtime TOML 核心改编，所需代码已纳入 EDSlash。
 - **[cnc-ddraw](https://github.com/FunkyFr3sh/cnc-ddraw)**：项目显示兼容研究与实机测试涉及的 DirectDraw 兼容层，其使用与许可由上游项目说明。
 
-具体版权、SDL、HIDAPI 与编译器静态运行库声明见 [配置与 SDL 第三方许可](docs/第三方许可/配置与SDL第三方许可.txt)。自动发行中该汇总声明命名为 `LICENSE-SDL.txt`，项目自身 MIT 许可命名为 `LICENSE.txt`，两份均须保留。
+具体版权、配置核心、SDL、HIDAPI、YUV、SunPro与手柄图示CC0声明见 [第三方声明](docs/第三方许可/第三方声明.txt)。自动发行中的中文说明为 `第三方声明.txt`；项目自身 MIT 许可为 `LICENSE.txt`；各组件原件分别位于 `licenses/`。许可证与说明分开存放，均须保留。
 
 参考、使用或测试这些项目，不代表其作者参与、认可或为 EDSlash 提供技术支持。
 

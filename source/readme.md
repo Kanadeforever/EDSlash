@@ -38,7 +38,7 @@ python source/tools/build.py --upx
 - release/debug/EDSlash.pdb：与调试ASI的GUID/age匹配，便于源码断点和崩溃定位。
 - release/EDSlash.toml：缺失时复制默认值，已有配置只补模板新增段／键，保留原数值、绑定和注释。
 - release/统一构建验证.json：实际散列、体积、导入、SDL选项及验收边界。
-- release/第三方许可.txt：随发布保留的声明。
+- release/第三方声明.txt与release/licenses：独立中文声明和原样许可证副本。
 - release/upx/EDSlash.asi保留为旧取件路径的同一压缩副本，配套配置／许可同步。
 
 配置模板source/config/EDSlash.toml由同一生产描述表生成。BAT和直接运行build.py都执行相同同步步骤：先验证发行／debug／upx各目录的配置，再只补缺失键；完整旧配置保持原字节，新增键写UTF-8无BOM＋CRLF。损坏、重复键、无法安全补入的表或构建期间外部修改会停止同步，不覆盖原值。构建报告记录补入键。此步骤只处理项目release目录，不部署到游戏目录，不删除历史产物；checks-only不写发布配置。项目打包应带docs和thirdparty，不分发游戏EXE。
@@ -61,15 +61,15 @@ python source/tools/build.py --upx
 
 仓库的`.github/workflows/build.yml`在main推送或手动触发时运行。Windows runner安装Python 3.13、使用runner自带的MSVC/Windows SDK、原生CMake/Ninja及UPX 5.2.1，再调用同一个`source/tools/build.py`；SDL直接使用thirdparty完整源码，不额外下载SDL。只有main成功构建更新dev-auto标签与开发版，其它分支手动构建仅保存Actions附件。构建任务只读仓库，发布任务单独取得contents: write。
 
-自动构建内部仍验证同次优化链接的正式/debug双产物，但**不发布debug版**。`tools/package_release.py`输出的`EDSlash-dev-auto.zip`根目录严格只有四个文件：EDSlash.asi、EDSlash.toml、LICENSE.txt、LICENSE-SDL.txt。项目许可来自根LICENSE；SDL许可文件使用现有第三方许可汇总，保留HIDAPI及静态运行库声明。源码、完整SDL、文档、报告、文件清单和额外校验附件均不进入ZIP或自动发布附件。
+自动构建内部仍验证同次优化链接的正式/debug双产物，但不发布debug版。tools/package_release.py输出的EDSlash-dev-auto.zip包含正式ASI、默认TOML、LICENSE.txt、第三方声明.txt与licenses目录。各组件许可证直接复制仓库原件；SunPro单独原样提取源码注释声明。说明不插入许可证，原件编码、换行、空格均保留。
 
-在项目根运行`python source/tools/package_release.py --output .workspace/release/EDSlash-dev-auto.zip`可生成同结构本地包。须先完成正式构建；正式件/默认配置/源码摘要与报告必须一致，个人配置不能打包。工具不修改输入或上传文件，回读ZIP检查根目录严格四件、CRC与输入字节；ZIP SHA-256只通过工作流内部输出传给发布任务，不生成额外文件。`python source/tools/test_package_release.py`验证四件清单、debug/源码/文档等排除，以及旧件/个人配置/源码变化/缺许可/输出位置错误拒绝。
+在项目根运行`python source/tools/package_release.py --output release/EDSlash-dev-auto.zip`可生成本地包。须先完成正式构建；ASI、默认配置、源码摘要和许可副本均须匹配。工具逐字节核对许可证，并回读ZIP检查清单、CRC和输入字节；不上传文件。test_package_release.py覆盖缺失许可、仅空白改动、错误产物、个人配置、旧源码、SunPro片段与旧汇总清理。
 
 CI不携带原游戏EXE，真实四样本复核明确跳过，不能记录成通过。Actions成功仍不代表真实设备、Steam DLL或游戏实机验收。首次远程构建及发布状态以Actions运行记录为准。
 
 自有构建／验证工具都在tools；详细使用、输入输出和限制见[工具说明](tools/工具说明.md)。旧run_runtime_checks.py和run_notice_checks.py已统一到CTest，不恢复独立构建别名。
 
-配置标量核心改编自Castle Reforge Runtime TOML v1，已纳入本项目，无外部项目路径依赖。SDL完整固定源码及原始许可保留，版权和实际编译器声明见[配置与SDL第三方许可](../docs/第三方许可/配置与SDL第三方许可.txt)。
+配置标量核心改编自Castle Reforge Runtime TOML v1，已纳入本项目，无外部项目路径依赖。SDL完整固定源码及原始许可保留，版权和实际编译器声明见[第三方声明](../docs/第三方许可/第三方声明.txt)。
 
 
 Guard设置应用测试使用真实TOML与双版本运动回放；test_menu链接生产Control/Menu/Game和真实虚表包装，检查标题无玩家、独立焦点、页面/来源中立门、业务ABI及逐槽失败回滚。游戏内MOD设置界面已接通原暂停、输入与绘制；真实高亮/动画/热应用和设备时序必须两作实机确认。

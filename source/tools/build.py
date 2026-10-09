@@ -14,6 +14,7 @@ from toolchain import compiler, program
 from controller.verify_profiles import verify_baselines
 from verify_build import verify_upx_roundtrip, test_upx_roundtrip_rejections, verify, verify_variants, verify_debug_info, test_pdb_rejections, test_upx_debug_record_compatibility
 from sync_config import plan as config_plan, apply as config_apply
+from package_release import license_contents, write_license_files
 
 SOURCE = Path(__file__).resolve().parents[1]
 ROOT = SOURCE.parent
@@ -26,10 +27,10 @@ def run(arguments, environment):
     subprocess.run([str(arg) for arg in arguments], check=True, env=environment, cwd=ROOT)
 
 
-def prepare_package(directory, notices):
+def prepare_package(directory):
     """目录配置已经在发布前同步，此处只补随包许可。"""
     directory.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(notices, directory / "第三方许可.txt")
+    write_license_files(ROOT, directory)
 
 
 def cleanup_legacy_cache():
@@ -99,9 +100,10 @@ def main():
     upstream = ROOT / "thirdparty/SDL-release-3.4.16"
     if not (upstream / "CMakeLists.txt").is_file():
         raise RuntimeError("缺少固定SDL 3.4.16完整源码，请从完整项目包恢复thirdparty。")
-    notices = ROOT / "docs/第三方许可/配置与SDL第三方许可.txt"
+    notices = ROOT / "docs/第三方许可/第三方声明.txt"
     if not notices.is_file():
         raise RuntimeError("缺少第三方许可文档，请从完整项目包恢复docs。")
+    license_contents(ROOT)
     BUILD.mkdir(parents=True, exist_ok=True)
     run([sys.executable, SOURCE / "tools/controller/generate_profiles.py"], environment)
     metadata = json.loads((SOURCE / "tools/controller/profiles.json").read_text(encoding="utf-8"))
@@ -196,13 +198,13 @@ def main():
         config_changes[str(planned[0].relative_to(RELEASE))] = added
         print(f"[配置同步] {planned[0]}：" + ("补入" + "、".join(added) if added else "已有选项完整，原文件保留"))
     # 调试件隔离在子目录，使用者只取其中一种，避免Loader一起发现两份ASI。
-    prepare_package(RELEASE, notices)
+    prepare_package(RELEASE)
     shutil.copyfile(packed, RELEASE / "EDSlash.asi")
-    prepare_package(debug_directory, notices)
+    prepare_package(debug_directory)
     shutil.copyfile(debug_asi, debug_directory / debug_asi.name)
     shutil.copyfile(pdb, debug_directory / pdb.name)
     if packed:
-        prepare_package(packed_directory, notices)
+        prepare_package(packed_directory)
         shutil.copyfile(packed, packed_directory / "EDSlash.asi")
     evidence["发布配置"] = "本轮压缩发行/调试及UPX同件副本补入模板新增键；原值/绑定/注释保留"
     evidence["配置新增键"] = config_changes
