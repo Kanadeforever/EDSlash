@@ -1,19 +1,20 @@
 cmake_minimum_required(VERSION 3.21)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
 project(EDSlash VERSION 0.2.0 LANGUAGES C CXX)
 # 关于页读取项目唯一版本定义，不另抄一份版本号。
 add_compile_definitions(EDSLASH_VERSION=\"${PROJECT_VERSION}\")
 # 生产单元与SDL使用同一32位Windows工具链，避免架构和运行库混用。
-if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 4 OR NOT MINGW)
-    message(FATAL_ERROR "EDSlash需要32位MinGW工具链；设置EDSLASH_CC或将i686编译器加入PATH。")
+if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 4 OR NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+    message(FATAL_ERROR "EDSlash需要32位MSVC工具链；安装桌面C++、x86工具和Windows SDK。")
 endif()
 # 入口提供内容摘要；直接CMake构建明确显示未指定身份。
 set(EDSLASH_BUILD_ID "未指定源码摘要" CACHE STRING "当前构建输入内容身份")
-set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 # 一次编译保留完整源码调试信息，优化级别和NDEBUG保持Release原设置。
-# 发行件由此链接件剥离符号得到，避免两次编译引入不同的游戏逻辑。
-string(APPEND CMAKE_C_FLAGS_RELEASE " -g")
-string(APPEND CMAKE_CXX_FLAGS_RELEASE " -g")
+# 发行与调试ASI复制同一链接件，符号放在外置PDB，避免重复编译造成逻辑差异。
+string(APPEND CMAKE_C_FLAGS_RELEASE " /Zi")
+string(APPEND CMAKE_CXX_FLAGS_RELEASE " /Zi")
 
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
@@ -37,22 +38,19 @@ set(SDL_OPENGLES OFF CACHE BOOL "" FORCE)
 set(SDL_VULKAN OFF CACHE BOOL "" FORCE)
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/SDL-release-3.4.16"
                  "${CMAKE_CURRENT_BINARY_DIR}/SDL" EXCLUDE_FROM_ALL)
-# GCC16的IPA克隆可能丢失HID单元内被函数表引用的静态包装函数。
-# 仅该翻译单元关闭克隆；仍用完整上游CMake目标，源码及设备后端不改。
-if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 16
-   AND CMAKE_C_COMPILER_VERSION VERSION_LESS 17)
-    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/SDL-release-3.4.16/src/hidapi/SDL_hidapi.c"
-        DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/SDL-release-3.4.16"
-        PROPERTIES COMPILE_OPTIONS "-fno-ipa-cp-clone")
-endif()
 file(GLOB_RECURSE EDSLASH_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
-add_library(EDSlash SHARED ${EDSLASH_SOURCES})
+add_library(EDSlash SHARED ${EDSLASH_SOURCES} src/EDSlash.def)
 set_target_properties(EDSlash PROPERTIES PREFIX "" SUFFIX ".asi" OUTPUT_NAME "EDSlash")
 target_include_directories(EDSlash PRIVATE src)
-target_compile_options(EDSlash PRIVATE -O2 -Wall -Wextra -Werror -fms-extensions -finput-charset=UTF-8 -fexec-charset=UTF-8)
-target_link_libraries(EDSlash PRIVATE SDL3::SDL3-static user32 advapi32 m)
+# 地址桥需要函数/数据指针转换；聚合初始化和已有收窄规则沿用Win32数据模型。
+# 其余/W4诊断仍由/WX阻止交付，变量遮蔽与未初始化问题在源码中修正。
+target_compile_options(EDSlash PRIVATE /O2 /W4 /WX /utf-8 /wd4204 /wd4100 /wd4244 /wd4267 /wd4055 /wd4152)
+target_link_libraries(EDSlash PRIVATE SDL3::SDL3-static user32 advapi32)
 # 编译器运行库静态链接；系统DLL由Windows提供，不再需要外置SDL3.dll。
-target_link_options(EDSlash PRIVATE -static -static-libgcc -static-libstdc++ -Wl,--exclude-all-symbols -Wl,--dynamicbase -Wl,--nxcompat)
+target_link_options(EDSlash PRIVATE /DEBUG:FULL /INCREMENTAL:NO /OPT:REF /OPT:NOICF /DYNAMICBASE /NXCOMPAT /PDBALTPATH:EDSlash.pdb)
+# 运行库使用/MT；源码仍为C17，中文字符串按UTF-8编译。
+target_compile_definitions(EDSlash PRIVATE _CRT_SECURE_NO_WARNINGS)
+set_target_properties(EDSlash PROPERTIES PDB_NAME "EDSlash" COMPILE_PDB_NAME "EDSlash_compile")
 target_compile_definitions(EDSlash PRIVATE SDL_STATIC_LIB EDSLASH_BUILD_ID="${EDSLASH_BUILD_ID}")
 enable_testing()
 function(edslash_test name)
@@ -60,26 +58,25 @@ function(edslash_test name)
         src/Modules/Controller/ControllerText.c src/Modules/QOL/QOLText.c
         src/Modules/DisplayFix/DisplayFixText.c)
     target_include_directories(${name} PRIVATE src/Modules/Controller src)
-    target_compile_options(${name} PRIVATE -O2 -Wall -Wextra -Werror -finput-charset=UTF-8 -fexec-charset=UTF-8)
-    target_link_options(${name} PRIVATE -static -static-libgcc)
+    target_compile_options(${name} PRIVATE /O2 /W4 /WX /utf-8 /wd4204 /wd4100 /wd4244 /wd4267 /wd4055 /wd4152)
+    target_link_options(${name} PRIVATE /INCREMENTAL:NO /OPT:NOICF)
+    target_compile_definitions(${name} PRIVATE _CRT_SECURE_NO_WARNINGS)
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
 edslash_test(test_crash tools/controller/test_crash.c)
 edslash_test(test_control src/Modules/Controller/Control.c tools/controller/test_control.c)
-target_link_libraries(test_control PRIVATE m)
 edslash_test(test_motion src/Modules/Controller/Control.c tools/controller/test_motion.c)
-target_link_libraries(test_motion PRIVATE m)
 edslash_test(test_game src/Modules/Controller/Control.c src/Modules/Controller/Game.c
     src/Modules/Controller/Combat.c src/Modules/Controller/SkillResolver.c
     src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
     src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Inspect.c src/Runtime/HookManager.c tools/controller/test_game.c)
-target_link_libraries(test_game PRIVATE user32 m)
+target_link_libraries(test_game PRIVATE user32)
 # 菜单回放同时调用真实Control/Menu/Game，验证虚表清栈和关闭后不泄漏战斗输入。
 edslash_test(test_menu src/Modules/Controller/Control.c src/Modules/Controller/Game.c
     src/Modules/Controller/Combat.c src/Modules/Controller/SkillResolver.c
     src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
     src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Inspect.c src/Modules/Controller/Cursor.c src/Modules/Controller/Crash.c src/Runtime/FileIO.c src/Runtime/HookManager.c tools/controller/test_menu.c)
-target_link_libraries(test_menu PRIVATE user32 m)
+target_link_libraries(test_menu PRIVATE user32)
 add_test(NAME test_focus_containment COMMAND test_menu --containment)
 add_test(NAME test_skill_visual_navigation COMMAND test_menu --skill-focus navigation)
 add_test(NAME test_skill_action_frame COMMAND test_menu --skill-focus frame)
@@ -92,14 +89,14 @@ edslash_test(test_inspect src/Modules/Controller/Control.c src/Modules/Controlle
     src/Modules/Controller/Combat.c src/Modules/Controller/SkillResolver.c
     src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
     src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Inspect.c src/Runtime/HookManager.c tools/controller/test_inspect.c)
-target_link_libraries(test_inspect PRIVATE user32 m)
+target_link_libraries(test_inspect PRIVATE user32)
 # 设置回归调用生产同步入口、Guard及真实配置保存，补足原先两个单元间的断点。
 edslash_test(test_guard_settings src/Modules/Controller/Control.c src/Modules/Controller/Game.c
     src/Modules/Controller/Combat.c src/Modules/Controller/SkillResolver.c
     src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
     src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Inspect.c src/Runtime/HookManager.c
     src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c tools/controller/test_guard_settings.c)
-target_link_libraries(test_guard_settings PRIVATE user32 m)
+target_link_libraries(test_guard_settings PRIVATE user32)
 
 # 启动故障回归链接生产Controller业务、Registry和配置，游戏地址仅使用宿主数组。
 edslash_test(test_startup tools/controller/test_startup.c src/Runtime/ModuleRegistry.c
@@ -108,7 +105,7 @@ edslash_test(test_startup tools/controller/test_startup.c src/Runtime/ModuleRegi
     src/Modules/Controller/SkillResolver.c src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
     src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Cursor.c src/Modules/Controller/Crash.c src/Modules/Controller/Inspect.c src/Runtime/Focus.c)
 target_sources(test_startup PRIVATE src/Runtime/SettingsWindow.c src/Runtime/SettingsModel.c)
-target_link_libraries(test_startup PRIVATE user32 gdi32 m)
+target_link_libraries(test_startup PRIVATE user32 gdi32)
 
 edslash_test(test_notice tools/qol/test_notice.c)
 edslash_test(test_autopickup tools/qol/test_autopickup.c)
@@ -126,33 +123,29 @@ foreach(codepage 1252 936 65001)
     edslash_test(test_log_acp${codepage} tools/test_log.c tools/test_log_codepage.c
         src/Runtime/Log.c src/Runtime/FileIO.c)
     target_compile_options(test_log_acp${codepage} PRIVATE
-        -include "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_log_codepage.h")
+        "/FI${CMAKE_CURRENT_SOURCE_DIR}/tools/test_log_codepage.h")
     target_compile_definitions(test_log_acp${codepage} PRIVATE
         EDSLASH_TEST_ACP=${codepage} EDSLASH_BUILD_ID="${EDSLASH_BUILD_ID}")
     set_target_properties(test_log_acp${codepage} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/log-codepage-${codepage}")
 endforeach()
 edslash_test(test_config tools/test_config.c src/Runtime/SettingsModel.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c)
-target_compile_options(test_config PRIVATE -municode)
-target_link_options(test_config PRIVATE -municode)
 edslash_test(test_settings_window tools/test_settings_window.c src/Runtime/SettingsModel.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c)
 target_compile_definitions(test_settings_window PRIVATE EDSLASH_BUILD_ID=\"${EDSLASH_BUILD_ID}\")
-target_compile_options(test_settings_window PRIVATE -municode)
-target_link_options(test_settings_window PRIVATE -municode)
 target_link_libraries(test_settings_window PRIVATE user32 gdi32)
 edslash_test(test_sdl tools/controller/test_sdl.c src/Modules/Controller/Input.c
     src/Modules/Controller/Control.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c)
 target_compile_definitions(test_sdl PRIVATE SDL_STATIC_LIB)
-target_link_libraries(test_sdl PRIVATE SDL3::SDL3-static user32 m)
-target_link_options(test_sdl PRIVATE -static-libstdc++)
+target_link_libraries(test_sdl PRIVATE SDL3::SDL3-static user32)
 add_executable(config_template src/Runtime/RuntimeText.c tools/config_template.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c)
-target_compile_options(config_template PRIVATE -municode -Wall -Wextra -Werror -finput-charset=UTF-8 -fexec-charset=UTF-8)
-target_link_options(config_template PRIVATE -municode -static -static-libgcc)
+target_compile_options(config_template PRIVATE /W4 /WX /utf-8 /wd4204 /wd4100 /wd4244 /wd4267 /wd4055 /wd4152)
+target_link_options(config_template PRIVATE /INCREMENTAL:NO /OPT:NOICF)
+target_compile_definitions(config_template PRIVATE _CRT_SECURE_NO_WARNINGS)
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/EDSlash.toml"
     COMMAND config_template "${CMAKE_CURRENT_BINARY_DIR}/EDSlash.toml"
     DEPENDS config_template VERBATIM)
 add_custom_target(default_config ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/EDSlash.toml")
 add_executable(test_load tools/controller/test_load.c)
-target_compile_options(test_load PRIVATE -municode -Wall -Wextra -Werror)
-target_link_options(test_load PRIVATE -municode -static -static-libgcc)
+target_compile_options(test_load PRIVATE /W4 /WX /utf-8)
+target_link_options(test_load PRIVATE /INCREMENTAL:NO /OPT:NOICF)
 add_test(NAME unified_asi_load COMMAND test_load "$<TARGET_FILE:EDSlash>")

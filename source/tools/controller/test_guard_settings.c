@@ -14,7 +14,7 @@ static void start_settings_dash(void)
 static void finish_settings_dash(void)
 {
     for(unsigned i=0;i<8 && Guard_IsDodging(roles[0]);++i)
-        ((This0)patched_callee(g_profile->dodge_motion_call))(roles[0]);
+        ((This0)patched_callee(g_profile->dodge_motion_call))(roles[0], NULL);
     CHECK(!Guard_IsDodging(roles[0]));
 }
 static void settings_regression(bool expansion)
@@ -72,7 +72,7 @@ static void settings_regression(bool expansion)
 
     /* 真保存128→256，松LT但角色仍闪避：快照和本次位移都继续用128。 */
     start_settings_dash();
-    for(unsigned i=0;i<3;++i) ((This0)patched_callee(profile.dodge_motion_call))(roles[0]);
+    for(unsigned i=0;i<3;++i) ((This0)patched_callee(profile.dodge_motion_call))(roles[0], NULL);
     CHECK(RuntimeConfig_SetInt(CONFIG_DODGE_DISTANCE,256));
     Guard_SyncSettings(&released,&applied);
     CHECK(RuntimeConfig_HasPending() && RuntimeConfig_GetInt(CONFIG_DODGE_DISTANCE)==128);
@@ -96,7 +96,7 @@ static void settings_regression(bool expansion)
     finish_settings_dash();CHECK(Read32(roles[0],0x2C)==7168);
     Guard_SyncSettings(&released,&applied);CHECK(RuntimeConfig_GetInt(CONFIG_DIRECTIONAL_DODGE)==0);
     unsigned legacy_before=legacy_init_calls;
-    ((This0)patched_callee(profile.dodge_init_call))(roles[0]);CHECK(legacy_init_calls==legacy_before+1);
+    ((This0)patched_callee(profile.dodge_init_call))(roles[0], NULL);CHECK(legacy_init_calls==legacy_before+1);
     Write32(roles[0],0x73,0x17);CHECK(RuntimeConfig_SetInt(CONFIG_DIRECTIONAL_DODGE,1));
     Guard_SyncSettings(&released,&applied);CHECK(RuntimeConfig_HasPending());
     Write32(roles[0],0x73,1);Guard_SyncSettings(&released,&applied);CHECK(!RuntimeConfig_HasPending());

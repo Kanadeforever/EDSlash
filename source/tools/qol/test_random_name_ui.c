@@ -7,7 +7,7 @@
 static UINT fixture_acp(void){return 936;}
 #define GetACP fixture_acp
 static int f1_down;
-static SHORT fixture_async(int key){return key==VK_F1 && f1_down ? (SHORT)0x8000:0;}
+static SHORT fixture_async(int key){return key==VK_F1 && f1_down ? (SHORT)-32768:0;}
 #define GetAsyncKeyState fixture_async
 #include "../../src/Modules/QOL/RandomNameUI.c"
 #undef GetACP
@@ -22,10 +22,10 @@ int RuntimeWin32_Read(unsigned long address,void *out,unsigned long bytes)
 void RuntimeLog_Line(const char *text){(void)text;}
 void RuntimeLog_Write(const char *format,...){(void)format;}
 int SettingsWindow_Active(void){return 0;}
-static int __attribute__((thiscall)) get_jm(void *self,int id)
-{CHECK(self==fake_ui);return (int)(uintptr_t)(id==0x9C ? fake_page:id==0x9D ? fake_input:id==0xDF ? fake_month:id==0xE0 ? fake_day:NULL);}
-static int __attribute__((thiscall)) set_text(void *self,const char *text)
-{if(self==fake_month || self==fake_day){CHECK(strlen(text)<=2);strcpy(self==fake_month ? birth_month:birth_day,text);++birthday_writes;return 1;}CHECK(self==fake_input && strlen(text)<sizeof native_text);strcpy(native_text,text);++writes;WCHAR wide[16];CHECK(MultiByteToWideChar(936,MB_ERR_INVALID_CHARS,text,-1,wide,16));CHECK(SetWindowTextW(edit,wide));return 1;}
+static int __fastcall get_jm(void *self, void *unused_edx,int id)
+{ (void)unused_edx;CHECK(self==fake_ui);return (int)(uintptr_t)(id==0x9C ? fake_page:id==0x9D ? fake_input:id==0xDF ? fake_month:id==0xE0 ? fake_day:NULL);}
+static int __fastcall set_text(void *self, void *unused_edx,const char *text)
+{ (void)unused_edx;if(self==fake_month || self==fake_day){CHECK(strlen(text)<=2);strcpy(self==fake_month ? birth_month:birth_day,text);++birthday_writes;return 1;}CHECK(self==fake_input && strlen(text)<sizeof native_text);strcpy(native_text,text);++writes;WCHAR wide[16];CHECK(MultiByteToWideChar(936,MB_ERR_INVALID_CHARS,text,-1,wide,16));CHECK(SetWindowTextW(edit,wide));return 1;}
 int main(void)
 {
     edit=CreateWindowExW(0,L"EDIT",L"",WS_POPUP,0,0,200,30,NULL,NULL,GetModuleHandleW(NULL),NULL);CHECK(edit);

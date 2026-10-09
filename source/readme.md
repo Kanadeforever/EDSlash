@@ -4,9 +4,9 @@
 
 ## 环境
 
-Windows、Python 3.11及以上、CMake 3.21及以上、Ninja、完整32位MinGW GCC/G++及UPX。工具必须与SDL和主插件同为i686；不会读取个人编译器地址记录、下载依赖或使用64位SDL库。
+Windows、Python 3.11及以上、CMake 3.21及以上、Ninja、Visual Studio或Build Tools的桌面C++、x86编译工具和Windows SDK及UPX。主插件和SDL统一构建为Win32/x86，CMake/Ninja本身可为64位；不会读取个人编译器地址记录、下载依赖或使用64位SDL库。
 
-构建器按EDSLASH_CC、PATH中的i686-w64-mingw32-gcc／gcc、MSYS2_ROOT下mingw32/bin/gcc.exe的顺序查找并验证-dumpmachine。未配置MSYS2_ROOT时探测系统盘常见msys64布局。EDSLASH_CC必须指向gcc，旁边需要g++.exe；CMake／Ninja在同一环境PATH中查找。
+构建器复用x86开发者终端，或通过vswhere自动找到VS/Build Tools并调用vcvarsall x64_x86。可用EDSLASH_VS指定安装根；不会把本机绝对路径写进构建系统。必须安装完整Windows SDK/UCRT；SDK注册缺失时按实际头文件和x86库验证安装目录。CMake／Ninja在该开发环境中查找。
 
 ## 唯一构建入口
 
@@ -25,16 +25,17 @@ python source/tools/build.py --checks-only
 python source/tools/build.py --upx
 ~~~
 
-默认一次带-g的优化编译，保留完整链接件，副本strip --strip-unneeded后默认执行upx --best --lzma，作为正式发行件。先做配置同步、四样本字体安全输出及档案反例回归，再运行29组CTest、四官方EXE复核、两件PE／入口／重定位／依赖、TOML解析、运行段一致及实际加载检查，通过后同步配置并发布。checks-only不更新发布目录。UPX使用PATH或UPX_BIN中的本机工具，正式发行默认压缩，--upx仅保留为兼容参数。执行upx -t、非游戏加载／重定位及解压运行段一致性检查；未找到UPX时停止发布，不自动安装。CI环境也须显式安装UPX并加入PATH。
+默认使用MSVC /O2、/MT、C17和/utf-8，一次优化链接同时生成ASI与EDSlash.pdb；发行副本默认执行upx --best --lzma，调试目录保留未压缩ASI及匹配PDB。先做配置同步、四样本字体安全输出及档案反例回归，再运行29组CTest、四官方EXE复核、两件PE／入口／重定位／依赖、TOML解析、运行段一致及实际加载检查，通过后同步配置并发布。checks-only不更新发布目录。UPX使用PATH或UPX_BIN中的本机工具，正式发行默认压缩，--upx仅保留为兼容参数。执行upx -t、非游戏加载／重定位及解压运行段一致性检查；未找到UPX时停止发布，不自动安装。CI环境也须显式安装UPX并加入PATH。
 
-两件运行代码和优化级别相同；Debug不等于-O0，完整信息仅留在_debug。运行时配置／日志仍叫EDSlash.toml／EDSlash.log，不能同时安装两件。
+两件运行代码和优化级别相同；Debug不等于-O0，完整源码符号存放在debug/EDSlash.pdb。运行时配置／日志仍叫EDSlash.toml／EDSlash.log，不能同时安装两件。
 
-中间目录固定.build；SDL在其SDL子目录构建，上游源码保持原样。失败保留诊断。无需读取参考资料中的旧SDL ZIP；未携带完整四份游戏EXE时明确跳过样本复核，源码仍可构建，不能称本次四样本验证通过。
+中间目录固定.build/msvc；SDL在该目录的SDL子目录构建，上游源码保持原样。失败保留诊断。无需读取参考资料中的旧SDL ZIP；未携带完整四份游戏EXE时明确跳过样本复核，源码仍可构建，不能称本次四样本验证通过。
 
 ## 产物与配置
 
-- release/EDSlash.asi：发行版，已剥离符号，使用UPX --best --lzma压缩。
-- release/debug/EDSlash_debug.asi：完整版，保留项目和SDL源码调试信息，不strip、不UPX；同目录有独立配置／许可。
+- release/EDSlash.asi：发行版，源码符号独立于ASI存放在PDB中，使用UPX --best --lzma压缩。
+- release/debug/EDSlash_debug.asi：完整版，保留项目和SDL源码调试信息，不UPX；同目录有匹配EDSlash.pdb及独立配置／许可。
+- release/debug/EDSlash.pdb：与调试ASI的GUID/age匹配，便于源码断点和崩溃定位。
 - release/EDSlash.toml：缺失时复制默认值，已有配置只补模板新增段／键，保留原数值、绑定和注释。
 - release/统一构建验证.json：实际散列、体积、导入、SDL选项及验收边界。
 - release/第三方许可.txt：随发布保留的声明。
@@ -58,7 +59,7 @@ python source/tools/build.py --upx
 
 ### GitHub Actions自动构建
 
-仓库的`.github/workflows/build.yml`在main推送或手动触发时运行。Windows runner安装Python 3.13、MSYS2的32位MinGW GCC/G++、原生CMake/Ninja及UPX 5.2.1，再调用同一个`source/tools/build.py`；SDL直接使用thirdparty完整源码，不额外下载SDL。只有main成功构建更新dev-auto标签与开发版，其它分支手动构建仅保存Actions附件。构建任务只读仓库，发布任务单独取得contents: write。
+仓库的`.github/workflows/build.yml`在main推送或手动触发时运行。Windows runner安装Python 3.13、使用runner自带的MSVC/Windows SDK、原生CMake/Ninja及UPX 5.2.1，再调用同一个`source/tools/build.py`；SDL直接使用thirdparty完整源码，不额外下载SDL。只有main成功构建更新dev-auto标签与开发版，其它分支手动构建仅保存Actions附件。构建任务只读仓库，发布任务单独取得contents: write。
 
 自动构建内部仍验证同次优化链接的正式/debug双产物，但**不发布debug版**。`tools/package_release.py`输出的`EDSlash-dev-auto.zip`根目录严格只有四个文件：EDSlash.asi、EDSlash.toml、LICENSE.txt、LICENSE-SDL.txt。项目许可来自根LICENSE；SDL许可文件使用现有第三方许可汇总，保留HIDAPI及静态运行库声明。源码、完整SDL、文档、报告、文件清单和额外校验附件均不进入ZIP或自动发布附件。
 
@@ -73,9 +74,9 @@ CI不携带原游戏EXE，真实四样本复核明确跳过，不能记录成通
 
 Guard设置应用测试使用真实TOML与双版本运动回放；test_menu链接生产Control/Menu/Game和真实虚表包装，检查标题无玩家、独立焦点、页面/来源中立门、业务ABI及逐槽失败回滚。游戏内MOD设置界面已接通原暂停、输入与绘制；真实高亮/动画/热应用和设备时序必须两作实机确认。
 
-编译器发生随机内部错误时，可用`python tools/build.py --jobs 1`串行复核；默认并行数6，不改变生产O2或发行/debug同一次链接的规则。
+默认并行数6，可用`python tools/build.py --jobs 1`诊断环境问题；任何失败都停止交付，不自动重试或复用旧产物。
 
-GCC16的SDL HID单元使用-fno-ipa-cp-clone，避免编译器丢失被函数表引用的静态包装函数；其余单元和完整上游源码／后端不改。构建成功后清理源码内旧.build及Python字节缓存，当前根.build保留增量产物／诊断。
+全项目只保留原生MSVC构建；GCC专用IPA/位置视图参数已经移除。使用.build/msvc隔离编译缓存；源码与SDL共用静态运行库/MT，发行/debug来自同一优化链接，PDB身份必须匹配。
 
 正式构建成功后默认清理根.build；--checks-only或失败保留诊断，--keep-build保留增量缓存。随机核心195611项脚本回归和新名称窗口适配纳入构建，原始证据/正式产物不放缓存。
 
@@ -86,3 +87,9 @@ GCC16的SDL HID单元使用-fno-ipa-cp-clone，避免编译器丢失被函数表
 项目自有界面与日志文本编译进ASI，不读取外置语言文件。每个模块的文字集中在对应目录的RuntimeText.c、ControllerText.c、QOLText.c、DisplayFixText.c；配套Text.h只声明常量。开发时编辑.c中的字符串，保留变量名和格式占位符，随后运行build.bat重新编译。变量以模块、具体功能和文本用途命名，不使用流水编号。例如RuntimeText_Config_StickDeadzoneLabel是摇杆死区名称，RuntimeText_Config_StickDeadzoneDescription是其说明，ControllerText_Device_DisconnectedLog是手柄断开日志。新增文字必须用能说明用途的名字；仅修改措辞或翻译时保持变量名。相同用途、相同内容的文本共用定义。
 
 随机姓名词库RandomNameData.h属于功能数据，保持原样；原游戏技能／物品文字仍从游戏读取。配置键、文件路径、导出符号、签名掩码等程序标识不作为可翻译文案。四样本名称在ControllerText.c定义，地址表生成器只引用对应常量。版本号和构建摘要仍由构建系统提供，作者及未指定时的显示文字在RuntimeText.c维护。修改翻译不代表原游戏字体具备对应字形，仍需实机检查显示。
+
+## MSVC调用约定与调试
+
+原游戏thiscall接口在C中通过fastcall空EDX参数桥接：self进入ECX、第二参数NULL进入EDX，其余参数保持原栈布局并由游戏清栈。三处裸Hook使用MSVC x86汇编。不要删去类型或调用中的空EDX参数。默认启用/W4和/WX；局部兼容诊断允许Win32地址/函数指针转换、C聚合初始化以及已有的显式类型收窄。
+
+调试时使用release/debug/EDSlash_debug.asi与同目录EDSlash.pdb；只加载一份ASI。源码符号在PDB中，ASI本身仍有CodeView身份记录，文件名固定为EDSlash.pdb而非本机绝对路径。构建会核对GUID/age，错误或旧PDB停止交付。

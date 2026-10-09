@@ -1,3 +1,8 @@
 # 原始证据与第三方许可必须按原字节保存，禁止Git自动转换换行。
 docs/证据/** -text
 docs/第三方许可/** -text
+
+# 项目规则要求BAT文字REM/echo行保留两个尾空格，不能当作普通尾空白删除。
+source/build.bat whitespace=-blank-at-eol,cr-at-eol
+# 历史许可逐字保留上游格式，包括原文中的尾空格。
+docs/第三方许可/历史MinGW与GCC运行库许可.txt whitespace=-blank-at-eol,-blank-at-eof,cr-at-eol

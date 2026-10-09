@@ -29,7 +29,7 @@ int RuntimeLog_AppendAnsi(char *output,size_t capacity,const char *text)
     /* 先找到已有文本的末尾；没有结束标记时拒绝追加，避免越界。 */
     size_t used=0;while(used<capacity && output[used])++used;if(used==capacity)return 0;
     /* 只转换来自A版接口的片段，已有UTF-8标签保持原样。 */
-    WCHAR wide[2048];int count=MultiByteToWideChar(CP_ACP,0,text,-1,wide,2048);if(!count)return 0;
+    WCHAR wide[2048];int wide_count=MultiByteToWideChar(CP_ACP,0,text,-1,wide,2048);if(!wide_count)return 0;
     /* 先计算含结束标记的完整字节数，空间不足时不改变输出。 */
     int required=WideCharToMultiByte(CP_UTF8,0,wide,-1,NULL,0,NULL,NULL);
     if(required<=0 || (size_t)required>capacity-used)return 0;

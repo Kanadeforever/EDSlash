@@ -37,32 +37,10 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: 安装32位MinGW与原生构建工具
-        uses: msys2/setup-msys2@v2
-        id: msys2
-        with:
-          msystem: MINGW32
-          update: true
-          install: >-
-            mingw-w64-i686-gcc
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-ninja
-
-      - name: 配置编译器与构建工具路径
-        env:
-          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+      - name: 核对原生MSVC的Win32环境与构建工具
         run: |
-          # 使用操作明确返回的安装根，不猜测shell包装脚本的位置或runner盘符。
-          $msysRoot = $env:MSYS2_LOCATION
-          $cc = Join-Path $msysRoot 'mingw32/bin/gcc.exe'
-          $tools = Join-Path $msysRoot 'ucrt64/bin'
-          foreach ($file in @($cc, (Join-Path $tools 'cmake.exe'), (Join-Path $tools 'ninja.exe'))) {
-            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "缺少构建工具：$file" }
-          }
-          "MSYS2_ROOT=$msysRoot" >> $env:GITHUB_ENV
-          "EDSLASH_CC=$cc" >> $env:GITHUB_ENV
-          $tools >> $env:GITHUB_PATH
-          (Split-Path $cc) >> $env:GITHUB_PATH
+          # Windows runner自带VS；同一探测器供本地与CI使用，不写固定安装版本路径。
+          python -c "import sys; sys.path.insert(0, 'source/tools'); from toolchain import compiler, program; cc, env = compiler(); print(cc); print(program('cmake', env)); print(program('ninja', env))"
 
       - name: 安装UPX
         run: |

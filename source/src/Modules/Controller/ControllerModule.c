@@ -230,18 +230,18 @@ static SHORT WINAPI async_hook(int key)
     return Game_Async(key, native);
 }
 
-static void __attribute__((fastcall)) resolver_hook(void *mouse, void *unused)
+static void __fastcall resolver_hook(void *mouse, void *unused)
 {
     (void)unused;
     /* 先让原版解析新一帧场景和玩家，再提交控制器动作，避免拿上一张地图的 Role。 */
-    ((This0)g_profile->resolver)(mouse);
+    ((This0)g_profile->resolver)(mouse, NULL);
     Runtime_EmitEvent(RUNTIME_EVENT_INPUT_RESOLVED,mouse,0,0);
     int64_t perf=RuntimePerf_Begin();
     Game_Update();
     RuntimePerf_End(PERF_GAME,perf);
 }
 
-static void __attribute__((fastcall)) history_hook(void *original,void *unused,int selector,int direction,int extra)
+static void __fastcall history_hook(void *original,void *unused,int selector,int direction,int extra)
 {
     (void)unused;
     /* 调用点位于原生 Runtime 建立成功之后，已经保留自动续段历史门及受控角色检查。
@@ -250,20 +250,20 @@ static void __attribute__((fastcall)) history_hook(void *original,void *unused,i
     else {
         /* 原生实际建立的新动作接管显示；单纯移动鼠标不撤掉尚在执行的手柄图标。 */
         Feedback_End();
-        ((This3)g_profile->history_record)(original,selector,direction,(void *)(intptr_t)extra);
+        ((This3)g_profile->history_record)(original, NULL,selector,direction,(void *)(intptr_t)extra);
     }
 }
 
-static int __attribute__((fastcall)) retry_hook(void *original,void *unused,int selector,int policy,void *target)
+static int __fastcall retry_hook(void *original,void *unused,int selector,int policy,void *target)
 {
     (void)unused;
     /* 普通手柄不使用原版鼠标缓冲。保留原函数周围的计数、超时和其它维护，
        只阻断这一次鼠标来源的重试；明确切入鼠标模式后完整恢复原调用。 */
     if (!Combat_AllowsMouseRetry()) return 0;
-    return ((This3)g_profile->skill_release)(original,selector,policy,target);
+    return ((This3)g_profile->skill_release)(original, NULL,selector,policy,target);
 }
 
-static void __attribute__((fastcall)) end_hook(void *original,void *unused)
+static void __fastcall end_hook(void *original,void *unused)
 {
     (void)unused;
     /* 此调用位于原生当前玩家 Runtime 结束链，角色活动指针已经清空。
@@ -271,7 +271,7 @@ static void __attribute__((fastcall)) end_hook(void *original,void *unused)
     if (Combat_OwnsHistory()) Combat_End();
     else {
         Feedback_RuntimeEnded();
-        ((This0)g_profile->end_record)(original);
+        ((This0)g_profile->end_record)(original, NULL);
     }
 }
 

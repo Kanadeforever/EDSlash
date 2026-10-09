@@ -25,7 +25,7 @@ def source_digest(root):
     digest = hashlib.sha256()
     for path in sorted(p for p in (root / "source").rglob("*") if p.is_file()
                        and ".build" not in p.parts and "__pycache__" not in p.parts
-                       and p.suffix.lower() in {".c", ".h", ".py", ".json", ".toml", ".txt", ".bat"}):
+                       and p.suffix.lower() in {".c", ".h", ".def", ".py", ".json", ".toml", ".txt", ".bat"}):
         digest.update(path.relative_to(root / "source").as_posix().encode("utf-8") + b"\0")
         digest.update(path.read_bytes())
     return digest.hexdigest()

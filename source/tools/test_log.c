@@ -65,8 +65,8 @@ int main(void)
     CHECK(strstr(bytes,"EDSlash：构建身份=")==bytes);
     /* 每条记录应恰好出现一次，即使四个生产线程交错也不能串行内容。 */
     for (unsigned id=0;id<4;++id) for(unsigned n=0;n<128;++n) {
-        char expected[160];snprintf(expected,sizeof expected,"[日志回归] 生产者=%u 序号=%u 中文保持\r\n",id,n);
-        char *first=strstr(bytes,expected);CHECK(first && !strstr(first+strlen(expected),expected));
+        char expected_record[160];snprintf(expected_record,sizeof expected_record,"[日志回归] 生产者=%u 序号=%u 中文保持\r\n",id,n);
+        char *first=strstr(bytes,expected_record);CHECK(first && !strstr(first+strlen(expected_record),expected_record));
     }
     for(size_t i=0;i<size;++i)if(bytes[i]=='\n')CHECK(i>0 && bytes[i-1]=='\r');
     CHECK(MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,bytes,(int)size,NULL,0)>0);

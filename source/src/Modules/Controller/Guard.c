@@ -5,8 +5,8 @@
 #include <math.h>
 #include <string.h>
 
-typedef void (__attribute__((thiscall)) *Adjust)(void *,float);
-typedef int (__attribute__((thiscall)) *RoleAction)(void *,int,int,int,int,int,int);
+typedef void (__fastcall *Adjust)(void *, void *,float);
+typedef int (__fastcall *RoleAction)(void *, void *,int,int,int,int,int,int);
 static bool installed,dodge_latched,dodge_request;
 static bool charge_guard_on_hit=true;
 static bool free_run=true;
@@ -14,15 +14,15 @@ static int guard_hit_cost=-1,attack_hit_recovery=-1;
 static void *dodge_actor;
 static unsigned dodge_retries;
 /* 这些标量只在同步调用原版闪避启动函数期间有效，不伪造 CombatTarget 对象。 */
-static int dodge_x __attribute__((used)),dodge_y __attribute__((used)),dodge_direction __attribute__((used));
-static uintptr_t dodge_install __attribute__((used)),dodge_legacy __attribute__((used));
-static uintptr_t dodge_resume __attribute__((used)),dodge_failure __attribute__((used));
-typedef int (__attribute__((thiscall)) *Receiver)(void *,void *);
+static int dodge_x ,dodge_y ,dodge_direction ;
+static uintptr_t dodge_install ,dodge_legacy ;
+static uintptr_t dodge_resume ,dodge_failure ;
+typedef int (__fastcall *Receiver)(void *, void *,void *);
 static Receiver original_receiver;
 static void *receiver_gateway;
 static BYTE saved[9][6];
 static bool omnidirectional_guard=true;
-static uintptr_t guard_angle_accept __attribute__((used)),guard_angle_reject __attribute__((used));
+static uintptr_t guard_angle_accept ,guard_angle_reject ;
 static bool modern_dodge=true;
 static int dodge_distance=128;
 /* 位移状态与按键锁分开：松开LT或切鼠标不会让已启动的直线闪避突然回到圆弧算法。 */
@@ -40,14 +40,14 @@ void Guard_Periodic(void *role,float amount)
      * 原版的钳制及之后的体力阈值检查仍完整执行，不用每帧补回体力。 */
     if (charge_guard_on_hit && controlled(role) && Memory_Readable(role,0x21A) &&
         *((BYTE *)role+0x219)) amount=0.0f;
-    ((Adjust)g_profile->stamina_adjust)(role,amount);
+    ((Adjust)g_profile->stamina_adjust)(role, NULL,amount);
 }
 
 void Guard_RunCost(void *role,float amount)
 {
     /* 只替换原奔跑支出调用；不再猜测战斗状态，原资格与其它恢复/消耗继续执行。 */
     if (free_run && controlled(role)) amount=0.0f;
-    ((Adjust)g_profile->stamina_adjust)(role,amount);
+    ((Adjust)g_profile->stamina_adjust)(role, NULL,amount);
 }
 
 static float stamina_per_hit(void *role,bool recovery)
@@ -58,34 +58,34 @@ static float stamina_per_hit(void *role,bool recovery)
     if (recovery && value<0) value=guard_hit_cost;
     uintptr_t table=Read32(role,0);
     if (value>=0) {
-        int maximum=((This0)(uintptr_t)Read32((void *)table,0x80))(role);
+        int maximum=((This0)(uintptr_t)Read32((void *)table,0x80))(role, NULL);
         return maximum>0 ? (float)maximum*(float)value/10000.0f:0.0f;
     }
-    int unit=((This0)(uintptr_t)Read32((void *)table,0xA0))(role);
+    int unit=((This0)(uintptr_t)Read32((void *)table,0xA0))(role, NULL);
     return 2.0f*(float)unit;
 }
 
 int Guard_Hit(void *role,int index)
 {
-    int state=((This1)g_profile->guard_get)(role,index);
+    int state=((This1)g_profile->guard_get)(role, NULL,index);
     if (!charge_guard_on_hit || !state || index!=0x6A || !controlled(role)) return state;
     /* 此调用点已经经过原版命中/来源资格，进入实际受击的防御处理。
      * 一个原生受击事件只执行一次：扣除原防御一个周期的 2×角色消耗值，
      * 不按伤害值比例另算、不按攻击动画或碰撞扫描次数重复扣。 */
     uintptr_t table=Read32(role,0);
     float cost=stamina_per_hit(role,false);
-    ((Adjust)g_profile->stamina_adjust)(role,-cost);
+    ((Adjust)g_profile->stamina_adjust)(role, NULL,-cost);
     float stamina,threshold;
     uint32_t bits=Read32(role,g_profile->stamina_offset);memcpy(&stamina,&bits,4);
     bits=Read32((void *)g_profile->guard_threshold,0);memcpy(&threshold,&bits,4);
     if (stamina<threshold) {
         /* 与原周期扣费后的相同阈值、相同六参数 OFF 事件保持一致。
          * 后面的防御判定读取清理后的状态，归零后的受击由原版继续决定。 */
-        ((RoleAction)(uintptr_t)Read32((void *)table,0x5C))(role,16,0,0,0,0,0);
+        ((RoleAction)(uintptr_t)Read32((void *)table,0x5C))(role, NULL,16,0,0,0,0,0);
     }
     Log_Write(ControllerText_Guard_HitStaminaChargedLog,
               (double)cost,(double)stamina,(unsigned)*((BYTE *)role+0x219));
-    return ((This1)g_profile->guard_get)(role,index);
+    return ((This1)g_profile->guard_get)(role, NULL,index);
 }
 
 void Guard_RecoverHit(void *victim,void *attacker,float health_before,bool was_enemy)
@@ -99,12 +99,12 @@ void Guard_RecoverHit(void *victim,void *attacker,float health_before,bool was_e
     if (!(health_after<health_before)) return;
     float amount=stamina_per_hit(attacker,true);
     if (amount<=0) return;
-    ((Adjust)g_profile->stamina_adjust)(attacker,amount);
+    ((Adjust)g_profile->stamina_adjust)(attacker, NULL,amount);
     Log_Write(ControllerText_Guard_AttackHitStaminaRecoveredLog,
               (double)health_before,(double)health_after,(double)amount);
 }
 
-static int __attribute__((fastcall)) receiver_hook(void *victim,void *unused,void *runtime)
+static int __fastcall receiver_hook(void *victim,void *unused,void *runtime)
 {
     (void)unused;
     int64_t wrapper_perf=RuntimePerf_Begin();
@@ -120,14 +120,14 @@ static int __attribute__((fastcall)) receiver_hook(void *victim,void *unused,voi
     if (Memory_Readable(runtime,0x93) && Memory_Readable(victim,g_profile->health_offset+4)) {
         /* 读取本次真实技能运行时的攻击者，不借用“最后打过此敌人”的残留字段。
          * 持续毒伤/环境扣血若不经过该攻击回调，不会给玩家错误回血。 */
-        attacker=(void *)(uintptr_t)((This0)g_profile->runtime_owner)(runtime);
+        attacker=(void *)(uintptr_t)((This0)g_profile->runtime_owner)(runtime, NULL);
         void *method=ReadPtr(runtime,0x8F);
         was_enemy=controlled(attacker) && Game_Enemy(attacker,victim) &&
             Memory_Readable(method,0x24) && (Read32(method,0x22)&0xFFFFu)==0;
         uint32_t bits=Read32(victim,g_profile->health_offset);memcpy(&health_before,&bits,4);
     }
     int64_t native_perf=RuntimePerf_Begin();
-    int result=original_receiver(victim,runtime);
+    int result=original_receiver(victim, NULL,runtime);
     RuntimePerf_End(PERF_NATIVE_HIT,native_perf);
     /* 原回调可能死亡/换图；不能把旧场景的命中奖励加给新角色。 */
     if (scope==ReadPtr((void *)g_profile->world_global,0)) {
@@ -147,56 +147,92 @@ static int __attribute__((fastcall)) receiver_hook(void *victim,void *unused,voi
     return result;
 }
 
-static void __attribute__((fastcall)) periodic_hook(void *role,void *unused,float amount)
+static void __fastcall periodic_hook(void *role,void *unused,float amount)
 { (void)unused;Guard_Periodic(role,amount); }
-static void __attribute__((fastcall)) run_hook(void *role,void *unused,float amount)
+static void __fastcall run_hook(void *role,void *unused,float amount)
 { (void)unused;Guard_RunCost(role,amount); }
-static int __attribute__((fastcall)) hit_hook(void *role,void *unused,int index)
+static int __fastcall hit_hook(void *role,void *unused,int index)
 { (void)unused;return Guard_Hit(role,index); }
-static int __attribute__((fastcall)) input_release_hook(void *role,void *unused,int index)
+static int __fastcall input_release_hook(void *role,void *unused,int index)
 {
     (void)unused;
     /* 手柄自己发 ON/OFF；阻止原版“真实 Alt 没按→OFF”覆盖手柄状态。
      * 只隔离输入生产点，业务状态 Getter 和物理鼠标/键盘模式保持真实值。 */
     if (g_input.connected && g_input.focused && g_intent.layer!=LAYER_MOUSE &&
         g_intent.layer!=LAYER_NATIVE && g_intent.layer!=LAYER_NONE && controlled(role)) return 0;
-    return ((This1)g_profile->guard_get)(role,index);
+    return ((This1)g_profile->guard_get)(role, NULL,index);
 }
 
-static int __attribute__((used,noinline)) claim_full_guard(void *role)
+static int __declspec(noinline) __cdecl claim_full_guard(void *role)
 {
     /* 只放宽当前玩家已有防御的角度，不给未防御角色免伤，也不接管敌人的防御。 */
     return omnidirectional_guard && controlled(role) && Memory_Readable(role,0x21A) &&
         *((BYTE *)role+0x219)!=0;
 }
-static void __attribute__((naked,used)) guard_angle_hook(void)
+static void __declspec(naked) guard_angle_hook(void)
 {
     /* 这里紧接原版cmp角度差,2。保存寄存器和标志，未接管时精确重放原jle分支。
      * 接管时落入已有格挡反应；后面的特殊招式反应3、硬直和资源规则仍由原版处理。 */
-    __asm__ volatile(
-        "pushfl\n\tpushal\n\tpushl %esi\n\tcall _claim_full_guard\n\taddl $4,%esp\n\t"
-        "testl %eax,%eax\n\tjz 1f\n\tpopal\n\tpopfl\n\tjmp *_guard_angle_accept\n\t"
-        "1:\n\tpopal\n\tpopfl\n\tjle 2f\n\tjmp *_guard_angle_accept\n\t"
-        "2:\n\tjmp *_guard_angle_reject\n\t");
+    __asm {
+        pushfd
+        pushad
+        push esi
+        call claim_full_guard
+        add esp, 4
+        test eax, eax
+        jz original_angle
+        popad
+        popfd
+        jmp dword ptr [guard_angle_accept]
+    original_angle:
+        popad
+        popfd
+        jle reject_angle
+        jmp dword ptr [guard_angle_accept]
+    reject_angle:
+        jmp dword ptr [guard_angle_reject]
+    }
 }
 
-static int __attribute__((used,noinline)) claim_dodge(void *role)
+static int __declspec(noinline) __cdecl claim_dodge(void *role)
 {
     return modern_dodge && dodge_request && role==dodge_actor && controlled(role);
 }
 
-static void __attribute__((naked,used)) dodge_hook(void)
+static void __declspec(naked) dodge_hook(void)
 {
     /* 拦截点前原版已检查冷却、硬直、活动技能和动作资格。
      * 保存所有寄存器和标志后询问来源；非手柄路径重放原来的空目标分支及压栈。
      * 手柄路径只安装三个方向标量，然后回原版成功/失败、碰撞和位移状态机。 */
-    __asm__ volatile(
-        "pushfl\n\tpushal\n\tpushl %esi\n\tcall _claim_dodge\n\taddl $4,%esp\n\t"
-        "testl %eax,%eax\n\tjz 1f\n\tpopal\n\tpopfl\n\t"
-        "pushl %ebx\n\tpushl _dodge_direction\n\tpushl _dodge_y\n\tpushl _dodge_x\n\t"
-        "pushl $0x17\n\tmovl %esi,%ecx\n\tcall *_dodge_install\n\tjmp *_dodge_resume\n\t"
-        "1:\n\tpopal\n\tpopfl\n\ttestl %edi,%edi\n\tjz 2f\n\t"
-        "pushl %edi\n\tpushl %esi\n\tjmp *_dodge_legacy\n\t2:\n\tjmp *_dodge_failure\n\t");
+    __asm {
+        pushfd
+        pushad
+        push esi
+        call claim_dodge
+        add esp, 4
+        test eax, eax
+        jz original_dodge
+        popad
+        popfd
+        push ebx
+        push dword ptr [dodge_direction]
+        push dword ptr [dodge_y]
+        push dword ptr [dodge_x]
+        push 17h
+        mov ecx, esi
+        call dword ptr [dodge_install]
+        jmp dword ptr [dodge_resume]
+    original_dodge:
+        popad
+        popfd
+        test edi, edi
+        jz failed_dodge
+        push edi
+        push esi
+        jmp dword ptr [dodge_legacy]
+    failed_dodge:
+        jmp dword ptr [dodge_failure]
+    }
 }
 
 static bool owns_dash(void *role)
@@ -208,7 +244,7 @@ static bool owns_dash(void *role)
 static bool clear_cell(void *role,int x,int y)
 {
     void *map=ReadPtr(role,0x6F);
-    if (!Memory_Readable(map,0x18) || !((This2)g_profile->map_bounds)(map,x,y)) return false;
+    if (!Memory_Readable(map,0x18) || !((This2)g_profile->map_bounds)(map, NULL,x,y)) return false;
     unsigned width=Read32(map,8);
     if (!width || width>65536 || x<0 || y<0) return false;
     uint64_t index=(uint64_t)(unsigned)y*width+(unsigned)x;
@@ -217,7 +253,7 @@ static bool clear_cell(void *role,int x,int y)
     BYTE *cell=cells+(size_t)index*19;
     if (!Memory_Readable(cell,19)) return false;
     /* 和原版一样询问地形通行资格；先拒绝占用，防止grid_commit偷偷找旁边的空格绕路。 */
-    if (!((This1)g_profile->cell_passable)(cell,*((BYTE *)role+0x62))) return false;
+    if (!((This1)g_profile->cell_passable)(cell, NULL,*((BYTE *)role+0x62))) return false;
     unsigned occupied=Read32(cell,0xA)&0xFFFFu;
     return occupied==0xFFFFu || occupied==(Read32(role,0x14)&0xFFFFu);
 }
@@ -231,35 +267,35 @@ static bool dash_step(void *role,WorldPoint next)
     if (!clear_cell(role,b.x,b.y)) return false;
     /* 斜向跨格时两个相邻侧格也必须可通行，避免从两面墙夹出的角落穿过去。 */
     if (a.x!=b.x && a.y!=b.y && (!clear_cell(role,a.x,b.y) || !clear_cell(role,b.x,a.y))) return false;
-    if (!((This3)g_profile->grid_commit)(role,b.x,b.y,NULL)) return false;
+    if (!((This3)g_profile->grid_commit)(role, NULL,b.x,b.y,NULL)) return false;
     /* 原版提交网格负责占用表，原版位置setter负责当前/上一位置和画面对象。两者都要调用。 */
-    ((This2)(uintptr_t)Read32(ReadPtr(role,0),8))(role,next.x,next.y);
+    ((This2)(uintptr_t)Read32(ReadPtr(role,0),8))(role, NULL,next.x,next.y);
     return true;
 }
 
-static int __attribute__((fastcall)) dodge_init_hook(void *role,void *unused)
+static int __fastcall dodge_init_hook(void *role,void *unused)
 {
     (void)unused;
     if (!claim_dodge(role)) {
         if (controlled(role)) dash.active=false;
-        return ((This0)g_profile->dodge_init)(role);
+        return ((This0)g_profile->dodge_init)(role, NULL);
     }
     memset(&dash,0,sizeof dash);
     dash.world=ReadPtr((void *)g_profile->world_global,0);dash.actor=Read32(role,0x14);
     dash.start.x=(int)Read32(role,0x2C);dash.start.y=(int)Read32(role,0x30);
     Control_WorldDirection(g_intent.lx,g_intent.ly,&dash.dx,&dash.dy);
     WorldPoint probe={dash.start.x+(int)lroundf(dash.dx*256),dash.start.y+(int)lroundf(dash.dy*256)};
-    ((This2)g_profile->facing_point)(role,(int)(uintptr_t)&probe,(int)(uintptr_t)&dash.start);
+    ((This2)g_profile->facing_point)(role, NULL,(int)(uintptr_t)&probe,(int)(uintptr_t)&dash.start);
     /* 仍使用原版闪避状态和效果开关，只替换八个逻辑更新周期内的直线位移。 */
     Write32(role,g_profile->dodge_counter_offset,8);dash.active=true;
-    ((This4)g_profile->role_effect)(role,0x66,1,1,0);
+    ((This4)g_profile->role_effect)(role, NULL,0x66,1,1,0);
     return 1;
 }
 
-static void __attribute__((fastcall)) dodge_motion_hook(void *role,void *unused)
+static void __fastcall dodge_motion_hook(void *role,void *unused)
 {
     (void)unused;
-    if (!owns_dash(role)) {((This0)g_profile->dodge_motion)(role);return;}
+    if (!owns_dash(role)) {((This0)g_profile->dodge_motion)(role, NULL);return;}
     ++dash.frame;
     WorldPoint current={(int)Read32(role,0x2C),(int)Read32(role,0x30)};
     WorldPoint goal={dash.start.x+(int)lroundf(dash.dx*dodge_distance*dash.frame/8.0f),
@@ -274,11 +310,11 @@ static void __attribute__((fastcall)) dodge_motion_hook(void *role,void *unused)
         if (!dash_step(role,next)) {blocked=true;break;}
     }
     unsigned left=8-dash.frame;Write32(role,g_profile->dodge_counter_offset,left);
-    if (left==4 || blocked || !left) ((This4)g_profile->role_effect)(role,0x66,0,0,0);
+    if (left==4 || blocked || !left) ((This4)g_profile->role_effect)(role, NULL,0x66,0,0,0);
     if (blocked || !left) {
         dash.active=false;
         /* 位移结束发原版idle事件，不直接改状态编号；动画收尾和其它副作用仍由原版处理。 */
-        ((This4)g_profile->install_state)(role,1,0,0,0);
+        ((This4)g_profile->install_state)(role, NULL,1,0,0,0);
         Log_Write(ControllerText_Dodge_FinishedLog,(int)Read32(role,0x2C),
                   (int)Read32(role,0x30),blocked ? ControllerText_Dodge_StoppedByCollisionReason:ControllerText_Dodge_ConfiguredDistanceReachedReason);
     }
@@ -293,7 +329,7 @@ void Guard_Update(void *role)
 {
     if (!installed || !controlled(role) || (g_intent.layer!=LAYER_GUARD &&
         g_intent.layer!=LAYER_DUAL && g_intent.layer!=LAYER_ACTION_MENU)) {Guard_Reset();return;}
-    if (!*((BYTE *)role+0x219) && ((This0)g_profile->guard_check)(role)) {
+    if (!*((BYTE *)role+0x219) && ((This0)g_profile->guard_check)(role, NULL)) {
         /* 读取权威状态，资格和延迟仍交给原生事件，不直接写防御字节。 */
         WorldPoint origin={(int)Read32(role,0x2C),(int)Read32(role,0x30)},point=origin;
         unsigned facing=Read32(role,0x14B),directions=Read32(role,0x2BF)==16 ? 16:8;
@@ -302,14 +338,14 @@ void Guard_Update(void *role)
         for (unsigned i=0;i<directions;++i) {
             float angle=i*6.28318530718f/directions;
             WorldPoint probe={origin.x+(int)lroundf(cosf(angle)*256),origin.y+(int)lroundf(sinf(angle)*256)};
-            if ((unsigned)((This2)g_profile->facing_direction)(role,(int)(uintptr_t)&probe,(int)(uintptr_t)&origin)==facing) {
+            if ((unsigned)((This2)g_profile->facing_direction)(role, NULL,(int)(uintptr_t)&probe,(int)(uintptr_t)&origin)==facing) {
                 point=probe;break;
             }
         }
         void *root=ReadPtr((void *)g_profile->world_global,0);
-        ((This4)g_profile->submit)(ReadPtr(root,0x30),16,1,0,0);
+        ((This4)g_profile->submit)(ReadPtr(root,0x30), NULL,16,1,0,0);
         if (*((BYTE *)role+0x219) && (point.x!=origin.x || point.y!=origin.y))
-            ((This2)g_profile->facing_point)(role,(int)(uintptr_t)&point,(int)(uintptr_t)&origin);
+            ((This2)g_profile->facing_point)(role, NULL,(int)(uintptr_t)&point,(int)(uintptr_t)&origin);
     }
     /* 双扳机独立组合和动作菜单只维护防御，左杆不得同时抢为单LT闪避。 */
     if (g_intent.layer==LAYER_ACTION_MENU || g_intent.layer==LAYER_DUAL) {dodge_retries=0;return;}
@@ -324,7 +360,7 @@ void Guard_Update(void *role)
     typedef int (__cdecl *Direction)(const WorldPoint *,const WorldPoint *);
     dodge_x=point.x;dodge_y=point.y;dodge_direction=((Direction)g_profile->direction8)(&point,&origin);
     dodge_actor=role;dodge_request=true;
-    int result=((This0)g_profile->dodge_start)(role);
+    int result=((This0)g_profile->dodge_start)(role, NULL);
     dodge_request=false;dodge_actor=NULL;
     if (result) {
         dodge_retries=0;

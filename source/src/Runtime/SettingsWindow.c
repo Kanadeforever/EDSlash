@@ -12,11 +12,11 @@
 #include "Log.h"
 #include "Focus.h"
 
-typedef int (__attribute__((thiscall)) *This0)(void *);
-typedef int (__attribute__((thiscall)) *This1)(void *,int);
-typedef int (__attribute__((thiscall)) *This2)(void *,int,int);
-typedef int (__attribute__((thiscall)) *This3)(void *,int,int,void *);
-typedef int (__attribute__((thiscall)) *IconDraw)(void *,int,int,int,int,int,int,int,int,int);
+typedef int (__fastcall *This0)(void *, void *);
+typedef int (__fastcall *This1)(void *, void *,int);
+typedef int (__fastcall *This2)(void *, void *,int,int);
+typedef int (__fastcall *This3)(void *, void *,int,int,void *);
+typedef int (__fastcall *IconDraw)(void *, void *,int,int,int,int,int,int,int,int,int);
 typedef struct {
     uintptr_t world_global,ui,skill_global,inventory_root,inventory_get,get_jm;
     uintptr_t menu_system_vtable,menu_system_show,menu_system_primary;
@@ -68,23 +68,23 @@ static int readable(const void *p,unsigned bytes)
 static void *actor(void)
 {
     void *world=ptr((void *)backend.world_global,0),*manager=ptr(world,0x30);
-    return readable(manager,0x10) ? (void *)(uintptr_t)((This0)backend.settings_actor_get)(manager):NULL;
+    return readable(manager,0x10) ? (void *)(uintptr_t)((This0)backend.settings_actor_get)(manager, NULL):NULL;
 }
 static int foreground(void)
 {
     DWORD pid=0;HWND w=GetForegroundWindow();if(w)GetWindowThreadProcessId(w,&pid);
     return pid==GetCurrentProcessId();
 }
-static int __attribute__((fastcall)) capture_primary(void *self,void *unused,int e,int x,void *y)
+static int __fastcall capture_primary(void *self,void *unused,int e,int x,void *y)
 {
     (void)unused;
     /* 自建窗口打开时原系统按钮不可被透明穿透点击；关闭恢复安装前的同一调用链。 */
     if(active && self==root)return 1;
-    return old_primary ? ((This3)old_primary)(self,e,x,y):1;
+    return old_primary ? ((This3)old_primary)(self, NULL,e,x,y):1;
 }
-static int __attribute__((fastcall)) fallback_draw(void *self,void *unused,unsigned long surface)
+static int __fastcall fallback_draw(void *self,void *unused,unsigned long surface)
 {
-    (void)unused;int result=old_draw ? ((This1)old_draw)(self,(int)surface):1;
+    (void)unused;int result=old_draw ? ((This1)old_draw)(self, NULL,(int)surface):1;
     if(active && !RuntimeConfig_GetInt(CONFIG_DISPLAY_ENABLED))paint(RUNTIME_EVENT_UI_DRAW_END,self,surface,0,NULL);
     return result;
 }
@@ -108,7 +108,7 @@ void SettingsWindow_Close(void)
         }
     }
     old_draw=0;
-    if(!native_host && readable(root,0x68))((This2)host_show)(root,0,0);
+    if(!native_host && readable(root,0x68))((This2)host_show)(root, NULL,0,0);
     about_clear_layout();
     active=editing=picker=confirm_discard=confirm_reset=0;root=NULL;old_primary=0;message[0]=0;
     RuntimeLog_Write(RuntimeText_Settings_ClosedLog);
@@ -124,8 +124,8 @@ static void add_skill(void *role,int id,int direct)
     if(direct) {
         return; /* 原绑定不是学习记录；可设置的普通技能由已学组表提供，不补投掷/空动作。 */
     } else {
-        g=(void *)(uintptr_t)((This1)backend.lookup)((void *)backend.skill_groups,id);
-        if(!readable(g,0x36) || rd(g,0x32)>=2 || ((This1)backend.skill_eligibility)(role,id)==-1)return;
+        g=(void *)(uintptr_t)((This1)backend.lookup)((void *)backend.skill_groups, NULL,id);
+        if(!readable(g,0x36) || rd(g,0x32)>=2 || ((This1)backend.skill_eligibility)(role, NULL,id)==-1)return;
         selector=(int)(rd(g,0x24)&0xFFFFu);
         if(selector==0xFFFF)return;
         for(unsigned i=0;i<skill_count;++i)if(skills[i].selector==selector)return;
@@ -133,16 +133,16 @@ static void add_skill(void *role,int id,int direct)
     /* 原技能名是技能组自身的游戏文本，不是普通字符串表GetString(0)。
      * 名称或图标无效就不生成可选条目，避免一排没有身份的“可用动作”。 */
     int icon=(int)(rd(g,0x22)&0xFFFFu);
-    const char *name=(const char *)(uintptr_t)((This0)backend.settings_skill_name)(g);
+    const char *name=(const char *)(uintptr_t)((This0)backend.settings_skill_name)(g, NULL);
     if(icon==0xFFFF || !copy_game_text(name,skills[skill_count].name,sizeof skills[skill_count].name))return;
     skills[skill_count].selector=selector;skills[skill_count].icon=icon;skills[skill_count].kind=(int)rd(g,0x32);
     strcpy(skills[skill_count].description,skills[skill_count].name);
-    for(unsigned i=0;i<16;++i)if(learned_records[i] && ((This1)backend.ui_property)(learned_records[i],2)==id) {
+    for(unsigned i=0;i<16;++i)if(learned_records[i] && ((This1)backend.ui_property)(learned_records[i], NULL,2)==id) {
         /* 学习页先拼技能名与记录第15项指向的描述句，再追加原数值说明。
          * 仅调用数值函数会漏掉描述句；detail=0避免重复标题和连招页专用文字。 */
-        char narrative[1024]={0};int text_id=((This1)backend.ui_property)(learned_records[i],15);
+        char narrative[1024]={0};int text_id=((This1)backend.ui_property)(learned_records[i], NULL,15);
         if(text_id>=0 && text_id!=0xFFFF) {
-            const char *body=(const char *)(uintptr_t)((This2)backend.settings_text_get)((void *)backend.settings_text_table,text_id,1);
+            const char *body=(const char *)(uintptr_t)((This2)backend.settings_text_get)((void *)backend.settings_text_table, NULL,text_id,1);
             copy_game_text(body,narrative,sizeof narrative);
         }
         unsigned game_string=rd((void *)backend.settings_empty_string,0);
@@ -151,7 +151,7 @@ static void add_skill(void *role,int id,int direct)
             char statistics[1024]={0};
             ((Description)backend.settings_skill_description)(skill_player,learned_records[i],&game_string,0);
             copy_game_text((const char *)(uintptr_t)game_string,statistics,sizeof statistics);
-            ((This0)backend.settings_string_destroy)(&game_string);
+            ((This0)backend.settings_string_destroy)(&game_string, NULL);
             char heading[128];memcpy(heading,skills[skill_count].name,sizeof heading);
             snprintf(skills[skill_count].description,sizeof skills[skill_count].description,"%s\n%s%s%s",
                 heading,narrative,narrative[0] ? "\n":"",statistics);
@@ -163,15 +163,15 @@ static void add_skill(void *role,int id,int direct)
 static void build_skills(void)
 {
     memset(skills,0,sizeof skills);skill_count=0;memset(learned_records,0,sizeof learned_records);
-    skill_player=(void *)(uintptr_t)((This0)backend.inventory_get)((void *)backend.inventory_root);
+    skill_player=(void *)(uintptr_t)((This0)backend.inventory_get)((void *)backend.inventory_root, NULL);
     if(readable(skill_player,0x34C))for(unsigned i=0;i<16;++i) {
-        typedef void (__attribute__((thiscall)) *Query)(void *,void **,void **,int);
-        void *learned=NULL,*next=NULL;((Query)backend.settings_query_skill)(skill_player,&learned,&next,(int)i);
+        typedef void (__fastcall *Query)(void *, void *,void **,void **,int);
+        void *learned=NULL,*next=NULL;((Query)backend.settings_query_skill)(skill_player, NULL,&learned,&next,(int)i);
         if(readable(learned,16))learned_records[i]=learned;
     }void *role=actor(),*choices=ptr(role,0x193);
     if(readable(choices,12)) {
-        int n=((This1)backend.ui_property)(choices,1);
-        if(n>=0 && n<=1024)for(int i=0;i<n && skill_count<128;++i)add_skill(role,((This1)backend.ui_property)(choices,i+2),0);
+        int n=((This1)backend.ui_property)(choices, NULL,1);
+        if(n>=0 && n<=1024)for(int i=0;i<n && skill_count<128;++i)add_skill(role,((This1)backend.ui_property)(choices, NULL,i+2),0);
     }
     memset(learned_records,0,sizeof learned_records);skill_player=NULL;
 }
@@ -192,8 +192,8 @@ static int open_on(void *native_page)
      * 当前是否可开由场景和捕获判断，不能要求这个槽先被另一个模块改写。 */
     native_host=native_page!=NULL;host_table=native_host ? backend.menu_settings_vtable:backend.menu_system_vtable;
     host_show=native_host ? backend.menu_settings_show:backend.menu_system_show;
-    root=native_page ? native_page:(void *)(uintptr_t)((This1)backend.get_jm)((void *)backend.ui,0x2D);
-    void *data=rd(world,0x58) ? (void *)(uintptr_t)((This0)backend.inventory_get)((void *)backend.inventory_root):NULL;
+    root=native_page ? native_page:(void *)(uintptr_t)((This1)backend.get_jm)((void *)backend.ui, NULL,0x2D);
+    void *data=rd(world,0x58) ? (void *)(uintptr_t)((This0)backend.inventory_get)((void *)backend.inventory_root, NULL):NULL;
     unsigned selector=rd(world,0x58) && readable(role,backend.invalid_offset+4) && !rd(role,backend.invalid_offset) && readable(data,0x34C) ? rd(data,0x348):0;
     if(!readable(root,0xC0) || rd(root,0)!=host_table || !SettingsModel_Open(&model,game,selector)){root=NULL;return 0;}
     old_primary=rd((void *)host_table,0x24);uintptr_t replacement=(uintptr_t)capture_primary;
@@ -216,7 +216,7 @@ static int open_on(void *native_page)
     menu_swap=RuntimeConfig_GetInt(CONFIG_MENU_SWAP_AB);
     active=1;barrier=1;editing=footer=picker=confirm_discard=confirm_reset=error_modal=picker_footer=scroll_drag=0;previous_direction=0;message[0]=0;
     clear_icon_cache();
-    if(!native_host)((This2)host_show)(root,1,0);
+    if(!native_host)((This2)host_show)(root, NULL,1,0);
     skill_count=skill_view_count=0;if(selector)build_skills();
     RuntimeLog_Write(RuntimeText_Settings_OpenedLog,selector);return 1;
 }
@@ -267,11 +267,11 @@ static void scaled_icon(unsigned long context,void *icons,void *animation,int ic
     /* 先核对当前动画、登记图像和尺寸。只存图像的整数身份，不跨帧解引用旧对象。 */
     unsigned n=rd(animation,8),index=rd(animation,4);void *frames=ptr(animation,0);
     if(!n || n>4096 || index>=n || !readable((BYTE *)frames+index*22u,22))return;
-    void *frame=(void *)(uintptr_t)((This0)backend.focus_frame_get)(animation);
+    void *frame=(void *)(uintptr_t)((This0)backend.focus_frame_get)(animation, NULL);
     if(!readable(frame,22))return;
     void *bank=ptr(frame,8),*entries=ptr(bank,4);unsigned resource=rd(frame,4)&0xFFFFFu;
     if(!readable(bank,8) || !readable((BYTE *)entries+resource*4u,4) || !readable(ptr(entries,resource*4u),0x28))return;
-    void *image=(void *)(uintptr_t)((This0)backend.focus_image_get)(frame);
+    void *image=(void *)(uintptr_t)((This0)backend.focus_image_get)(frame, NULL);
     if(!readable(image,0x14))return;
     int sw=(int)rd(image,0xC),sh=(int)rd(image,0x10);if(sw<1 || sh<1 || sw>128 || sh>128)return;
     void *surface=(void *)(uintptr_t)context,*dd=ptr(surface,0x2D),*table=ptr(dd,0);
@@ -295,7 +295,7 @@ static void scaled_icon(unsigned long context,void *icons,void *animation,int ic
         HBRUSH brush=CreateSolidBrush(color);RECT r={sx,sy,sx+sw,sy+sh};if(copied && brush)FillRect(dc,&r,brush);if(brush)DeleteObject(brush);
         release(dd,dc);dc=NULL;
         int16_t offsets[4]={0};RuntimeWin32_Read((unsigned long)(uintptr_t)frame+0xE,offsets,sizeof offsets);
-        if(copied)((IconDraw)backend.icon_draw)(icons,(int)context,icon,selector,sx-offsets[0]+offsets[2],sy-offsets[1]+offsets[3],0,-1,0,0);
+        if(copied)((IconDraw)backend.icon_draw)(icons, NULL,(int)context,icon,selector,sx-offsets[0]+offsets[2],sy-offsets[1]+offsets[3],0,-1,0,0);
         if(get(dd,&dc)!=S_OK || !dc){SelectObject(backup,previous);DeleteObject(saved);DeleteObject(glyph);DeleteDC(work);DeleteDC(backup);return;}
         HGDIOBJ old=SelectObject(work,glyph);BOOL ready_image=copied && BitBlt(work,0,0,sw,sh,dc,sx,sy,SRCCOPY);
         if(copied)BitBlt(dc,sx,sy,sw,sh,backup,0,0,SRCCOPY);
@@ -613,7 +613,7 @@ static void paint_scrollbar(HDC dc,int x,int y)
 }
 static void paint_native_entry(unsigned long context)
 {
-    void *page=(void *)(uintptr_t)((This1)backend.get_jm)((void *)backend.ui,0xAA);RuntimeFocusRect r;
+    void *page=(void *)(uintptr_t)((This1)backend.get_jm)((void *)backend.ui, NULL,0xAA);RuntimeFocusRect r;
     if(!SettingsWindow_NativeEntryRect(page,&r))return;
     void *surface=(void *)(uintptr_t)context,*dd=ptr(surface,0x2D),*table=ptr(dd,0);
     if(!readable(table,0x6C))return;
@@ -622,7 +622,7 @@ static void paint_native_entry(unsigned long context)
     if(get(dd,&dc)!=S_OK || !dc)return;
     box(dc,r.left,r.top,r.right-r.left,r.bottom-r.top,RGB(0,0,0),RGB(70,59,40));release(dd,dc);
     static char caption[48];if(!caption[0])WideCharToMultiByte(936,0,RuntimeText_Settings_NativeEntryCaption,-1,caption,sizeof caption,NULL,NULL);
-    typedef int (__attribute__((thiscall)) *NativeText)(void *,unsigned long,const char *,int,int,int);
+    typedef int (__fastcall *NativeText)(void *, void *,unsigned long,const char *,int,int,int);
     /* 原文字接口以传入x为文字中心；底板和文字必须使用相同中心。
      * 复制只读绘制属性，不暂时改原AA页的字体颜色，避免影响其它文字。 */
     BYTE style[0xC0];memcpy(style,page,sizeof style);
@@ -631,7 +631,7 @@ static void paint_native_entry(unsigned long context)
     /* 当前原字体单行占12个逻辑像素；从按钮高度减去文字高度，两边平分留白。 */
     const int text_height=12;
     int text_y=r.top+(r.bottom-r.top-text_height)/2;
-    ((NativeText)backend.menu_native_text_draw)(style,context,caption,(r.left+r.right)/2,text_y,0);
+    ((NativeText)backend.menu_native_text_draw)(style, NULL,context,caption,(r.left+r.right)/2,text_y,0);
 }
 static void paint(RuntimeEventId event,void *subject,unsigned long context,unsigned long value,void *user)
 {
@@ -688,14 +688,14 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         /* 长卡片只显示正文视口内的部分；裁剪不会让FAQ盖住按钮或相邻页面。 */
         int clip=SaveDC(dc);if(clip)IntersectClipRect(dc,x+16,y+82,x+592,y+370);
         for(unsigned i=0;i<ABOUT_SECTION_COUNT;++i) {
-            int height=(int)about_heights[i];
-            if(clip && row_y+height>y+82 && row_y<y+370) {
-                box(dc,x+16,row_y,576,height,RGB(28,25,19),RGB(104,78,38));
+            int card_height=(int)about_heights[i];
+            if(clip && row_y+card_height>y+82 && row_y<y+370) {
+                box(dc,x+16,row_y,576,card_height,RGB(28,25,19),RGB(104,78,38));
                 text(dc,x+24,row_y+4,560,18,about_titles[i],RGB(231,206,154));
-                RECT body={x+24,row_y+23,x+584,row_y+height-5};SetTextColor(dc,RGB(222,205,172));SetBkMode(dc,TRANSPARENT);
+                RECT body={x+24,row_y+23,x+584,row_y+card_height-5};SetTextColor(dc,RGB(222,205,172));SetBkMode(dc,TRANSPARENT);
                 if(about_wide[i])DrawTextW(dc,about_wide[i],-1,&body,DT_LEFT|DT_TOP|DT_WORDBREAK|DT_NOPREFIX);
             }
-            row_y+=height+4;
+            row_y+=card_height+4;
         }
         if(clip)RestoreDC(dc,clip);
         if(prior)SelectObject(dc,prior);
@@ -773,7 +773,7 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
                 ConfigBinding shown=picker ? (ConfigBinding){0,0,0}:effective_binding(i);
                 if(!picker && !shown.custom)continue;
                 int selection=picker ? skills[skill_view[i]].selector:shown.selector;
-                int icon=picker ? skills[skill_view[i]].icon:((This1)backend.icon_resolve)(hud,selection);
+                int icon=picker ? skills[skill_view[i]].icon:((This1)backend.icon_resolve)(hud, NULL,selection);
                 int dx=picker ? 26:16+(int)(i%2)*288,dy=picker ? 122+(int)(i-begin)*48:82+(int)((i-start)/2)*48;
                 RECT glyph={dx,dy,dx+48,dy+48},overlap,h=help_rectangle();
                 if((picker || model.help) && IntersectRect(&overlap,&glyph,&h))continue;
@@ -862,7 +862,7 @@ static void keyboard(RuntimeEventId event,void *subject,unsigned long result,uns
     if(active && right && !previous_right)cancel();
     native_entry_hover=0;
     if(!active && logical_width && logical_height) {
-        POINT p;RECT client;HWND w=GetForegroundWindow();void *page=(void *)(uintptr_t)((This1)backend.get_jm)((void *)backend.ui,0xAA);RuntimeFocusRect r;
+        POINT p;RECT client;HWND w=GetForegroundWindow();void *page=(void *)(uintptr_t)((This1)backend.get_jm)((void *)backend.ui, NULL,0xAA);RuntimeFocusRect r;
         if(SettingsWindow_NativeEntryRect(page,&r) && GetCursorPos(&p) && ScreenToClient(w,&p) && GetClientRect(w,&client) && client.right>0 && client.bottom>0) {
             p.x=MulDiv(p.x,logical_width,client.right);p.y=MulDiv(p.y,logical_height,client.bottom);
             native_entry_hover=p.x>=r.left && p.x<r.right && p.y>=r.top && p.y<r.bottom;

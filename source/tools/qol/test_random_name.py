@@ -30,9 +30,10 @@ def main():
     output = SOURCE.parent / ".build/qol/random_name_test.exe"
     output.parent.mkdir(parents=True, exist_ok=True)
     # 明确源编码与执行编码，避免中文常量受编译机器区域设置影响。
-    subprocess.run([str(cc), "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
-                    "-finput-charset=UTF-8", "-fexec-charset=UTF-8",
-                    str(Path(__file__).with_suffix(".c")), "-o", str(output)],
+    subprocess.run([str(cc), "/nologo", "/std:c17", "/O2", "/W4", "/WX", "/MT", "/utf-8",
+                    "/D_CRT_SECURE_NO_WARNINGS", "/wd4244", "/wd4267",
+                    str(Path(__file__).with_suffix(".c")), "/Fe" + str(output),
+                    "/Fo" + str(output.with_suffix(".obj"))],
                    check=True, env=environment)
     subprocess.run([str(output)], check=True, env=environment)
 

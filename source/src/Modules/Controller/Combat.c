@@ -27,7 +27,7 @@ static struct {
 static void *world(void) { return ReadPtr((void *)g_profile->world_global,0); }
 static void *manager(void) { return ReadPtr(world(),0x30); }
 static uint32_t tick(void) { return Read32((void *)g_profile->game_tick,0); }
-static void submit(int opcode,int a,int b,int c) { ((This4)g_profile->submit)(manager(),opcode,a,b,c); }
+static void submit(int opcode,int a,int b,int c) { ((This4)g_profile->submit)(manager(), NULL,opcode,a,b,c); }
 
 void Combat_Reset(void) { memset(&combat,0,sizeof combat);combat.combo_cursor=-1; }
 void Combat_Suspend(void) { combat.pending=false;combat.request_fresh=false; }
@@ -68,8 +68,8 @@ static bool first_usable(void *role,const ResolvedSkill *resolved,void **record)
 {
     *record=NULL;
     if(resolved->sequence || resolved->method>=10000)return true;
-    *record=(void *)(uintptr_t)((This1)g_profile->role_method)(role,resolved->method);
-    return *record && ((This1)g_profile->method_usable)(role,(int)(uintptr_t)*record);
+    *record=(void *)(uintptr_t)((This1)g_profile->role_method)(role, NULL,resolved->method);
+    return *record && ((This1)g_profile->method_usable)(role, NULL,(int)(uintptr_t)*record);
 }
 bool Combat_PreviewSkill(void *role,int selection,const WorldPoint *point,ResolvedSkill *out)
 {
@@ -86,7 +86,7 @@ bool Combat_ComboAvailable(unsigned index)
 {
     if (index>=4 || !g_profile || !g_profile->combo_get) return false;
     void *hud=ReadPtr((void *)g_profile->skill_global,0);
-    void *sequence=Memory_Readable(hud,0x130) ? (void *)(uintptr_t)((This1)g_profile->combo_get)(hud,(int)index):NULL;
+    void *sequence=Memory_Readable(hud,0x130) ? (void *)(uintptr_t)((This1)g_profile->combo_get)(hud, NULL,(int)index):NULL;
     unsigned count=Read32(sequence,0);
     return Memory_Readable(sequence,12) && count && count<=64 && Memory_Readable(ReadPtr(sequence,4),12);
 }
@@ -97,7 +97,7 @@ void Combat_SelectCombo(unsigned index)
     void *hud=ReadPtr((void *)g_profile->skill_global,0);
     combat.combo_slot=index;combat.combo_cursor=-1;combat.combo_ready=true;++combat.combo_epoch;
     if (combat.pending && combat.source==ACTION_COMBO) combat.pending=false;
-    if (Memory_Readable(hud,0x130)) ((This1)g_profile->right_set)(hud,-1-(int)index);
+    if (Memory_Readable(hud,0x130)) ((This1)g_profile->right_set)(hud, NULL,-1-(int)index);
     Log_Write(ControllerText_Combat_ComboGroupChangedLog,index+1);
 }
 
@@ -110,7 +110,7 @@ static int combo_selection(void *hud)
         combat.combo_ready=true;
     }
     if (!g_profile->combo_get) return -1;
-    void *list=(void *)(uintptr_t)((This1)g_profile->combo_get)(hud,(int)combat.combo_slot);
+    void *list=(void *)(uintptr_t)((This1)g_profile->combo_get)(hud, NULL,(int)combat.combo_slot);
     unsigned count=Read32(list,0);
     if (!Memory_Readable(list,12) || !count || count>64) return -1;
     unsigned index=combat.combo_cursor<0 ? 0:((unsigned)combat.combo_cursor+1)%count;
@@ -186,9 +186,9 @@ void Combat_ExportHistory(void)
      * 不能把插件数组地址塞进原版链表，更不能用两者不同的内存布局互相冒充。 */
     void *hud=ReadPtr((void *)g_profile->skill_global,0);
     uint32_t cursor=Read32(hud,0x120);
-    ((This0)g_profile->history_clear)(mouse);
+    ((This0)g_profile->history_clear)(mouse, NULL);
     for (unsigned i=0;i<combat.history.count;++i)
-        ((This3)g_profile->history_record)(mouse,combat.history.selectors[i],combat.history.direction,
+        ((This3)g_profile->history_record)(mouse, NULL,combat.history.selectors[i],combat.history.direction,
                                           (void *)(intptr_t)combat.history_extra);
     if (combat.history.count) {
         Write32(mouse,0x4C,combat.history.start_tick);
@@ -245,7 +245,7 @@ static WorldPoint aim_point(void *role)
         for (unsigned i=0;i<directions;++i) {
             float angle=(float)i*6.28318530718f/directions;
             WorldPoint probe={origin.x+(int)lroundf(cosf(angle)*256),origin.y+(int)lroundf(sinf(angle)*256)};
-            int value=((This2)g_profile->facing_direction)(role,(int)(uintptr_t)&probe,(int)(uintptr_t)&origin);
+            int value=((This2)g_profile->facing_direction)(role, NULL,(int)(uintptr_t)&probe,(int)(uintptr_t)&origin);
             if ((unsigned)value==facing) { dx=cosf(angle);dy=sinf(angle);break; }
         }
     }
@@ -308,10 +308,10 @@ void Combat_Update(void *role,uint32_t candidate)
         } else if (right) {
             /* Y只取长期右手技能；原right_get还会优先返回准备必杀/投掷选择，不能直接照搬。
              * 原动作菜单只列type<2的组。投掷type2仍由RB直接施放，不进入Y规则。 */
-            void *group=right_slot>=0 ? (void *)(uintptr_t)((This1)g_profile->lookup)((void *)g_profile->skill_groups,right_slot):NULL;
+            void *group=right_slot>=0 ? (void *)(uintptr_t)((This1)g_profile->lookup)((void *)g_profile->skill_groups, NULL,right_slot):NULL;
             combat.selection=Memory_Readable(group,0x36) && Read32(group,0x32)<2 ? right_slot:-1;
             combat.source=ACTION_RIGHT;
-        } else {combat.selection=((This0)g_profile->left_get)(hud);combat.source=ACTION_LEFT;}
+        } else {combat.selection=((This0)g_profile->left_get)(hud, NULL);combat.source=ACTION_LEFT;}
         combat.right=right;combat.pending=combat.selection>=0;combat.retries=5;fresh=true;
         if (edge) Log_Write(ControllerText_Combat_NewPressLog,
             right ? ControllerText_RightHandLabel:ControllerText_LeftHandLabel,combat.selection,active,combat.history.count,combat.history.ended);
@@ -350,7 +350,7 @@ void Combat_Update(void *role,uint32_t candidate)
     }
     WorldPoint origin={(int)Read32(role,0x2C),(int)Read32(role,0x30)};
     if (!active && Read32(role,0x73)==1)
-        ((This2)g_profile->facing_point)(role,(int)(uintptr_t)&point,(int)(uintptr_t)&origin);
+        ((This2)g_profile->facing_point)(role, NULL,(int)(uintptr_t)&point,(int)(uintptr_t)&origin);
     combat.owned=true;
     bool saved_issued=combat.issued,saved_right=combat.issued_right;
     int saved_selector=combat.issued_selector,saved_combo=combat.issued_combo,saved_selection=combat.issued_selection;
@@ -367,7 +367,7 @@ void Combat_Update(void *role,uint32_t candidate)
     if (!combat.point_request && Game_Enemy(role,target_role)) {
         opcode=9;
         if (!combat.right && (!resolved.sequence || (resolved.method<10000 &&
-            ((This1)g_profile->method_distance)(role,resolved.method)<=96))) opcode=11;
+            ((This1)g_profile->method_distance)(role, NULL,resolved.method)<=96))) opcode=11;
         a2=(int)combat.target;a3=0;
     } else {
         opcode=10;a2=point.x;a3=point.y;

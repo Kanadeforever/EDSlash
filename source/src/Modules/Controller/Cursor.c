@@ -10,7 +10,7 @@ static BYTE saved[4][6];
 static bool installed;
 static BOOL (WINAPI *native_position)(LPPOINT);
 /* Controller只提供当前焦点，所有原素材/动画/源范围/绘制均由Runtime负责。 */
-typedef int (__attribute__((thiscall)) *SpriteDraw)(void *,void *,int,int,int,int,int);
+typedef int (__fastcall *SpriteDraw)(void *, void *,void *,int,int,int,int,int);
 static bool pad_visual(void)
 {
     return installed && g_input.connected && g_input.focused && g_intent.layer!=LAYER_NONE &&
@@ -37,14 +37,14 @@ static BOOL WINAPI position_hook(LPPOINT point)
     if (pad_visual() && (Game_JumpAnchor(point) || Menu_CursorAnchor(point))) return TRUE;
     return native_position(point);
 }
-static int __attribute__((fastcall)) sprite_hook(void *self,void *unused,
+static int __fastcall sprite_hook(void *self,void *unused,
     void *surface,int x,int y,int frame,int shade,int flags)
 {
     (void)unused;
     POINT anchor;
     if(SettingsWindow_Active()) {
         if(!SettingsWindow_ShowPointer())return 0;
-        return ((SpriteDraw)g_profile->cursor_sprite_draw)(self,surface,x,y,frame,shade,flags);
+        return ((SpriteDraw)g_profile->cursor_sprite_draw)(self, NULL,surface,x,y,frame,shade,flags);
     }
     /* 普通手柄只在有效菜单焦点画原图样；世界或未知页隐藏图样。
      * 物理来源和BACK+START救援模式完整保留原位置、精灵、动画、颜色与参数。 */
@@ -56,13 +56,13 @@ static int __attribute__((fastcall)) sprite_hook(void *self,void *unused,
         if (ActionMenu_Active() || Menu_FocusFrame(&rectangle)) hiding=hiding && RuntimeFocus_WasDrawn(RUNTIME_MODULE_CONTROLLER);
         if (hiding || (!jump_preview && !Menu_CursorAnchor(&anchor))) return 0;
     }
-    return ((SpriteDraw)g_profile->cursor_sprite_draw)(self,surface,x,y,frame,shade,flags);
+    return ((SpriteDraw)g_profile->cursor_sprite_draw)(self, NULL,surface,x,y,frame,shade,flags);
 }
-static int __attribute__((fastcall)) icon_sprite_hook(void *self,void *unused,
+static int __fastcall icon_sprite_hook(void *self,void *unused,
     void *surface,int x,int y,int frame,int shade,int flags)
 {
     (void)unused;
-    int result=((SpriteDraw)g_profile->cursor_sprite_draw)(self,surface,x,y,frame,shade,flags);
+    int result=((SpriteDraw)g_profile->cursor_sprite_draw)(self, NULL,surface,x,y,frame,shade,flags);
     if(pad_visual())RuntimeFocus_DrawIcon((unsigned long)(uintptr_t)surface,x,y);
     return result;
 }

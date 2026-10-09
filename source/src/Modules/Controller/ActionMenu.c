@@ -84,12 +84,12 @@ bool ActionMenu_Update(void)
     if (active && (selection.world!=ReadPtr((void *)g_profile->world_global,0) ||
         selection.actor!=Game_Player() || !Read32(selection.world,0x58))) {
         /* 换图或角色更换后不能提交旧节点。清候选再调用原关闭路径，只释放UI捕获。 */
-        Write32(selection.root,0xC0,0);((This0)g_profile->menu_action_commit)(selection.root);
+        Write32(selection.root,0xC0,0);((This0)g_profile->menu_action_commit)(selection.root, NULL);
         ActionMenu_Suspend();return true;
     }
     if (active && g_input.menu) {
         /* 另一个真实模态页接管时取消预览，不擅自确认被遮住的候选。 */
-        Write32(selection.root,0xC0,0);((This0)g_profile->menu_action_commit)(selection.root);
+        Write32(selection.root,0xC0,0);((This0)g_profile->menu_action_commit)(selection.root, NULL);
         ActionMenu_Suspend();return true;
     }
     bool held=g_input.lt && g_input.rt;
@@ -103,19 +103,19 @@ bool ActionMenu_Update(void)
         selection.root=root;selection.side=0;active=true;
         selection.world=ReadPtr((void *)g_profile->world_global,0);selection.actor=Game_Player();
         /* 原Open生成当前侧技能/非空连招并捕获UI，第一次拨杆只展开，不额外跳一项。 */
-        ((This1)g_profile->menu_action_open)(root,0);seed();selection.direction=direction;
+        ((This1)g_profile->menu_action_open)(root, NULL,0);seed();selection.direction=direction;
         g_intent.layer=LAYER_ACTION_MENU;
         Log_Write(ControllerText_ActionMenu_OpenedLog);return false;
     }
     g_intent.layer=LAYER_ACTION_MENU;
     if (!held) {
-        project();((This0)g_profile->menu_action_commit)(selection.root);
+        project();((This0)g_profile->menu_action_commit)(selection.root, NULL);
         Log_Write(ControllerText_ActionMenu_SelectionConfirmedLog,selection.side ? ControllerText_LeftSideLabel:ControllerText_RightSideLabel,selection.selector);
         ActionMenu_Suspend();return true;
     }
     if (g_intent.pressed&KEY(PAD_R3)) {
         /* 同一个原菜单换侧只重建候选链，未聚焦侧的浏览不会顺带提交。 */
-        selection.side^=1;((This1)g_profile->menu_action_rebuild)(selection.root,(int)selection.side);seed();
+        selection.side^=1;((This1)g_profile->menu_action_rebuild)(selection.root, NULL,(int)selection.side);seed();
         Log_Write(ControllerText_ActionMenu_FocusSideChangedLog,selection.side ? ControllerText_LeftSideLabel:ControllerText_RightSideLabel);return false;
     }
     if (direction && (direction!=selection.direction || (int32_t)(g_input.now-selection.repeat)>=0)) {
@@ -135,20 +135,20 @@ bool ActionMenu_Update(void)
     }
     selection.direction=direction;project();return false;
 }
-static int __attribute__((fastcall)) action_tick(void *root,void *unused)
+static int __fastcall action_tick(void *root,void *unused)
 {
     (void)unused;
     if (ActionMenu_Owns(root)) {
         /* 原Tick还处理物理热键；手柄拥有时仅执行完整base更新，随后恢复候选，不读鼠标。 */
-        int result=((This0)g_profile->menu_message_base_tick)(root);project();return result;
+        int result=((This0)g_profile->menu_message_base_tick)(root, NULL);project();return result;
     }
-    return ((This0)original_tick)(root);
+    return ((This0)original_tick)(root, NULL);
 }
-static int __attribute__((fastcall)) action_hover(void *root,void *unused,int event,int x,void *y)
+static int __fastcall action_hover(void *root,void *unused,int event,int x,void *y)
 {
     (void)unused;
     if (ActionMenu_Owns(root)) {project();return 0;}
-    return ((This3)original_hover)(root,event,x,y);
+    return ((This3)original_hover)(root, NULL,event,x,y);
 }
 bool ActionMenu_Initialize(void)
 {

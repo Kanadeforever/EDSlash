@@ -8,7 +8,7 @@
 #include "../src/Runtime/Win32Bridge.h"
 static int fixture_foreground=1;
 static int fixture_key;
-static SHORT __stdcall fixture_async(int key){return key==fixture_key ? (SHORT)0x8000:0;}
+static SHORT __stdcall fixture_async(int key){return key==fixture_key ? (SHORT)-32768:0;}
 static HWND __stdcall fake_foreground(void){return (HWND)1;}
 static DWORD __stdcall fake_pid(HWND w,LPDWORD pid){(void)w;*pid=GetCurrentProcessId()+(fixture_foreground ? 0:1);return 1;}
 #define GetForegroundWindow fake_foreground
@@ -38,42 +38,42 @@ int RuntimeWin32_WriteCode(unsigned long address,const void *bytes,unsigned long
 int Runtime_Subscribe(RuntimeEventId e,RuntimeEventCallback cb,void *user){(void)e;(void)cb;(void)user;return 1;}
 void RuntimeLog_Write(const char *format,...){(void)format;}
 static void wr(void *p,unsigned offset,uint32_t v){memcpy((BYTE *)p+offset,&v,4);}
-static int __attribute__((thiscall)) get_actor(void *manager){(void)manager;return (int)(uintptr_t)fake_actor;}
-static int __attribute__((thiscall)) get_player(void *manager){(void)manager;return (int)(uintptr_t)fake_player;}
-static int __attribute__((thiscall)) get_root(void *manager,int id){(void)manager;return id==0xAA ? (int)(uintptr_t)native_settings_root:id==0x2D ? (int)(uintptr_t)fake_root:0;}
-static int __attribute__((thiscall)) show_root(void *p,int show,int mode)
-{
+static int __fastcall get_actor(void *manager, void *unused_edx){ (void)unused_edx;(void)manager;return (int)(uintptr_t)fake_actor;}
+static int __fastcall get_player(void *manager, void *unused_edx){ (void)unused_edx;(void)manager;return (int)(uintptr_t)fake_player;}
+static int __fastcall get_root(void *manager, void *unused_edx,int id){ (void)unused_edx;(void)manager;return id==0xAA ? (int)(uintptr_t)native_settings_root:id==0x2D ? (int)(uintptr_t)fake_root:0;}
+static int __fastcall show_root(void *p, void *unused_edx,int show,int mode)
+{ (void)unused_edx;
     (void)mode;wr(p,0x64,(unsigned)show);wr(fake_ui,0x3C,show ? (uint32_t)(uintptr_t)p:0);
     if(show)++pauses;else ++resumes;return 1;
 }
-static int __attribute__((thiscall)) native_action(void *p,int e,int x,void *y){(void)p;(void)e;(void)x;(void)y;++original_actions;return 1;}
-static int __attribute__((thiscall)) native_caption(void *page,unsigned long context,const char *text,int x,int y,int mode)
-{CHECK(page!=native_settings_root && context && !strncmp(text,"EDSlash",7) && x==488 && y==318 && !mode);CHECK(rd(page,0x60)==expected_caption_color && rd(page,0x78)==0);++native_captions;return 1;}
+static int __fastcall native_action(void *p, void *unused_edx,int e,int x,void *y){ (void)unused_edx;(void)p;(void)e;(void)x;(void)y;++original_actions;return 1;}
+static int __fastcall native_caption(void *page, void *unused_edx,unsigned long context,const char *text,int x,int y,int mode)
+{ (void)unused_edx;CHECK(page!=native_settings_root && context && !strncmp(text,"EDSlash",7) && x==488 && y==318 && !mode);CHECK(rd(page,0x60)==expected_caption_color && rd(page,0x78)==0);++native_captions;return 1;}
 static BYTE fixture_record[0x40],fixture_choices[16];
-static int __attribute__((thiscall)) no_property(void *p,int i)
-{return p==fixture_record ? (i==2 ? 701:i==15 ? 11:0):p==fixture_choices ? (i==1 ? 1:i==2 ? 701:0):0;}
+static int __fastcall no_property(void *p, void *unused_edx,int i)
+{ (void)unused_edx;return p==fixture_record ? (i==2 ? 701:i==15 ? 11:0):p==fixture_choices ? (i==1 ? 1:i==2 ? 701:0):0;}
 static BYTE fixture_group[0x50],fixture_method[0x50];
 static char game_name[64],game_description[256],game_narrative[256];static int name_available=1,descriptions,destroyed;
 static void *empty_string=game_description;
-static int __attribute__((thiscall)) fixture_name(void *p){(void)p;return name_available ? (int)(uintptr_t)game_name:0;}
-static void __attribute__((thiscall)) fixture_query(void *p,void **learned,void **next,int slot)
-{(void)p;*learned=slot==0 ? fixture_record:NULL;*next=NULL;}
+static int __fastcall fixture_name(void *p, void *unused_edx){ (void)unused_edx;(void)p;return name_available ? (int)(uintptr_t)game_name:0;}
+static void __fastcall fixture_query(void *p, void *unused_edx,void **learned,void **next,int slot)
+{ (void)unused_edx;(void)p;*learned=slot==0 ? fixture_record:NULL;*next=NULL;}
 static void __cdecl fixture_description(void *player,void *record,unsigned *string,int detail)
 {if(player==fake_player && record==fixture_record && detail==0)++descriptions;*string=(unsigned)(uintptr_t)game_description;}
-static int __attribute__((thiscall)) fixture_text(void *self,int id,int column)
-{(void)self;return id==11 && column==1 ? (int)(uintptr_t)game_narrative:0;}
-static int __attribute__((thiscall)) fixture_destroy(void *p){(void)p;++destroyed;return 1;}
-static int __attribute__((thiscall)) fixture_lookup(void *p,int id)
-{(void)p;return (int)(uintptr_t)(id==701 ? fixture_group:id==10023 ? fixture_method:NULL);}
-static int __attribute__((thiscall)) fixture_eligibility(void *p,int id){(void)p;(void)id;return 1;}
+static int __fastcall fixture_text(void *self, void *unused_edx,int id,int column)
+{ (void)unused_edx;(void)self;return id==11 && column==1 ? (int)(uintptr_t)game_narrative:0;}
+static int __fastcall fixture_destroy(void *p, void *unused_edx){ (void)unused_edx;(void)p;++destroyed;return 1;}
+static int __fastcall fixture_lookup(void *p, void *unused_edx,int id)
+{ (void)unused_edx;(void)p;return (int)(uintptr_t)(id==701 ? fixture_group:id==10023 ? fixture_method:NULL);}
+static int __fastcall fixture_eligibility(void *p, void *unused_edx,int id){ (void)unused_edx;(void)p;(void)id;return 1;}
 static HDC fixture_dc;static unsigned releases;static int dc_failed;
 static BYTE fixture_icons[0x60],fixture_sprites[128];static void *icons_pointer=fixture_icons;
 static unsigned icon_calls;static int icon_abi_ok;
 static BYTE icon_frame[22],icon_bank[8],icon_image[0x40];static void *icon_entry=icon_image;
-static int __attribute__((thiscall)) fixture_frame(void *p){(void)p;return (int)(uintptr_t)icon_frame;}
-static int __attribute__((thiscall)) fixture_image(void *p){(void)p;return (int)(uintptr_t)icon_image;}
-static int __attribute__((thiscall)) fixture_icon_draw(void *self,int context,int icon,int selector,int x,int y,int mode,int shade,int bindings,int side)
-{
+static int __fastcall fixture_frame(void *p, void *unused_edx){ (void)unused_edx;(void)p;return (int)(uintptr_t)icon_frame;}
+static int __fastcall fixture_image(void *p, void *unused_edx){ (void)unused_edx;(void)p;return (int)(uintptr_t)icon_image;}
+static int __fastcall fixture_icon_draw(void *self, void *unused_edx,int context,int icon,int selector,int x,int y,int mode,int shade,int bindings,int side)
+{ (void)unused_edx;
     (void)context;++icon_calls;
     icon_abi_ok=self==fixture_icons && icon==2 && selector==123 && x==40 && y==106 && mode==0 && shade==-1 && !bindings && !side;
     /* 图标只是本进程蓝色方块夹具，验证原绘制参数/位置；不是原游戏素材。 */

@@ -135,11 +135,12 @@ bool Game_Enemy(void *role, void *candidate);
 /* 以世界控制句柄解析当前玩家，供输入来源交接及防御业务使用。 */
 void *Game_Player(void);
 
-/* GCC 的 thiscall 会把首参数放 ECX，其余压栈，并由游戏函数清栈。
-   这些类型依据两份 EXE 的 ret 4/ret 0x10 等真实指令核对，不使用逻辑伪原型。 */
-typedef int (__attribute__((thiscall)) *This0)(void *);
-typedef int (__attribute__((thiscall)) *This1)(void *, int);
-typedef int (__attribute__((thiscall)) *This2)(void *, int, int);
-typedef int (__attribute__((thiscall)) *This3)(void *, int, int, void *);
-typedef int (__attribute__((thiscall)) *This4)(void *, int, int, int, int);
+/* 游戏thiscall使用ECX传self，其余参数压栈，并由游戏函数清栈。
+   MSVC C使用fastcall桥接：第二参数占用EDX但游戏不读取它，因此调用时传NULL。
+   这些类型依据准确EXE的ret 4/ret 0x10等指令核对，空EDX参数不会增加栈参数。 */
+typedef int (__fastcall *This0)(void *, void *);
+typedef int (__fastcall *This1)(void *, void *, int);
+typedef int (__fastcall *This2)(void *, void *, int, int);
+typedef int (__fastcall *This3)(void *, void *, int, int, void *);
+typedef int (__fastcall *This4)(void *, void *, int, int, int, int);
 #endif

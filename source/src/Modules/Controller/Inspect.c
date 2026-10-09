@@ -28,7 +28,7 @@ void Inspect_Reset(void)
     /* 不撤掉别的来源刚写入的悬停，也不把旧地图的管理器当成新地图使用。 */
     if (owned_hover && focus_world==world() && hover_manager==manager() &&
         Memory_Readable(hover_manager,0x10) && Read32(hover_manager,4)==owned_hover)
-        ((This1)g_profile->hover_set)(hover_manager,0);
+        ((This1)g_profile->hover_set)(hover_manager, NULL,0);
     focus=focus_kind=owned_hover=0;focus_world=hover_manager=NULL;
     /* 读图可能复用相同世界/地图地址；进入未就绪阶段也标记新场景，
      * 不能只靠指针变化，否则持续推杆会在新出口立即返回。 */
@@ -50,7 +50,7 @@ static void facing(void *role,float *x,float *y)
         for (unsigned i=0;i<directions;++i) {
             float angle=(float)i*6.28318530718f/directions;
             WorldPoint point={origin.x+(int)lroundf(cosf(angle)*256),origin.y+(int)lroundf(sinf(angle)*256)};
-            if ((unsigned)((This2)g_profile->facing_direction)(role,(int)(uintptr_t)&point,(int)(uintptr_t)&origin)==heading) {
+            if ((unsigned)((This2)g_profile->facing_direction)(role, NULL,(int)(uintptr_t)&point,(int)(uintptr_t)&origin)==heading) {
                 cached_x=cosf(angle);cached_y=sinf(angle);break;
             }
         }
@@ -75,10 +75,10 @@ static bool static_valid(void *object)
     /* 变换区图标的96不是普通调查对象：原谓词检查A3状态和TransGo/go脚本。
      * 只有原谓词通过的C/D类才允许走20，不能放开全部96或套普通BC状态门。 */
     if (subtype==0x96) return (type==0x0C || type==0x0D) && g_profile->inspect_portal_gate &&
-        ((This0)g_profile->inspect_portal_gate)(object)!=0;
+        ((This0)g_profile->inspect_portal_gate)(object, NULL)!=0;
     /* 完整原选择器在helper非零时返回对象，不能把它误读成排除门。
      * 0/2是原允许态，1等其它态拒绝；可破坏80..86也是原左键可操作对象。 */
-    bool active=g_profile->inspect_static_gate ? ((This0)g_profile->inspect_static_gate)(object)!=0:state==0 || state==2;
+    bool active=g_profile->inspect_static_gate ? ((This0)g_profile->inspect_static_gate)(object, NULL)!=0:state==0 || state==2;
     return type>=0x0A && type<=0x14 && subtype>=0x80 && subtype<=0x100 && active;
 }
 typedef struct {int min_x,min_y;unsigned width,height;BYTE *cells;bool ready;} MapView;
@@ -103,7 +103,7 @@ static BYTE *cell(const MapView *view,int x,int y)
 }
 static void submit(unsigned opcode,uint32_t handle)
 {
-    if (Memory_Readable(manager(),0x10)) ((This4)g_profile->submit)(manager(),(int)opcode,(opcode==20 || opcode==1) ? focus_grid_x:(int)handle,
+    if (Memory_Readable(manager(),0x10)) ((This4)g_profile->submit)(manager(), NULL,(int)opcode,(opcode==20 || opcode==1) ? focus_grid_x:(int)handle,
             (opcode==20 || opcode==1) ? focus_grid_y:0,opcode==20 ? (int)handle:0);
 }
 void Inspect_Project(void)
@@ -117,7 +117,7 @@ void Inspect_Project(void)
         uint32_t target=Combat_Target();
         if (Game_Enemy(Game_Player(),Game_Resolve(target))) handle=target;
     }
-    ((This1)g_profile->hover_set)(manager(),(int)handle);
+    ((This1)g_profile->hover_set)(manager(), NULL,(int)handle);
     owned_hover=handle;hover_manager=manager();focus_world=world();
 }
 static bool inspect_update(void *role)
@@ -257,10 +257,10 @@ bool Inspect_Activate(void)
     }
     bool submitted=false;
     if (focus_kind==19) {
-        if (!((This1)g_profile->inspect_gate)(manager(),(int)focus)) {submit(19,focus);submitted=true;}
+        if (!((This1)g_profile->inspect_gate)(manager(), NULL,(int)focus)) {submit(19,focus);submitted=true;}
     } else if (focus_kind==21 && Read32(object,0x67)==0x17) {submit(21,focus);submitted=true;}
     else if (focus_kind==100 && static_valid(object)) {
-        void *role=Game_Player();int group=((This1)g_profile->inspect_basic_get)(role,1);
+        void *role=Game_Player();int group=((This1)g_profile->inspect_basic_get)(role, NULL,1);
         WorldPoint point={focus_grid_x*64+32,focus_grid_y*64+32};
         if (group<0) {Log_Write(ControllerText_Inspect_BaseActionUnavailableLog);return false;}
         Combat_RequestPoint(group,&point);Combat_Update(role,Combat_Target());
@@ -279,14 +279,14 @@ bool Inspect_Activate(void)
     Log_Write(ControllerText_Inspect_NativeEventRequestedLog,(unsigned long)focus_kind,(unsigned long)focus);
     return submitted;
 }
-static int __attribute__((fastcall)) hover_hook(void *mouse,void *unused,int event,int x,void *y)
+static int __fastcall hover_hook(void *mouse,void *unused,int event,int x,void *y)
 {
     (void)unused;
     if (g_input.connected && g_input.focused && g_intent.layer!=LAYER_NONE &&
         g_intent.layer!=LAYER_NATIVE && g_intent.layer!=LAYER_MOUSE) {
         Inspect_Project();return 0;
     }
-    return ((This3)g_profile->inspect_hover)(mouse,event,x,y);
+    return ((This3)g_profile->inspect_hover)(mouse, NULL,event,x,y);
 }
 void Inspect_Shutdown(void)
 {

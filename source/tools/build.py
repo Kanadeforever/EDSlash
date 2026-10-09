@@ -12,12 +12,12 @@ sys.dont_write_bytecode = True
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 from toolchain import compiler, program
 from controller.verify_profiles import verify_baselines
-from verify_build import verify_upx_roundtrip, test_upx_roundtrip_rejections, verify, verify_variants, verify_debug_info
+from verify_build import verify_upx_roundtrip, test_upx_roundtrip_rejections, verify, verify_variants, verify_debug_info, test_pdb_rejections
 from sync_config import plan as config_plan, apply as config_apply
 
 SOURCE = Path(__file__).resolve().parents[1]
 ROOT = SOURCE.parent
-BUILD = ROOT / ".build"
+BUILD = ROOT / ".build" / "msvc"
 RELEASE = ROOT / "release"
 
 
@@ -49,14 +49,14 @@ def cleanup_legacy_cache():
 
 def cleanup_build_cache():
     """产物/配置验证完成才清理临时目录；失败或检查模式保留诊断。"""
-    target=BUILD.resolve()
+    target=(ROOT / '.build').resolve()
     # Python 3.11没有Path.is_junction，使用Windows原始重解析点属性兼容检测。
     def linked(path):
         return path.is_symlink() or bool(getattr(path.lstat(),'st_file_attributes',0)&0x400)
-    if linked(BUILD) or target!=ROOT.resolve()/'.build':
+    if linked(target) or target!=ROOT.resolve()/'.build':
         raise RuntimeError('构建缓存目标异常，拒绝清理')
     # 不允许链接把递归清理带到项目外；整个检查与删除在同一Python进程完成。
-    for item in BUILD.rglob('*'):
+    for item in target.rglob('*'):
         if linked(item) or not item.resolve().is_relative_to(target):
             raise RuntimeError('构建缓存内有链接或越界路径，拒绝清理')
     shutil.rmtree(target)
@@ -69,7 +69,7 @@ def main():
     parser.add_argument("--checks-only", action="store_true", help="完整构建验证，但不更新release或源码模板")
     parser.add_argument("--keep-build", action="store_true", help="发布后保留构建缓存用于增量编译；默认完成后清理")
     parser.add_argument("--upx", action="store_true", default=True, help="兼容参数；正式发行默认UPX --best --lzma，调试件不压缩")
-    parser.add_argument("--jobs",type=int,default=6,help="并行编译数；编译器随机崩溃时可用1串行复核")
+    parser.add_argument("--jobs",type=int,default=6,help="MSVC并行编译数，默认6")
     args = parser.parse_args()
     if args.jobs<1:parser.error("--jobs必须大于0")
     # 同步器先在临时配置上回归，不能直接拿用户发布配置当测试数据。
@@ -85,7 +85,7 @@ def main():
     digest = hashlib.sha256()
     inputs = sorted(p for p in SOURCE.rglob("*") if p.is_file() and
                     ".build" not in p.parts and "__pycache__" not in p.parts and
-                    p.suffix.lower() in {".c", ".h", ".py", ".json", ".toml", ".txt", ".bat"})
+                    p.suffix.lower() in {".c", ".h", ".def", ".py", ".json", ".toml", ".txt", ".bat"})
     for path in inputs:
         digest.update(path.relative_to(SOURCE).as_posix().encode("utf-8") + b"\0")
         digest.update(path.read_bytes())
@@ -93,13 +93,8 @@ def main():
     cc, environment = compiler()
     cmake = program("cmake", environment)
     ninja = program("ninja", environment)
-    cxx = cc.with_name("g++.exe")
-    if not cxx.is_file():
-        raise RuntimeError("SDL含Windows C++后端，请使用完整32位MinGW工具链。")
-    # 优先使用当前编译器配套strip，不固定个人工具路径，也不自动安装。
-    strip = cc.with_name(cc.name.replace("gcc", "strip"))
-    if not strip.is_file():
-        strip = Path(program("strip", environment))
+    # MSVC同一个cl.exe编译C与SDL的C++单元；x86开发环境由探测器准备。
+    cxx = cc
     upstream = ROOT / "thirdparty/SDL-release-3.4.16"
     if not (upstream / "CMakeLists.txt").is_file():
         raise RuntimeError("缺少固定SDL 3.4.16完整源码，请从完整项目包恢复thirdparty。")
@@ -119,25 +114,29 @@ def main():
         ctest = program("ctest", environment)
     run([ctest, "--test-dir", BUILD, "--output-on-failure"], environment)
 
-    # 完整版只编译一次；发行件在副本上strip，绝不对原链接件直接去符号。
+    # PDB独立于ASI；发行和调试复制同一个优化链接件，不再依赖GNU strip。
     linked, config = BUILD / "EDSlash.asi", BUILD / "EDSlash.toml"
     debug_asi = BUILD / "EDSlash_debug.asi"
     dist = BUILD / "publish"
     dist.mkdir(exist_ok=True)
     release_asi = dist / "EDSlash.asi"
     shutil.copyfile(linked, debug_asi)
-    run([strip, "--strip-unneeded", "-o", release_asi, debug_asi], environment)
+    shutil.copyfile(linked, release_asi)
+    pdb = BUILD / "EDSlash.pdb"
     debug_evidence = verify(debug_asi, config)
     evidence = verify(release_asi, config)
     evidence["压缩前发行与调试运行段一致"] = verify_variants(debug_asi, release_asi)
-    evidence["源码调试资料与发行剥离"] = verify_debug_info(debug_asi, release_asi)
-    # CTest已经加载完整链接件；这里还单独实际加载重命名件和strip件。
+    evidence["源码调试资料与发行隔离"] = verify_debug_info(debug_asi, release_asi, pdb)
+    evidence["PDB错误拒绝回放"] = test_pdb_rejections(debug_asi, release_asi, pdb)
+    # CTest已加载链接件；这里再验证发行和重命名调试件都能独立加载。
     run([BUILD / "test_load.exe", debug_asi], environment)
     run([BUILD / "test_load.exe", release_asi], environment)
     evidence["完整版"] = {"文件": "debug/EDSlash_debug.asi",
                           "SHA256": debug_evidence["ASI_SHA256"],
                           "字节数": debug_evidence["ASI字节数"],
                           "源码调试信息": True, "优化": "与发行件相同"}
+    evidence["完整版"]["PDB"] = {"文件": "debug/EDSlash.pdb", "SHA256": hashlib.sha256(pdb.read_bytes()).hexdigest()}
+    evidence["编译器"] = "原生MSVC，Win32/x86，静态运行库/MT"
     evidence["四官方EXE静态复核"] = samples
     evidence["构建身份"] = {"源码与构建输入SHA256": build_id, "架构": "单ASI、统一TOML及日志、官方静态SDL3.4.16"}
     # 脚本只产生离线证据；历史用户反馈不附到新产物。
@@ -155,7 +154,7 @@ def main():
         upx = os.environ.get("UPX_BIN") or shutil.which("upx", path=environment["PATH"])
         if not upx:
             raise RuntimeError("未找到UPX；正式发行需要UPX，请加入PATH或设置UPX_BIN。")
-        # 只压缩已剥离的发行副本；_debug既不strip也不UPX。
+        # 只压缩发行副本；PDB和调试ASI不经过UPX。
         packed = dist / "EDSlash-upx.asi"
         shutil.copyfile(release_asi, packed)
         run([upx, "--best", "--lzma", packed], environment)
@@ -171,7 +170,7 @@ def main():
         evidence["压缩前发行件"] = {"SHA256": evidence["ASI_SHA256"], "字节数": evidence["ASI字节数"]}
         evidence["ASI_SHA256"] = hashlib.sha256(packed.read_bytes()).hexdigest()
         evidence["ASI字节数"] = packed.stat().st_size
-        evidence["UPX"] = {"源": "已剥离发行件", "参数": "--best --lzma", "正式位置": "release/EDSlash.asi", "SHA256": hashlib.sha256(packed.read_bytes()).hexdigest(),
+        evidence["UPX"] = {"源": "MSVC优化发行副本（调试符号外置PDB）", "参数": "--best --lzma", "正式位置": "release/EDSlash.asi", "SHA256": hashlib.sha256(packed.read_bytes()).hexdigest(),
                            "字节数": packed.stat().st_size, "压缩完整性及非游戏加载": "通过",
                            "本轮新文件实机": "尚未单独复测"}
     evidence["PE静态核对对象"] = "压缩前发行件及UPX解压复核件；正式压缩件另做UPX完整性和加载检查"
@@ -199,6 +198,7 @@ def main():
     shutil.copyfile(packed, RELEASE / "EDSlash.asi")
     prepare_package(debug_directory, notices)
     shutil.copyfile(debug_asi, debug_directory / debug_asi.name)
+    shutil.copyfile(pdb, debug_directory / pdb.name)
     if packed:
         prepare_package(packed_directory, notices)
         shutil.copyfile(packed, packed_directory / "EDSlash.asi")
@@ -210,7 +210,7 @@ def main():
     shutil.copyfile(config, SOURCE / "config/EDSlash.toml")
     cleanup_legacy_cache()
     print(f"双产物完成：{RELEASE / 'EDSlash.asi'} 与 {debug_directory / debug_asi.name}")
-    print("两者优化代码相同，发行件去符号后UPX --best --lzma，_debug保留源码调试信息且不压缩；无需SDL3.dll。")
+    print("两者优化代码相同；发行副本UPX --best --lzma，调试ASI配套EDSlash.pdb且不压缩；无需SDL3.dll。")
     if not args.keep_build:cleanup_build_cache()
 
 

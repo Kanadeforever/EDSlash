@@ -36,24 +36,24 @@ static BYTE grid_player[0x400];static void *bag_pointer,*storage_pointer;
 static BYTE shop_position_code[3][6],nonroot_resource[16];
 static unsigned grid_details,grid_swaps,grid_panel_actions;
 static unsigned shop_requests,shop_trades;
-static int __attribute__((thiscall)) grid_player_get(void *root) {(void)root;return (int)(uintptr_t)grid_player;}
-static int __attribute__((thiscall)) grid_item_get(void *container,int slot)
-{CHECK(container==grid_player && slot>=0 && slot<136);return Read32(container,0xA4+slot*4)==UINT32_MAX ? 0:1;}
-static int __attribute__((thiscall)) grid_empty(void *container)
-{CHECK(container==grid_player);for (int i=0;i<50;++i) if (Read32(container,0xA4+i*4)==UINT32_MAX) return i;return -1;}
-static int __attribute__((thiscall)) shop_switch(void *root,int mode)
-{CHECK(root==menu_roots[11] && (mode==0x57 || mode==0x58));Write32(root,0xD0,mode);return 1;}
-static int __attribute__((thiscall)) grid_swap(void *container,int slot)
-{
+static int __fastcall grid_player_get(void *root, void *unused_edx) { (void)unused_edx;(void)root;return (int)(uintptr_t)grid_player;}
+static int __fastcall grid_item_get(void *container, void *unused_edx,int slot)
+{ (void)unused_edx;CHECK(container==grid_player && slot>=0 && slot<136);return Read32(container,0xA4+slot*4)==UINT32_MAX ? 0:1;}
+static int __fastcall grid_empty(void *container, void *unused_edx)
+{ (void)unused_edx;CHECK(container==grid_player);for (int i=0;i<50;++i) if (Read32(container,0xA4+i*4)==UINT32_MAX) return i;return -1;}
+static int __fastcall shop_switch(void *root, void *unused_edx,int mode)
+{ (void)unused_edx;CHECK(root==menu_roots[11] && (mode==0x57 || mode==0x58));Write32(root,0xD0,mode);return 1;}
+static int __fastcall grid_swap(void *container, void *unused_edx,int slot)
+{ (void)unused_edx;
     CHECK(container==grid_player && slot>=0 && slot<136);++grid_swaps;
     unsigned item=Read32(container,0xA4+slot*4),held=Read32(container,0x2C4);
     Write32(container,0xA4+slot*4,held);Write32(container,0x2C4,item);return 1;
 }
-static int __attribute__((thiscall)) combo_mouse_hit(void *root) {CHECK(root==menu_roots[8]);return combo_mouse_index;}
-static int __attribute__((thiscall)) talk_picker(void *root) {CHECK(root==menu_roots[5]);return (int)(uintptr_t)menu_children[5][1];}
-static int __attribute__((thiscall)) talk_select(void *root) {CHECK(root==menu_roots[5]);talk_selected=Read32(ReadPtr(root,0xA8),0xC4);return 1;}
-static int __attribute__((thiscall)) talk_cancel(void *root,int e,int x,void *y) {CHECK(root==menu_roots[5] && !e && !x && !y);++talk_cancelled;Write32(root,0x64,0);ptr(ui_data,0x3C,NULL);return 1;}
-static int __attribute__((thiscall)) text_next(void *root) {CHECK(root==menu_roots[6]);++text_next_count;Write32(root,0x64,0);ptr(ui_data,0x3C,NULL);return 1;}
+static int __fastcall combo_mouse_hit(void *root, void *unused_edx) { (void)unused_edx;CHECK(root==menu_roots[8]);return combo_mouse_index;}
+static int __fastcall talk_picker(void *root, void *unused_edx) { (void)unused_edx;CHECK(root==menu_roots[5]);return (int)(uintptr_t)menu_children[5][1];}
+static int __fastcall talk_select(void *root, void *unused_edx) { (void)unused_edx;CHECK(root==menu_roots[5]);talk_selected=Read32(ReadPtr(root,0xA8),0xC4);return 1;}
+static int __fastcall talk_cancel(void *root, void *unused_edx,int e,int x,void *y) { (void)unused_edx;CHECK(root==menu_roots[5] && !e && !x && !y);++talk_cancelled;Write32(root,0x64,0);ptr(ui_data,0x3C,NULL);return 1;}
+static int __fastcall text_next(void *root, void *unused_edx) { (void)unused_edx;CHECK(root==menu_roots[6]);++text_next_count;Write32(root,0x64,0);ptr(ui_data,0x3C,NULL);return 1;}
 static BYTE load_nodes[12][12],load_data[12][0x40],cursor_code[32];
 static uintptr_t cursor_position_pointer;
 static int cursor_x,cursor_y;
@@ -73,14 +73,14 @@ static int root_kind(void *self)
     for (int i=0;i<15;++i) if (self==menu_roots[i]) return i;
     CHECK(false);return -1;
 }
-static int __attribute__((thiscall)) menu_property(void *self,int field)
-{
+static int __fastcall menu_property(void *self, void *unused_edx,int field)
+{ (void)unused_edx;
     if (self==nonroot_resource) return field==13 ? 0:field==2 ? 3:0;
-    if (self!=menu_resource) return native_property(self,field);
+    if (self!=menu_resource) return native_property(self, NULL,field);
     return field==19 ? 111:field==13 ? 1:field==2 ? 3:0;
 }
-static int __attribute__((thiscall)) menu_show(void *self,int active,int mode)
-{
+static int __fastcall menu_show(void *self, void *unused_edx,int active,int mode)
+{ (void)unused_edx;
     int k=root_kind(self);CHECK(mode==0 || mode==-1);
     Write32(self,0x64,active!=0);Write32(self,0x68,0);
     if (k==2 || k==4 || k==5 || k==6) ptr(ui_data,0x3C,active ? self:NULL);
@@ -88,11 +88,11 @@ static int __attribute__((thiscall)) menu_show(void *self,int active,int mode)
     if (k==3 && active) {Write32(self,0xD0,0);Write32(self,0xD4,0);}
     return 1;
 }
-static int __attribute__((thiscall)) menu_tick(void *self)
-{
+static int __fastcall menu_tick(void *self, void *unused_edx)
+{ (void)unused_edx;
     int k=root_kind(self);++tick_calls;
     if (k==8) {
-        ((This0)patched_callee((uintptr_t)skill_calls[0]))(self);
+        ((This0)patched_callee((uintptr_t)skill_calls[0]))(self, NULL);
         if (ReadPtr(self,0xA8)) ++skill_details;
         return 7;
     }
@@ -103,22 +103,22 @@ static int __attribute__((thiscall)) menu_tick(void *self)
     }
     /* 模拟原base Tick因鼠标离开根页而清悬停；生产wrapper必须重新投影自己的选择。 */
     ptr(self,0xA8,NULL);
-    if (k==5) ptr(self,0xA8,(void *)(uintptr_t)((This0)patched_callee((uintptr_t)talk_picker_code))(self));
+    if (k==5) ptr(self,0xA8,(void *)(uintptr_t)((This0)patched_callee((uintptr_t)talk_picker_code))(self, NULL));
     if (k==6 && Read32(self,0x64)) Write32(self,0xF4,Read32(self,0xF4)-Read32(self,0xF0));
     if (k==0 && pending_ticks) {
         for (unsigned i=0;i<6;++i)
             if (Read32(menu_children[0][i],0x28)==selected_action) Write32(menu_children[0][i],0x40,3);
         if (!--pending_ticks) {
             Write32(self,0xC0,(uint32_t)-1);
-            if (transition_after_action) ((This2)menu_tables[k][0x1C/4])(self,0,0);
+            if (transition_after_action) ((This2)menu_tables[k][0x1C/4])(self, NULL,0,0);
         }
     }
     return 7;
 }
-static int __attribute__((thiscall)) skill_base_tick(void *self)
-{int k=root_kind(self);if (k==4) return menu_tick(self);CHECK(k==8);ptr(self,0xA8,NULL);return 7;}
-static int __attribute__((thiscall)) menu_get_jm(void *self,int id)
-{
+static int __fastcall skill_base_tick(void *self, void *unused_edx)
+{ (void)unused_edx;int k=root_kind(self);if (k==4) return menu_tick(self, NULL);CHECK(k==8);ptr(self,0xA8,NULL);return 7;}
+static int __fastcall menu_get_jm(void *self, void *unused_edx,int id)
+{ (void)unused_edx;
     CHECK(self==ui_data);
     if(id==0x1A)return (int)(uintptr_t)new_roots[0];
     if(id==0x9C)return (int)(uintptr_t)new_roots[1];
@@ -128,27 +128,27 @@ static int __attribute__((thiscall)) menu_get_jm(void *self,int id)
     for (unsigned i=0;i<15;++i) if (Read32(menu_roots[i],0x28)==(unsigned)id) return (int)(uintptr_t)menu_roots[i];
     return 0;
 }
-static int __attribute__((thiscall)) quest_switch(void *self,int id,int selection)
-{
+static int __fastcall quest_switch(void *self, void *unused_edx,int id,int selection)
+{ (void)unused_edx;
     CHECK(root_kind(self)==7 && id>=0x78 && id<=0x7B && selection==-1);
     ++quest_switches;Write32(self,0xC0,id);Write32(quest_list_data,0xF4,0);return 1;
 }
-static int __attribute__((thiscall)) quest_select(void *self,int index)
-{
+static int __fastcall quest_select(void *self, void *unused_edx,int index)
+{ (void)unused_edx;
     CHECK(root_kind(self)==7 && index>=0 && index<3);
     ++quest_selections;Write32(quest_list_data,0xF4,index);
     Write32(quest_list_data,0xDC,index>0 ? (unsigned)(-(index*20)):0);return 1;
 }
-static int __attribute__((thiscall)) skill_switch(void *self,int id)
-{CHECK(root_kind(self)==8 && (id==0x7F || id==0x80));Write32(self,0xC0,id);return 1;}
-static int __attribute__((thiscall)) skill_slot(void *self,int slot)
-{CHECK(root_kind(self)==8 && slot>=0 && slot<4);Write32(self,0xC4,slot);return 1;}
-static int __attribute__((thiscall)) skill_combo_get(void *self,int slot)
-{CHECK(self==hud_data && slot>=0 && slot<4);return (int)(uintptr_t)combo_list_data;}
-static int __attribute__((thiscall)) skill_primary(void *self,int e,int x,void *y)
-{
+static int __fastcall skill_switch(void *self, void *unused_edx,int id)
+{ (void)unused_edx;CHECK(root_kind(self)==8 && (id==0x7F || id==0x80));Write32(self,0xC0,id);return 1;}
+static int __fastcall skill_slot(void *self, void *unused_edx,int slot)
+{ (void)unused_edx;CHECK(root_kind(self)==8 && slot>=0 && slot<4);Write32(self,0xC4,slot);return 1;}
+static int __fastcall skill_combo_get(void *self, void *unused_edx,int slot)
+{ (void)unused_edx;CHECK(self==hud_data && slot>=0 && slot<4);return (int)(uintptr_t)combo_list_data;}
+static int __fastcall skill_primary(void *self, void *unused_edx,int e,int x,void *y)
+{ (void)unused_edx;
     CHECK(root_kind(self)==8 && !e && !x && !y);
-    ++skill_actions;skill_operation_index=((This0)patched_callee((uintptr_t)skill_calls[1]))(self);
+    ++skill_actions;skill_operation_index=((This0)patched_callee((uintptr_t)skill_calls[1]))(self, NULL);
     selected_action=Read32(ReadPtr(self,0xA8),0x28);
     /* 此替身代表游戏业务：上方清单以位置删除（同招式也不混淆），下方技能点击则追加。
      * 插件生产代码没有这些数组写入；用业务结果验证它送来的焦点与参数。 */
@@ -165,114 +165,114 @@ static int __attribute__((thiscall)) skill_primary(void *self,int e,int x,void *
     } else if (reject_skill_learning) return 0;
     return 1;
 }
-static int __attribute__((thiscall)) skill_secondary(void *self,int e,int x,void *y)
-{
+static int __fastcall skill_secondary(void *self, void *unused_edx,int e,int x,void *y)
+{ (void)unused_edx;
     CHECK(root_kind(self)==8 && !e && !x && !y);
-    skill_operation_index=((This0)patched_callee((uintptr_t)skill_calls[2]))(self);return 1;
+    skill_operation_index=((This0)patched_callee((uintptr_t)skill_calls[2]))(self, NULL);return 1;
 }
-static int __attribute__((thiscall)) grid_primary(void *self,int e,int x,void *y)
-{
+static int __fastcall grid_primary(void *self, void *unused_edx,int e,int x,void *y)
+{ (void)unused_edx;
     int kind=root_kind(self);CHECK(kind>=9 && !e && !x && !y);
     void *child=ReadPtr(self,0xA8);
     if (kind==11) {
         if (child) {Write32(self,0xD0,Read32(child,0x28));return 1;}
         if (Read32(self,0xC0)<50) {
             POINT point;CHECK(((BOOL (WINAPI *)(POINT *))patched_callee((uintptr_t)shop_position_code[0]))(&point));
-            ++shop_requests;ptr(menu_roots[4],0xCC,self);((This2)menu_tables[4][0x1C/4])(menu_roots[4],1,0);
+            ++shop_requests;ptr(menu_roots[4],0xCC,self);((This2)menu_tables[4][0x1C/4])(menu_roots[4], NULL,1,0);
         }
         return 1;
     }
     if (kind>=12 && child) {
         unsigned id=Read32(child,0x28),first=kind==12 ? 0x41:kind==13 ? 0x49:0x5E;
         unsigned count=kind==12 ? 7:kind==13 ? 12:5;
-        if (id>=first && id<first+count) return grid_swap(grid_player,(int)(id-first)+(kind==12 ? 62:kind==13 ? 69:81));
+        if (id>=first && id<first+count) return grid_swap(grid_player, NULL,(int)(id-first)+(kind==12 ? 62:kind==13 ? 69:81));
     }
     if (child) {++grid_panel_actions;selected_action=Read32(child,0x28);return 1;}
     if (kind>=12) return 1;
     unsigned local=Read32(self,kind==9 ? 0xFC:0xC0);
-    return local<50 ? grid_swap(grid_player,(int)local+(kind==10 ? 86:0)):0;
+    return local<50 ? grid_swap(grid_player, NULL,(int)local+(kind==10 ? 86:0)):0;
 }
-static int __attribute__((thiscall)) menu_hover(void *self,int e,int x,void *y)
-{
+static int __fastcall menu_hover(void *self, void *unused_edx,int e,int x,void *y)
+{ (void)unused_edx;
     int k=root_kind(self);++native_hovers;
     CHECK(e==12 && x==34 && y==(void *)56);
     ptr(self,0xA8,menu_children[k][1]);return 9;
 }
-static int __attribute__((thiscall)) menu_activate(void *self,int id)
-{
+static int __fastcall menu_activate(void *self, void *unused_edx,int id)
+{ (void)unused_edx;
     CHECK(root_kind(self)==0);++title_actions;selected_action=(unsigned)id;
     if (!expansion_case) { Write32(self,0xC0,id);pending_ticks=3; }
-    else if (transition_after_action) ((This2)menu_tables[0][0x1C/4])(self,0,0);
+    else if (transition_after_action) ((This2)menu_tables[0][0x1C/4])(self, NULL,0,0);
     return 1;
 }
-static int __attribute__((thiscall)) menu_primary(void *self,int e,int x,void *y)
-{
+static int __fastcall menu_primary(void *self, void *unused_edx,int e,int x,void *y)
+{ (void)unused_edx;
     int kind=root_kind(self);
     CHECK((kind==1 && e==0 && x==0 && y==NULL) || (kind==3 && e==0 && x==-1 && y==(void *)(intptr_t)-1));
     void *child=ReadPtr(self,0xA8);CHECK(ReadPtr(child,0xA4)==self);
     selected_action=Read32(child,0x28);
     if (kind==3) {
-        CHECK(selected_action==0x97);((This2)menu_tables[3][0x1C/4])(self,0,0);
-        ((This2)menu_tables[0][0x1C/4])(menu_roots[0],1,0);
+        CHECK(selected_action==0x97);((This2)menu_tables[3][0x1C/4])(self, NULL,0,0);
+        ((This2)menu_tables[0][0x1C/4])(menu_roots[0], NULL,1,0);
     } else {
         ++system_actions;
-        if (transition_after_action) ((This2)menu_tables[1][0x1C/4])(self,0,0);
+        if (transition_after_action) ((This2)menu_tables[1][0x1C/4])(self, NULL,0,0);
     }
     return 1;
 }
-static int __attribute__((thiscall)) menu_confirm(void *self)
-{
+static int __fastcall menu_confirm(void *self, void *unused_edx)
+{ (void)unused_edx;
     CHECK(root_kind(self)==2);++confirm_actions;
     /* 原回调解析原数值文本；菜单适配不能绕过回调直接改owner/金钱。 */
     CHECK(Read32(menu_children[2][2],0xC8)==42);
-    ((This2)menu_tables[2][0x1C/4])(self,0,0);return 1;
+    ((This2)menu_tables[2][0x1C/4])(self, NULL,0,0);return 1;
 }
-static int __attribute__((thiscall)) menu_texture(void *self,int x,int y)
-{
+static int __fastcall menu_texture(void *self, void *unused_edx,int x,int y)
+{ (void)unused_edx;
     CHECK(ReadPtr(self,0xA4)==menu_roots[1]);CHECK((x==-1 || x==0) && y==0);
     Write32(self,0x58,x==-1 ? 77u:0u);return 1;
 }
-static int __attribute__((thiscall)) menu_animation_reset(void *self,int zero)
-{
+static int __fastcall menu_animation_reset(void *self, void *unused_edx,int zero)
+{ (void)unused_edx;
     CHECK(Memory_Readable(self,32));CHECK(zero==0);++animation_resets;return 1;
 }
 static int __cdecl menu_sound(int id,int a,int volume,int b)
 { CHECK(id==0x93 && a==0 && volume==100 && b==0);++focus_sounds;return 1; }
-static int __attribute__((thiscall)) load_select(void *self,int slot)
-{
+static int __fastcall load_select(void *self, void *unused_edx,int slot)
+{ (void)unused_edx;
     CHECK(root_kind(self)==3 && slot>=0 && slot<4);
     if (Read32(self,0xD0)+(unsigned)slot>=Read32(self,0xC0)) return 0;
     Write32(self,0xD4,(unsigned)slot);return 1;
 }
-static int __attribute__((thiscall)) load_page(void *self,int delta)
-{
+static int __fastcall load_page(void *self, void *unused_edx,int delta)
+{ (void)unused_edx;
     CHECK(root_kind(self)==3 && (delta==-4 || delta==4));int next=(int)Read32(self,0xD0)+delta;
     if (next>=0 && (unsigned)next<Read32(self,0xC0)) Write32(self,0xD0,(unsigned)next);
     return 1;
 }
-static int __attribute__((thiscall)) load_submit(void *self,int slot)
-{
+static int __fastcall load_submit(void *self, void *unused_edx,int slot)
+{ (void)unused_edx;
     CHECK(root_kind(self)==3 && slot==-1 && Read32(self,0xD0)+Read32(self,0xD4)<Read32(self,0xC0));
-    ++load_actions;((This2)menu_tables[3][0x1C/4])(self,0,0);return 1;
+    ++load_actions;((This2)menu_tables[3][0x1C/4])(self, NULL,0,0);return 1;
 }
-static int __attribute__((thiscall)) menu_template(void *self,int index,int mode)
-{
-    if (self!=menu_resource && self!=nonroot_resource) return native_template(self,index,mode);
+static int __fastcall menu_template(void *self, void *unused_edx,int index,int mode)
+{ (void)unused_edx;
+    if (self!=menu_resource && self!=nonroot_resource) return native_template(self, NULL,index,mode);
     CHECK((mode==1 || mode==3) && index>=5 && index<=8);static const int rect[]={40,60,300,50};return rect[index-5];
 }
-static int __attribute__((thiscall)) message_lookup(void *table,int id,int language)
-{ CHECK(table==(void *)0x345 && id==0x13D && language==1);return (int)(uintptr_t)"原删除提示"; }
-static int __attribute__((thiscall)) message_open(void *self,void *owner,const char *text,int x,int y,int a,int b)
-{
+static int __fastcall message_lookup(void *table, void *unused_edx,int id,int language)
+{ (void)unused_edx; CHECK(table==(void *)0x345 && id==0x13D && language==1);return (int)(uintptr_t)"原删除提示"; }
+static int __fastcall message_open(void *self, void *unused_edx,void *owner,const char *text,int x,int y,int a,int b)
+{ (void)unused_edx;
     CHECK(root_kind(self)==4 && owner==menu_roots[3] && !strcmp(text,"原删除提示") && x>=0 && y>=0 && a==0 && b==0);
-    ++delete_requests;ptr(self,0xCC,owner);((This2)menu_tables[4][0x1C/4])(self,1,0);return 1;
+    ++delete_requests;ptr(self,0xCC,owner);((This2)menu_tables[4][0x1C/4])(self, NULL,1,0);return 1;
 }
-static int __attribute__((thiscall)) message_primary(void *self,int e,int x,void *y)
-{
+static int __fastcall message_primary(void *self, void *unused_edx,int e,int x,void *y)
+{ (void)unused_edx;
     CHECK(root_kind(self)==4 && e==0 && x==0 && y==NULL);
     void *child=ReadPtr(self,0xA8),*owner=ReadPtr(self,0xCC);
     CHECK((owner==menu_roots[3] || !owner || (owner>= (void *)menu_roots[9] && owner<= (void *)menu_roots[14])) && Read32(child,0x28)==0x2A && Read32(child,0xC4)<=1);
-    bool yes=Read32(child,0xC4)==1;((This2)menu_tables[4][0x1C/4])(self,0,0);ptr(self,0xCC,NULL);
+    bool yes=Read32(child,0xC4)==1;((This2)menu_tables[4][0x1C/4])(self, NULL,0,0);ptr(self,0xCC,NULL);
     if (yes && owner==menu_roots[3]) {++deleted_records;Write32(owner,0xC0,Read32(owner,0xC0)-1);}
     if (yes && owner==menu_roots[11]) ++shop_trades;
     return 1;
@@ -280,8 +280,8 @@ static int __attribute__((thiscall)) message_primary(void *self,int e,int x,void
 static BOOL WINAPI cursor_position(POINT *point) { point->x=37;point->y=49;return TRUE; }
 static BYTE focus_sprites[6*32],focus_surface[0x20];
 static void record_focus(int x,int y,int width,int height);
-static int __attribute__((thiscall)) cursor_sprite(void *self,void *surface,int x,int y,int frame,int shade,int flags)
-{
+static int __fastcall cursor_sprite(void *self, void *unused_edx,void *surface,int x,int y,int frame,int shade,int flags)
+{ (void)unused_edx;
     if(self==focus_sprites+5*32) {CHECK(surface==focus_surface && !frame && !shade && !flags);record_focus(x,y,26,26);return 6;}
     if(self==menu_sprites[8][0] && surface==focus_surface) {CHECK(frame==0 && shade==-1 && !flags);++cursor_draws;return 6;}
     CHECK(self==menu_sprites[0][0] && surface==(void *)0x246 && frame==0 && shade==-1 && flags==0);
@@ -304,21 +304,21 @@ static void record_focus(int x,int y,int width,int height)
     }
     ++focus_draws;
 }
-static int __attribute__((thiscall)) focus_frame_get(void *sprite)
-{CHECK(sprite==focus_sprites+5*32);return (int)(uintptr_t)focus_description;}
-static int __attribute__((thiscall)) focus_image_get(void *description)
-{CHECK(description==focus_description);return (int)(uintptr_t)focus_image;}
+static int __fastcall focus_frame_get(void *sprite, void *unused_edx)
+{ (void)unused_edx;CHECK(sprite==focus_sprites+5*32);return (int)(uintptr_t)focus_description;}
+static int __fastcall focus_image_get(void *description, void *unused_edx)
+{ (void)unused_edx;CHECK(description==focus_description);return (int)(uintptr_t)focus_image;}
 
-static int __attribute__((thiscall)) scaled_focus(void *sprite,void *surface,int x,int y,int width,int height,
+static int __fastcall scaled_focus(void *sprite, void *unused_edx,void *surface,int x,int y,int width,int height,
                                                  int sx,int sy,int mode,int shade,void *clip)
-{
+{ (void)unused_edx;
     CHECK(sprite==focus_sprites+5*32 && surface==focus_surface && !mode && !shade && !clip);
     /* 原入口裁取源图，不会缩放：每片都必须在真实26×26源帧里。旧32×32直接调用会失败。 */
     CHECK(sx>=0 && sy>=0 && width>0 && height>0 && sx+width<=26 && sy+height<=26);
     record_focus(x,y,width,height);return 1;
 }
-static int __attribute__((thiscall)) native_drop(void *container,int item)
-{
+static int __fastcall native_drop(void *container, void *unused_edx,int item)
+{ (void)unused_edx;
     CHECK(container==grid_player);++drop_requests;
     if (item==-1) Write32(container,0x2C4,UINT32_MAX);
     else {
@@ -337,8 +337,8 @@ static void emit_focus(void)
     RECT r;unsigned reason;void *root=Menu_Context(&reason);
     if(g_intent.layer!=LAYER_NATIVE && g_intent.layer!=LAYER_MOUSE && (ActionMenu_FocusFrame(&r) || (Read32(root,0)==g_profile->menu_skill_vtable && Menu_FocusFrame(&r)))) {
         request.rectangle=(RuntimeFocusRect){r.left,r.top,r.right,r.bottom};
-        typedef int (__attribute__((thiscall)) *DrawIcon)(void *,void *,int,int,int,int,int);
-        ((DrawIcon)patched_callee(g_profile->icon_focus_call))(menu_sprites[8][0],focus_surface,
+        typedef int (__fastcall *DrawIcon)(void *, void *,void *,int,int,int,int,int);
+        ((DrawIcon)patched_callee(g_profile->icon_focus_call))(menu_sprites[8][0], NULL,focus_surface,
             request.rectangle.left-1,request.rectangle.top-1,0,-1,0);
         unsigned before=focus_draws;
         /* 原图标后的框已经画完；END不能重画到随后原说明文字上。 */
@@ -371,7 +371,7 @@ static void activate_page(unsigned kind)
     for (unsigned k=0;k<15;++k) if (k!=kind) Write32(menu_roots[k],0x64,0);
     Write32(settings_root,0x64,0);
     Write32(unknown_root,0x64,0);
-    ((This2)menu_tables[kind][0x1C/4])(menu_roots[kind],1,0);
+    ((This2)menu_tables[kind][0x1C/4])(menu_roots[kind], NULL,1,0);
 }
 static void menu_step(unsigned held,float x,float y)
 {
@@ -389,25 +389,25 @@ static void game_isolated(void)
     CHECK((unsigned)releases==old_releases && last_opcode==0);
 }
 /* 替身模拟原设置业务，验证手柄只提供焦点/数值而不接管保存内容。 */
-static int __attribute__((thiscall)) settings_slider(void *self,int value)
-{
+static int __fastcall settings_slider(void *self, void *unused_edx,int value)
+{ (void)unused_edx;
     CHECK(self==settings_children[0] || self==settings_children[1] || self==settings_children[2]);
     Write32(self,0xDC,(unsigned)(value<0 ? 0:value>100 ? 100:value));return 1;
 }
-static int __attribute__((thiscall)) settings_apply(void *self,int e,int x,void *y)
-{
+static int __fastcall settings_apply(void *self, void *unused_edx,int e,int x,void *y)
+{ (void)unused_edx;
     CHECK(self==settings_root && !e && !x && !y && !ReadPtr(self,0xA8));++settings_applies;return 1;
 }
-static int __attribute__((thiscall)) settings_close(void *self)
-{
+static int __fastcall settings_close(void *self, void *unused_edx)
+{ (void)unused_edx;
     CHECK(self==settings_root);++settings_closes;
-    ((This2)menu_tables[16][0x1C/4])(self,0,0);return 1;
+    ((This2)menu_tables[16][0x1C/4])(self, NULL,0,0);return 1;
 }
-static int __attribute__((thiscall)) settings_primary(void *self,int e,int x,void *y)
-{
+static int __fastcall settings_primary(void *self, void *unused_edx,int e,int x,void *y)
+{ (void)unused_edx;
     CHECK(self==settings_root && !e && !x && !y);
     unsigned id=Read32(ReadPtr(self,0xA8),0x28);CHECK(id>=0xAE && id<=0xB2);
-    if(id==0xB2)return settings_close(self);
+    if(id==0xB2)return settings_close(self, NULL);
     ++settings_choices;Write32(self,id<=0xAF ? 0xC4:0xC8,id);return 1;
 }
 static void settings_fixture(Profile *profile)
@@ -430,24 +430,24 @@ static void settings_fixture(Profile *profile)
     profile->menu_settings_apply=(uintptr_t)settings_apply;profile->menu_settings_slider_set=(uintptr_t)settings_slider;
     settings_applies=settings_choices=settings_closes=0;
 }
-static int __attribute__((thiscall)) character_primary(void *self,int e,int x,void *y)
-{
+static int __fastcall character_primary(void *self, void *unused_edx,int e,int x,void *y)
+{ (void)unused_edx;
     CHECK(self==new_roots[0] && !e && !x && !y);void *c=ReadPtr(self,0xA8);CHECK(ReadPtr(c,0xA4)==self);
     ++character_requests;Write32(self,0xC0,Read32(c,0xC4));
-    ((This2)menu_tables[18][0x1C/4])(new_roots[1],1,0);
+    ((This2)menu_tables[18][0x1C/4])(new_roots[1], NULL,1,0);
     /* 原提交在Show第二层之后再读第一层A8和子资源，不能提前清空。 */
     CHECK(ReadPtr(self,0xA8)==c && ReadPtr(c,0x50)!=NULL);
-    ((This2)menu_tables[17][0x1C/4])(self,0,0);ptr(ui_data,0x3C,new_roots[1]);return 1;
+    ((This2)menu_tables[17][0x1C/4])(self, NULL,0,0);ptr(ui_data,0x3C,new_roots[1]);return 1;
 }
-static int __attribute__((thiscall)) newgame_primary(void *self,int e,int x,void *y)
-{
+static int __fastcall newgame_primary(void *self, void *unused_edx,int e,int x,void *y)
+{ (void)unused_edx;
     CHECK(self==new_roots[1] && !e && !x && !y);unsigned id=Read32(ReadPtr(self,0xA8),0x28);CHECK(id==0xA0 || id==0xA1);
-    if(id==0xA1){((This2)menu_tables[17][0x1C/4])(new_roots[0],1,0);((This2)menu_tables[18][0x1C/4])(self,0,0);ptr(ui_data,0x3C,new_roots[0]);}
+    if(id==0xA1){((This2)menu_tables[17][0x1C/4])(new_roots[0], NULL,1,0);((This2)menu_tables[18][0x1C/4])(self, NULL,0,0);ptr(ui_data,0x3C,new_roots[0]);}
     else ++newgame_requests; /* 替身代表原名称校验拒绝空名，不伪造进入世界。 */
     return 1;
 }
-static int __attribute__((thiscall)) difficulty_cycle(void *self,int delta)
-{CHECK(self==new_roots[1] && (delta==1 || delta==-1));++difficulty_requests;Write32(new_children[1][0],0xC4,(Read32(new_children[1][0],0xC4)+3+delta)%3);return 1;}
+static int __fastcall difficulty_cycle(void *self, void *unused_edx,int delta)
+{ (void)unused_edx;CHECK(self==new_roots[1] && (delta==1 || delta==-1));++difficulty_requests;Write32(new_children[1][0],0xC4,(Read32(new_children[1][0],0xC4)+3+delta)%3);return 1;}
 static void newgame_fixture(Profile *p)
 {
     memset(new_roots,0,sizeof new_roots);memset(new_children,0,sizeof new_children);
@@ -623,17 +623,17 @@ static void menu_regression(bool expansion)
     POINT anchor;CHECK(Menu_CursorAnchor(&anchor));
     CHECK(anchor.x==174 && anchor.y==224);
     CHECK(((BOOL (WINAPI *)(POINT *))patched_callee((uintptr_t)cursor_code))(&anchor));CHECK(anchor.x==174 && anchor.y==224);
-    typedef int (__attribute__((thiscall)) *Draw)(void *,void *,int,int,int,int,int);
-    CHECK(((Draw)patched_callee((uintptr_t)(cursor_code+16)))(menu_sprites[0][0],(void *)0x246,anchor.x,anchor.y,0,-1,0)==(expansion ? 0:6));
+    typedef int (__fastcall *Draw)(void *, void *,void *,int,int,int,int,int);
+    CHECK(((Draw)patched_callee((uintptr_t)(cursor_code+16)))(menu_sprites[0][0], NULL,(void *)0x246,anchor.x,anchor.y,0,-1,0)==(expansion ? 0:6));
     CHECK(cursor_draws==(expansion ? 0u:1u));
     if (!expansion) CHECK(cursor_x==174 && cursor_y==224);
     menu_step(KEY(PAD_UP),0,0);CHECK(focus_id(0)==0x21);CHECK(focus_sounds==2);
     for (unsigned i=0;i<10;++i) menu_step(KEY(PAD_UP),0,0);
     CHECK(focus_id(0)==0x21);g_input.now+=160;menu_step(KEY(PAD_UP),0,0);CHECK(focus_id(0)==0x20);
     CHECK(focus_sounds==3);
-    CHECK(((This3)menu_tables[0][0x30/4])(menu_roots[0],12,34,(void *)56)==0);
+    CHECK(((This3)menu_tables[0][0x30/4])(menu_roots[0], NULL,12,34,(void *)56)==0);
     CHECK(native_hovers==0 && focus_id(0)==0x20);
-    CHECK(((This0)menu_tables[0][1])(menu_roots[0])==7 && focus_id(0)==0x20);
+    CHECK(((This0)menu_tables[0][1])(menu_roots[0], NULL)==7 && focus_id(0)==0x20);
     CHECK(ReadPtr(ui_data,0x20)==(void *)0x12345678);
     Write32(unknown_root,0x64,1);ptr(ui_data,0x40,unknown_root);
     unsigned routed_reason;CHECK(Menu_Context(&routed_reason)==menu_roots[0]);
@@ -643,16 +643,16 @@ static void menu_regression(bool expansion)
     for (unsigned i=0;i<7;++i) menu_step(KEY(PAD_A),0,0);
     CHECK(title_actions==1);game_isolated();
     if (!expansion) {
-        ((This0)menu_tables[0][1])(menu_roots[0]);CHECK(Read32(menu_children[0][1],0x40)==3);
+        ((This0)menu_tables[0][1])(menu_roots[0], NULL);CHECK(Read32(menu_children[0][1],0x40)==3);
         neutral_menu();menu_step(KEY(PAD_DOWN)|KEY(PAD_A),0,0);CHECK(title_actions==1);
-        ((This0)menu_tables[0][1])(menu_roots[0]);((This0)menu_tables[0][1])(menu_roots[0]);
+        ((This0)menu_tables[0][1])(menu_roots[0], NULL);((This0)menu_tables[0][1])(menu_roots[0], NULL);
     }
     neutral_menu();Write32(menu_children[0][1],0x64,0);
-    ((This0)menu_tables[0][1])(menu_roots[0]);CHECK(ReadPtr(menu_roots[0],0xA8)==NULL);
+    ((This0)menu_tables[0][1])(menu_roots[0], NULL);CHECK(ReadPtr(menu_roots[0],0xA8)==NULL);
     neutral_menu();CHECK(focus_id(0)==0x22);menu_step(KEY(PAD_UP),0,0);CHECK(focus_id(0)==0x21);
     /* 几何导航覆盖外传额外按钮，普通本体不能选到隐藏A7。 */
     for (unsigned i=0;i<6;++i) { neutral_menu();menu_step(KEY(PAD_DOWN),0,0); }
-    CHECK(focus_id(0)==(expansion ? 0xA7:0x23));
+    CHECK(focus_id(0)==(expansion ? 0xA7u:0x23u));
     /* 开页时旧A/左摇杆输入不执行，松开后才能操作；系统默认继续而非鼠标指向的离开按钮。 */
     world_ptr=old_world;activate_page(1);menu_step(KEY(PAD_A),1,0);CHECK(system_actions==0);
     neutral_menu();CHECK(focus_id(1)==0x2E);CHECK(Read32(menu_children[1][0],0x58)==0);
@@ -661,18 +661,18 @@ static void menu_regression(bool expansion)
     neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(system_actions==1 && selected_action==0x30);
     /* 物理来源完整回到原hover；新的手柄接管不拿物理悬停当默认选择。 */
     Menu_Suspend();g_intent.layer=LAYER_NATIVE;
-    CHECK(((This3)menu_tables[1][0x30/4])(menu_roots[1],12,34,(void *)56)==9);
+    CHECK(((This3)menu_tables[1][0x30/4])(menu_roots[1], NULL,12,34,(void *)56)==9);
     CHECK(native_hovers==1);menu_step(KEY(PAD_A),0,0);CHECK(system_actions==1);
     neutral_menu();CHECK(focus_id(1)==0x2E);
     /* capture子对象归一化到确认框，优先于下面仍显示的系统页。 */
-    ((This2)menu_tables[2][0x1C/4])(menu_roots[2],1,0);
+    ((This2)menu_tables[2][0x1C/4])(menu_roots[2], NULL,1,0);
     ptr(ui_data,0x3C,menu_children[2][2]);ptr(ui_data,0x40,menu_roots[1]);
     unsigned reason;CHECK(Menu_Context(&reason)==menu_roots[2] && reason==1);
     neutral_menu();CHECK(focus_id(2)==0x9A);
     menu_step(KEY(PAD_RIGHT),0,0);CHECK(focus_id(2)==0x9B);
     neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(!Read32(menu_roots[2],0x64) && confirm_actions==0);
     CHECK(Menu_CapturesInput());game_isolated();
-    ((This2)menu_tables[2][0x1C/4])(menu_roots[2],1,0);neutral_menu();
+    ((This2)menu_tables[2][0x1C/4])(menu_roots[2], NULL,1,0);neutral_menu();
     menu_step(KEY(PAD_A),0,0);CHECK(confirm_actions==1);
     /* 同帧A+B只取消，关闭后held X和推杆也不漏到攻击/移动。 */
     activate_page(2);neutral_menu();menu_step(KEY(PAD_A)|KEY(PAD_B)|KEY(PAD_X),1,0);
@@ -743,16 +743,16 @@ static void menu_regression(bool expansion)
     menu_step(KEY(PAD_LEFT),0,0);CHECK(Read32(menu_roots[3],0xD0)==0 && !Menu_CursorAnchor(&anchor));
     /* NPC选项按脚本记录，提示项不选；Tick原命中调用被独立焦点替代。 */
     activate_page(5);neutral_menu();CHECK(Read32(ReadPtr(menu_roots[5],0xA8),0xC4)==10);
-    ((This0)menu_tables[5][1])(menu_roots[5]);CHECK(Read32(ReadPtr(menu_roots[5],0xA8),0xC4)==10);
+    ((This0)menu_tables[5][1])(menu_roots[5], NULL);CHECK(Read32(ReadPtr(menu_roots[5],0xA8),0xC4)==10);
     menu_step(KEY(PAD_DOWN),0,0);CHECK(Read32(ReadPtr(menu_roots[5],0xA8),0xC4)==20);
     talk_delay=2;neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(talk_selected==0);
     talk_delay=0;neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(talk_selected==20);
     neutral_menu();menu_step(KEY(PAD_B),0,0);CHECK(talk_cancelled==1);
     activate_page(6);neutral_menu();int before_scroll=(int)Read32(menu_roots[6],0xF4);
     menu_step(KEY(PAD_A),0,0);CHECK(text_next_count==0 && Read32(menu_roots[6],0x64));
-    ((This0)menu_tables[6][1])(menu_roots[6]);CHECK((int)Read32(menu_roots[6],0xF4)==before_scroll-3 && text_next_count==0);
+    ((This0)menu_tables[6][1])(menu_roots[6], NULL);CHECK((int)Read32(menu_roots[6],0xF4)==before_scroll-3 && text_next_count==0);
     menu_step(0,0,0);before_scroll=(int)Read32(menu_roots[6],0xF4);
-    ((This0)menu_tables[6][1])(menu_roots[6]);CHECK((int)Read32(menu_roots[6],0xF4)==before_scroll-1);
+    ((This0)menu_tables[6][1])(menu_roots[6], NULL);CHECK((int)Read32(menu_roots[6],0xF4)==before_scroll-1);
     menu_step(KEY(PAD_B),0,0);CHECK(text_next_count==1);
     /* 日志使用原列表编排而非伪造方向键，分类切换不泄漏世界药品/投掷快捷键。 */
     activate_page(7);neutral_menu();CHECK(Menu_CursorAnchor(&anchor));CHECK(anchor.y==34);
@@ -777,7 +777,7 @@ static void menu_regression(bool expansion)
     /* 技能学习焦点经过原base Tick后仍在，详情不会受物理鼠标悬停清空。 */
     activate_page(8);neutral_menu();CHECK(focus_id(8)==0x84);
     CHECK(Menu_CursorAnchor(&anchor) && anchor.y==224);
-    ((This0)menu_tables[8][1])(menu_roots[8]);CHECK(focus_id(8)==0x84 && skill_details==1);
+    ((This0)menu_tables[8][1])(menu_roots[8], NULL);CHECK(focus_id(8)==0x84 && skill_details==1);
     menu_step(KEY(PAD_DOWN),0,0);CHECK(focus_id(8)==0x85);
     neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(skill_actions==1 && selected_action==0x85);
     neutral_menu();menu_step(KEY(PAD_RB),0,0);CHECK(Read32(menu_roots[8],0xC0)==0x80);
@@ -804,7 +804,7 @@ static void menu_regression(bool expansion)
     CHECK(Menu_CursorAnchor(&anchor));menu_step(KEY(PAD_A),0,0);CHECK(skill_operation_index==-1);
     /* 真实鼠标接管后，原命中函数恢复自己的鼠标节点；手柄没有改写全局鼠标。 */
     Menu_Suspend();g_intent.layer=LAYER_NATIVE;
-    CHECK(((This0)patched_callee((uintptr_t)skill_calls[1]))(menu_roots[8])==2);
+    CHECK(((This0)patched_callee((uintptr_t)skill_calls[1]))(menu_roots[8], NULL)==2);
     neutral_menu();menu_step(KEY(PAD_LB),0,0);CHECK(Read32(menu_roots[8],0xC0)==0x7F);
     neutral_menu();menu_step(KEY(PAD_B)|KEY(PAD_RB),0,0);CHECK(!Read32(menu_roots[8],0x64) && Read32(menu_roots[8],0xC0)==0x7F);
     /* 未实现页面保留B/方向旧键盘能力，仍绝不注入Enter或直接猜+3C。 */
@@ -814,9 +814,9 @@ static void menu_regression(bool expansion)
     BYTE keys[256]={0};Game_Keyboard(keys);CHECK(keys[VK_ESCAPE]==0x80 && keys[VK_RETURN]==0);
     /* 普通手柄世界不画鼠标图样，物理来源仍用原位置与全部参数。 */
     g_intent.layer=LAYER_GAME;
-    CHECK(((Draw)patched_callee((uintptr_t)(cursor_code+16)))(menu_sprites[0][0],(void *)0x246,37,49,0,-1,0)==0);
+    CHECK(((Draw)patched_callee((uintptr_t)(cursor_code+16)))(menu_sprites[0][0], NULL,(void *)0x246,37,49,0,-1,0)==0);
     g_intent.layer=LAYER_NATIVE;CHECK(((BOOL (WINAPI *)(POINT *))patched_callee((uintptr_t)cursor_code))(&anchor));CHECK(anchor.x==37 && anchor.y==49);
-    CHECK(((Draw)patched_callee((uintptr_t)(cursor_code+8)))(menu_sprites[0][0],(void *)0x246,37,49,0,-1,0)==6);
+    CHECK(((Draw)patched_callee((uintptr_t)(cursor_code+8)))(menu_sprites[0][0], NULL,(void *)0x246,37,49,0,-1,0)==6);
     Cursor_Shutdown();CHECK(cursor_code[0]==0xFF && cursor_code[1]==0x15);
     Menu_Shutdown();
     for (unsigned k=0;k<15;++k) CHECK(menu_tables[k][1]==(uintptr_t)menu_tick && menu_tables[k][0x30/4]==(uintptr_t)menu_hover);
@@ -889,14 +889,14 @@ static void combo_delete_regression(bool expansion)
     CHECK(skill_operation_index==-1 && Read32(combo_list_data,0)==0 && skill_actions==actions+1);
     game_isolated();Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
 }
-/* 此大型宿主回放不内联、不按常量参数克隆，避免当前32位GCC生成跨函数调试标签。
+/* 此大型宿主回放不内联，保留清晰的测试调用边界和源码调试位置。
  * 只约束测试宿主的组织方式；生产代码的优化设置和实际回放步骤都不改变。 */
-static void __attribute__((noinline,noclone)) grid_regression(bool expansion)
+static void __declspec(noinline) grid_regression(bool expansion)
 {
     Profile profile;menu_fixture(&profile,expansion);activate_page(9);neutral_menu();
     CHECK(Read32(menu_roots[9],0xFC)==0 && Read32(menu_roots[9],0xBC)==1);
     POINT anchor;CHECK(Menu_CursorAnchor(&anchor) && anchor.x==58 && anchor.y==78);
-    ((This0)menu_tables[9][1])(menu_roots[9]);CHECK(grid_details==1 && Read32(menu_roots[9],0xBC)==1);
+    ((This0)menu_tables[9][1])(menu_roots[9], NULL);CHECK(grid_details==1 && Read32(menu_roots[9],0xBC)==1);
     /* 左上边界不绕行；空格也可聚焦，保证手柄能放置物品。 */
     menu_step(KEY(PAD_LEFT),0,0);CHECK(Read32(menu_roots[9],0xFC)==0);
     neutral_menu();menu_step(KEY(PAD_UP),0,0);CHECK(Read32(menu_roots[9],0xFC)==0);
@@ -915,7 +915,7 @@ static void __attribute__((noinline,noclone)) grid_regression(bool expansion)
     unsigned before=grid_swaps;neutral_menu();menu_step(KEY(PAD_X),0,0);
     CHECK(grid_swaps==before && !Read32(menu_roots[10],0x64));
     CHECK(Menu_Context(&(unsigned){0})==hud_data);neutral_menu();menu_step(KEY(PAD_X),0,0);neutral_menu();
-    ((This2)menu_tables[10][0x1C/4])(menu_roots[10],1,0);neutral_menu();
+    ((This2)menu_tables[10][0x1C/4])(menu_roots[10], NULL,1,0);neutral_menu();
     menu_step(KEY(PAD_X),0,0);neutral_menu();
     CHECK(Read32(menu_roots[10],0xC0)==0 && Read32(menu_roots[9],0xFC)==UINT32_MAX);
     CHECK(Menu_CursorAnchor(&anchor));unsigned reason;CHECK(Menu_Context(&reason)==menu_roots[10]);
@@ -949,7 +949,7 @@ static void __attribute__((noinline,noclone)) grid_regression(bool expansion)
     CHECK(!Read32(menu_roots[9],0x64) && Read32(menu_roots[10],0x64));
     Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
 }
-static void __attribute__((noinline,noclone)) all_regions_regression(bool expansion)
+static void __declspec(noinline) all_regions_regression(bool expansion)
 {
     Profile profile;menu_fixture(&profile,expansion);activate_page(9);neutral_menu();
     /* 辅助页不在普通根链，属性13也为0，但原登记对象和显示状态确实存在。 */
@@ -959,7 +959,7 @@ static void __attribute__((noinline,noclone)) all_regions_regression(bool expans
     for (unsigned k=10;k<15;++k) {
         if (k==13) continue;
         menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[k]);
-        ((This0)menu_tables[k][1])(menu_roots[k]);CHECK(Read32(menu_roots[k],0xBC)==1);
+        ((This0)menu_tables[k][1])(menu_roots[k], NULL);CHECK(Read32(menu_roots[k],0xBC)==1);
     }
     menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==hud_data);
     menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[9]);
@@ -981,18 +981,18 @@ static void __attribute__((noinline,noclone)) all_regions_regression(bool expans
         POINT anchor;CHECK(Menu_CursorAnchor(&anchor));CHECK(anchor.x==140 && anchor.y==65);
         CHECK(Read32(menu_roots[k],0xC0)==0x12345678);
         neutral_menu();menu_step(KEY(PAD_B),0,0);CHECK(Read32(grid_player,0x2C4)==UINT32_MAX && Read32(menu_roots[k],0x64));
-        if (k==12 || k==13) {neutral_menu();menu_step(KEY(PAD_Y),0,0);neutral_menu();CHECK(Read32(ReadPtr(menu_roots[k],0xA8),0x28)==(k==12 ? 0x3F:0x48));}
+        if (k==12 || k==13) {neutral_menu();menu_step(KEY(PAD_Y),0,0);neutral_menu();CHECK(Read32(ReadPtr(menu_roots[k],0xA8),0x28)==(k==12 ? 0x3Fu:0x48u));}
         neutral_menu();menu_step(KEY(PAD_B),0,0);CHECK(!Read32(menu_roots[k],0x64));
     }
     Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
 }
-static void __attribute__((noinline,noclone)) modal_region_regression(bool expansion)
+static void __declspec(noinline) modal_region_regression(bool expansion)
 {
     Profile profile;menu_fixture(&profile,expansion);unsigned reason;
     for (unsigned k=9;k<15;++k) {
         activate_page(k);neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);neutral_menu();
         POINT before;CHECK(Menu_CursorAnchor(&before));
-        ptr(menu_roots[4],0xCC,menu_roots[k]);((This2)menu_tables[4][0x1C/4])(menu_roots[4],1,0);
+        ptr(menu_roots[4],0xCC,menu_roots[k]);((This2)menu_tables[4][0x1C/4])(menu_roots[4], NULL,1,0);
         neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[4]);
         menu_step(KEY(PAD_RIGHT),0,0);neutral_menu();menu_step(KEY(PAD_A),0,0);neutral_menu();
         CHECK(Menu_Context(&reason)==menu_roots[k]);POINT after;CHECK(Menu_CursorAnchor(&after));
@@ -1018,21 +1018,21 @@ static void __attribute__((noinline,noclone)) modal_region_regression(bool expan
 static BYTE action_root[0xF0],action_nodes[2][3][0x40];
 static uintptr_t action_table[16];static void *action_pointer=action_root;
 static unsigned action_commits,action_builds;
-static int __attribute__((thiscall)) action_rebuild(void *root,int side)
-{
+static int __fastcall action_rebuild(void *root, void *unused_edx,int side)
+{ (void)unused_edx;
     CHECK(root==action_root && (side==0 || side==1));++action_builds;
     Write32(root,0xC8,side);ptr(root,0xE8,action_nodes[side][0]);
     return 1;
 }
-static int __attribute__((thiscall)) action_open(void *root,int side)
-{action_rebuild(root,side);Write32(root,0x64,1);ptr(ui_data,0x3C,root);return 1;}
-static int __attribute__((thiscall)) action_commit(void *root)
-{
+static int __fastcall action_open(void *root, void *unused_edx,int side)
+{ (void)unused_edx;action_rebuild(root, NULL,side);Write32(root,0x64,1);ptr(ui_data,0x3C,root);return 1;}
+static int __fastcall action_commit(void *root, void *unused_edx)
+{ (void)unused_edx;
     CHECK(root==action_root);void *candidate=ReadPtr(root,0xC0);
     if (candidate) {Write32(hud_data,Read32(root,0xC8) ? 0x128:0x12C,Read32(candidate,0x28));++action_commits;}
     Write32(root,0x64,0);ptr(ui_data,0x3C,NULL);return 1;
 }
-static int __attribute__((thiscall)) action_base(void *root) {CHECK(root==action_root);ptr(root,0xC0,NULL);return 7;}
+static int __fastcall action_base(void *root, void *unused_edx) { (void)unused_edx;CHECK(root==action_root);ptr(root,0xC0,NULL);return 7;}
 static void action_step(unsigned buttons,float rx,float ry)
 {
     g_input.now+=20;g_input.buttons=buttons;g_input.rx=rx;g_input.ry=ry;
@@ -1069,7 +1069,7 @@ static void action_regression(bool expansion)
     action_step(0,0,0);action_step(0,0,0);g_input.lt=g_input.rt=true;
     action_step(0,0,0);CHECK(!ActionMenu_Active() && g_intent.layer==LAYER_DUAL);
     action_step(0,1,0);CHECK(ActionMenu_Active() && action_builds==1 && Read32(action_root,0xC8)==0);
-    CHECK(((This0)action_table[1])(action_root)==7 && ReadPtr(action_root,0xC0)==action_nodes[0][0]);
+    CHECK(((This0)action_table[1])(action_root, NULL)==7 && ReadPtr(action_root,0xC0)==action_nodes[0][0]);
     action_step(0,0,0);action_step(0,1,0);CHECK(ReadPtr(action_root,0xC0)==action_nodes[0][1]);
     CHECK(Menu_HidesCursor());emit_focus();CHECK(focus_draws>1 && focus_rectangle.left==133 && focus_rectangle.top==101 && focus_rectangle.right==161 && focus_rectangle.bottom==129);
     CHECK(Read32(hud_data,0x12C)==111); /* 预览不能直接改右手 */
@@ -1095,13 +1095,13 @@ static void action_regression(bool expansion)
 }
 /* HUD原点击替身：确认生产代码传来格中心和50..61原槽编号，再由原业务交换。 */
 static unsigned quick_button_dispatches;static bool quick_reject_type;
-static int __attribute__((thiscall)) quick_primary(void *root,int event,int x,void *y)
-{
+static int __fastcall quick_primary(void *root, void *unused_edx,int event,int x,void *y)
+{ (void)unused_edx;
     CHECK(root==hud_data && event==0);
     /* 原HUD主操作先调用自己的hover，再用两个坐标取快捷格；旧替身直接
      * 从A8取槽，漏掉原函数后半段，恰好接受了生产代码的错误对象。
      * 此处按原控制流重放：hover重新投影也不能把快捷格写回主按钮A8。 */
-    ((This3)menu_tables[15][0x30/4])(root,event,x,y);
+    ((This3)menu_tables[15][0x30/4])(root, NULL,event,x,y);
     unsigned slot=12;
     for(unsigned i=0;i<12;++i) {
         BYTE *node=hud_data+0x13C+i*0xE4;
@@ -1110,7 +1110,7 @@ static int __attribute__((thiscall)) quick_primary(void *root,int event,int x,vo
     }
     CHECK(slot<12);
     unsigned held=Read32(grid_player,0x2C4);
-    if(held==UINT32_MAX || !quick_reject_type) grid_swap(grid_player,50+(int)slot);
+    if(held==UINT32_MAX || !quick_reject_type) grid_swap(grid_player, NULL,50+(int)slot);
     /* 原函数不在交换后提前返回：A8非空还会读+50按钮模板与执行其它HUD业务。
      * 让旧实现确定失败，不把真实快捷格伪装成有合法按钮模板的CJm子按钮。 */
     void *button=ReadPtr(root,0xA8);
@@ -1211,7 +1211,7 @@ static void shared_focus_regression(bool expansion)
     CHECK(Menu_Context(&reason)==menu_roots[9]);
     menu_step(KEY(PAD_Y),0,0);neutral_menu();RECT panel;
     CHECK(!Menu_FocusFrame(&panel) && !Menu_HidesCursor());focus_draws=0;emit_focus();CHECK(focus_draws==0);
-    ptr(menu_roots[4],0xCC,menu_roots[9]);((This2)menu_tables[4][0x1C/4])(menu_roots[4],1,0);
+    ptr(menu_roots[4],0xCC,menu_roots[9]);((This2)menu_tables[4][0x1C/4])(menu_roots[4], NULL,1,0);
     neutral_menu();CHECK(!Menu_FocusFrame(&panel) && !Menu_HidesCursor());focus_draws=0;emit_focus();
     CHECK(!RuntimeFocus_WasDrawn(RUNTIME_MODULE_CONTROLLER) && focus_draws==0); /* 非格子确认项恢复原指针 */
     menu_step(KEY(PAD_B),0,0);neutral_menu();menu_step(KEY(PAD_Y),0,0);neutral_menu();
@@ -1307,9 +1307,9 @@ static void skill_visual_regression(bool expansion,const char *scenario)
 /* 类型说明和必杀说明是原有效控件，不要求已学习或能主动加点。 */
 static void skill_description_regression(bool expansion)
 {
-    const unsigned roles[]={4,30,40,0xDF,1};unsigned count=expansion ? 5:3;
+    const unsigned role_classes[]={4,30,40,0xDF,1};unsigned count=expansion ? 5:3;
     for(unsigned group=0;group<count;++group) {
-        Profile p;menu_fixture(&p,expansion);p.game_id=expansion ? 2:1;Write32(grid_player,0x348,roles[group]);
+        Profile p;menu_fixture(&p,expansion);p.game_id=expansion ? 2:1;Write32(grid_player,0x348,role_classes[group]);
         unsigned category=(expansion ? 0xE3:0xCF)+group*4;
         Write32(menu_roots[8],0xC0,0x7F);
         for(unsigned j=0;j<16;++j)Write32(menu_children[8][j],0x64,0);
@@ -1336,7 +1336,7 @@ static void settings_regression(bool expansion)
 {
     Profile profile;menu_fixture(&profile,expansion);
     for(unsigned k=0;k<15;++k)Write32(menu_roots[k],0x64,0);
-    ptr(ui_data,0x3C,settings_root);((This2)menu_tables[16][0x1C/4])(settings_root,1,0);neutral_menu();
+    ptr(ui_data,0x3C,settings_root);((This2)menu_tables[16][0x1C/4])(settings_root, NULL,1,0);neutral_menu();
     CHECK(Read32(ReadPtr(settings_root,0xA8),0x28)==0xAB && Menu_CapturesInput());game_isolated();
     POINT anchor;RECT rect;CHECK(Menu_CursorAnchor(&anchor) && !Menu_FocusFrame(&rect) && !Menu_HidesCursor());
     menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(settings_children[0],0xDC)==51 && settings_applies==1);
@@ -1360,7 +1360,7 @@ static void settings_regression(bool expansion)
     /* 无capture的标题入口也必须从登记链找到设置，不能只在游戏内可用。 */
     void *head=ReadPtr(ui_data,0x18),*tail=ReadPtr(ui_data,0x1C);
     ptr(ui_data,0x18,settings_root);ptr(ui_data,0x1C,settings_root);
-    ((This2)menu_tables[16][0x1C/4])(settings_root,1,0);neutral_menu();CHECK(Menu_Context(&before)==settings_root);
+    ((This2)menu_tables[16][0x1C/4])(settings_root, NULL,1,0);neutral_menu();CHECK(Menu_Context(&before)==settings_root);
     for(unsigned i=1;i<3;++i) {
         neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(Read32(ReadPtr(settings_root,0xA8),0x28)==0xAB+i);
         unsigned value=Read32(settings_children[i],0xDC);neutral_menu();menu_step(KEY(PAD_LEFT),0,0);CHECK(Read32(settings_children[i],0xDC)==value-1);
@@ -1371,7 +1371,7 @@ static void settings_regression(bool expansion)
     neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(Read32(ReadPtr(settings_root,0xA8),0x28)==0xB2);
     neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(settings_closes==2 && !Read32(settings_root,0x64));
     ptr(ui_data,0x18,head);ptr(ui_data,0x1C,tail);
-    entry_enabled=1;ptr(ui_data,0x3C,settings_root);((This2)menu_tables[16][0x1C/4])(settings_root,1,0);neutral_menu();
+    entry_enabled=1;ptr(ui_data,0x3C,settings_root);((This2)menu_tables[16][0x1C/4])(settings_root, NULL,1,0);neutral_menu();
     for(unsigned i=0;i<4;++i){menu_step(KEY(PAD_DOWN),0,0);neutral_menu();}
     CHECK(ReadPtr(settings_root,0xA8)==NULL && Menu_CursorAnchor(&anchor));
     menu_step(KEY(PAD_A),0,0);CHECK(entry_opened==1);

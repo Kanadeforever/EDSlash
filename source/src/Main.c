@@ -15,9 +15,9 @@ typedef void* LPVOID;
 
 /*
  * Runtime_Initialize 自己还有一次性保护，所以 DllMain 与 InitializeASI 即使都被 Loader 调用也不会重复安装 Hook。
- * 不在 DllMain 里创建线程：现有 DisplayFix 已长期验证同步初始化可用，v0.1-dev1 先保持行为等价。
+ * DllMain只执行已有同步安装；线程和设备初始化延后到Loader锁外，避免加载时死锁。
  */
-__declspec(dllexport) void InitializeASI(void)
+void InitializeASI(void)
 {
     const RuntimeContext* runtime = Runtime_GetContext();
     if (runtime && runtime->self_module) {

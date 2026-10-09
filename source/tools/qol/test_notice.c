@@ -72,7 +72,7 @@ int main(void)
     clock_ms=10;emit_draw();CHECK(notice_count==1); /* 无符号时差跨回绕仍未过期。 */
     world_pointer=(unsigned long)hud_data;emit_draw();CHECK(notice_count==0);world_pointer=(unsigned long)world_data;
     put(ground_data,0x81,(unsigned long)definition_data);
-    for(unsigned n=0;n<160;n+=2){item_name[n]=(char)0xB2;item_name[n+1]=(char)0xE2;}item_name[160]=0;
+    for(unsigned n=0;n<160;n+=2){memcpy(item_name+n,"\xB2\xE2",2);}item_name[160]=0;
     PickupNotice_Before((unsigned long)ground_data,(unsigned long)role_data,&snapshot);
     CHECK(snapshot.valid && strlen(snapshot.name)==126); /* GBK半字节截断被拒绝。 */
     PickupNotice_Disable();snapshot.before=137;put(bag_data,0x20,138);PickupNotice_After(&snapshot);CHECK(notice_count==0);

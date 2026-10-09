@@ -14,8 +14,8 @@ typedef struct NameBackend {
     unsigned birthday;unsigned char signatures[2][12];
 } NameBackend;
 #include "RandomNameUIData.h"
-typedef int (__attribute__((thiscall)) *GetJm)(void *,int);
-typedef int (__attribute__((thiscall)) *SetText)(void *,const char *);
+typedef int (__fastcall *GetJm)(void *, void *,int);
+typedef int (__fastcall *SetText)(void *, void *,const char *);
 static NameBackend backend;static int ready;
 static unsigned refusal;static int previous_f1;static uint32_t birthday_state;
 static RandomNameSession session;
@@ -23,7 +23,7 @@ static RandomNameSession session;
 static uintptr_t page_identity,window_identity;
 static unsigned rd(void *p,unsigned offset)
 {unsigned value=0;if(p)RuntimeWin32_Read((unsigned long)(uintptr_t)p+offset,&value,4);return value;}
-static void *jm(int id){return (void *)(uintptr_t)((GetJm)backend.get_jm)((void *)backend.ui,id);}
+static void *jm(int id){return (void *)(uintptr_t)((GetJm)backend.get_jm)((void *)backend.ui, NULL,id);}
 static void *name_widget(void *page,HWND *window)
 {
     refusal=0;
@@ -95,11 +95,11 @@ int RandomNameUI_Request(void *page)
     int result=RandomName_Generate(&session,RANDOM_NAME_NEUTRAL,characters,current,accept_name,&context,generated,sizeof generated);
     if(!result){RuntimeLog_Line(QOLText_RandomName_CandidateEncodingRejectedLog);return 0;}
     /* 原setter同步CString、编辑框和外传光标位置；不能自行写D4或模拟确认。 */
-    ((SetText)backend.menu_name_set)(input,context.encoded);
+    ((SetText)backend.menu_name_set)(input, NULL,context.encoded);
     if(backend.birthday) {
         unsigned month,day;char month_text[4],day_text[4];birthday_pick(&month,&day);
         snprintf(month_text,sizeof month_text,"%u",month);snprintf(day_text,sizeof day_text,"%u",day);
-        ((SetText)backend.menu_name_set)(month_input,month_text);((SetText)backend.menu_name_set)(day_input,day_text);
+        ((SetText)backend.menu_name_set)(month_input, NULL,month_text);((SetText)backend.menu_name_set)(day_input, NULL,day_text);
         RuntimeLog_Write(QOLText_RandomName_NameAndBirthdayFilledLog,month,day);
     } else RuntimeLog_Line(QOLText_RandomName_NameFilledLog);return 1;
 }

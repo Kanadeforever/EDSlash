@@ -1259,9 +1259,10 @@ static const char UI_LAYOUT_MASK[] = "xxxxxxxxxxxxxxxxxxxxx????";
 
 /*
  * 这是通用布局函数的真实调用约定。
- * __thiscall 的 this 放在 ECX，两个整数参数放在栈上，并由被调用函数 ret 8 清理。
+ * 游戏thiscall的self放在ECX，两个整数参数压栈，由被调用函数ret 8清理。
+ * MSVC C使用fastcall桥接，第二参数显式占用但不使用EDX，调用时传NULL。
  */
-typedef int (__thiscall *FnUILayout)(LPVOID self, LONG x, LONG y);
+typedef int (__fastcall *FnUILayout)(LPVOID self, void *, LONG x, LONG y);
 
 /*
  * 主 HUD 真正的鼠标释放事件是 vtable +0x24。
@@ -1271,7 +1272,7 @@ typedef int (__thiscall *FnUILayout)(LPVOID self, LONG x, LONG y);
  * v0.3-test8 不再实际 hook 这个 +0x24 函数。下面保留的桥接实现只作为历史诊断代码和
  * 静态研究依据，不会写进 vtable；真正的新兜底已经提升到 0x00406086 -> 0x004B4560 的全局释放层。
  */
-typedef void (__thiscall *FnMainHudEvent)(LPVOID self, LONG event_type, LONG mouse_x, LONG mouse_y);
+typedef void (__fastcall *FnMainHudEvent)(LPVOID self, void *, LONG event_type, LONG mouse_x, LONG mouse_y);
 
 /*
  * v0.3-test4 不再直接调用 0x004CAF10，也不再把 ID 0x0F / 0x10 当成“已经确认的两个视觉按钮”。
@@ -1298,7 +1299,7 @@ static FnUILayout g_original_main_hud_layout = (FnUILayout)0;
  * 分辨率 profile 生命周期已经完全交给 0x00404A00 的 Strategy 状态 enter/exit callsite，
  * 所以 HUD 析构、地图临时重建和设备 Reset 都不会再改变 FRONTEND/GAMEPLAY 状态。
  */
-typedef LPVOID (__thiscall *FnMainHudDestructor)(LPVOID self, DWORD flags);
+typedef LPVOID (__fastcall *FnMainHudDestructor)(LPVOID self, void *, DWORD flags);
 static FnMainHudDestructor g_original_main_hud_destructor = (FnMainHudDestructor)0;
 
 /*
@@ -1313,7 +1314,7 @@ static LPVOID g_main_hud_instance = (LPVOID)0;
  *   ECX=this(UI manager)，栈参数依次是 event_type、mouse_x、mouse_y，返回非 0 表示事件已处理。
  * callsite 改到 fastcall 桥接后，unused_edx 只占住 EDX；三个真实参数的栈位置保持不变。
  */
-typedef int (__thiscall *FnUiManagerMouseRelease)(LPVOID self, LONG event_type, LONG mouse_x, LONG mouse_y);
+typedef int (__fastcall *FnUiManagerMouseRelease)(LPVOID self, void *, LONG event_type, LONG mouse_x, LONG mouse_y);
 static FnUiManagerMouseRelease g_original_ui_manager_mouse_release = (FnUiManagerMouseRelease)0;
 
 /*
@@ -1323,7 +1324,7 @@ static FnUiManagerMouseRelease g_original_ui_manager_mouse_release = (FnUiManage
  * 与 0x004B44F0 不同，0x00473F10 的函数头会先保存 EBX/EBP/ESI/EDI，然后立即 mov esi,ecx；
  * 没有观察到依赖调用者原始 ESI/EDI/EBX 的隐藏输入，因此可以用同形状桥接安全包裹。
  */
-typedef void (__thiscall *FnWorldMousePress)(LPVOID self, LONG event_type, LONG mouse_x, LONG mouse_y);
+typedef void (__fastcall *FnWorldMousePress)(LPVOID self, void *, LONG event_type, LONG mouse_x, LONG mouse_y);
 static FnWorldMousePress g_original_world_mouse_press = (FnWorldMousePress)0;
 
 /*
@@ -1336,7 +1337,7 @@ static FnWorldMousePress g_original_world_mouse_press = (FnWorldMousePress)0;
  * 0x00407000 / 0x00407040 是 Strategy 状态进入/离开时由 0x00404A00 状态机直接调用的原版函数。
  * 二者都使用 thiscall：ECX 是同一个显示/高层状态管理对象，栈上没有参数。
  */
-typedef void (__thiscall *FnStrategyStateStep)(LPVOID self);
+typedef void (__fastcall *FnStrategyStateStep)(LPVOID self, void *);
 static FnStrategyStateStep g_original_strategy_enter = (FnStrategyStateStep)0;
 static FnStrategyStateStep g_original_strategy_exit = (FnStrategyStateStep)0;
 
@@ -1399,7 +1400,7 @@ static DWORD g_native_base_width = 640u;
  * 这些指针全部来自唯一内容签名，不按 SHA-256 绑版本；原始立即数也在安装时从当前 EXE 现场保存，
  * 所以 Steam EXE、原版 EXE 和已经修改过隐藏分支的宽屏 EXE 都能各自恢复“自己原来的前端代码”。
  */
-typedef int (__thiscall *FnDisplayModeApply)(LPVOID self, LONG mode, LONG force);
+typedef int (__fastcall *FnDisplayModeApply)(LPVOID self, void *, LONG mode, LONG force);
 static FnDisplayModeApply g_display_mode_apply = (FnDisplayModeApply)0;
 
 static BYTE* g_res_mode_patch = (BYTE*)0;
@@ -1637,7 +1638,7 @@ static LPVOID __fastcall main_hud_destructor_hook(LPVOID self, LPVOID unused_edx
         return self;
     }
 
-    result = g_original_main_hud_destructor(self, flags);
+    result = g_original_main_hud_destructor(self, NULL, flags);
 
     /*
      * test11 已被实机证明不能把“HUD 析构”当成返回前端；test12 的 world 对象生命周期同样不够精确。
@@ -1747,7 +1748,7 @@ static void __fastcall strategy_enter_hook(LPVOID self, LPVOID unused_edx)
      * 期间设备可能销毁/重建 HUD，所以继续保留 transition guard：这段调用栈内只允许原版布局。
      */
     g_strategy_transition_in_progress = TRUE;
-    g_original_strategy_enter(self);
+    g_original_strategy_enter(self, NULL);
     g_strategy_transition_in_progress = FALSE;
 
     /*
@@ -1864,7 +1865,7 @@ static void __fastcall strategy_exit_hook(LPVOID self, LPVOID unused_edx)
      * transition guard 会让主 HUD 居中和 Steam delayed JMM 暂停，避免在半析构状态下碰这些对象。
      */
     g_strategy_transition_in_progress = TRUE;
-    g_original_strategy_exit(self);
+    g_original_strategy_exit(self, NULL);
 
     /*
      * 原版游戏内资源已经清理完，现在才把几处分辨率/JMM 机器码恢复为 FRONTEND 原值。
@@ -1898,7 +1899,7 @@ static void __fastcall strategy_exit_hook(LPVOID self, LPVOID unused_edx)
          * 结果虽然 surface 已回 640x480，但对象内部的请求模式仍残留 5，影响后续前端状态或下一轮切换。
          */
         *(LONG*)((BYTE*)self + 0x08u) = 4;
-        reset_result = g_display_mode_apply(self, 4, 1);
+        reset_result = g_display_mode_apply(self, NULL, 4, 1);
     }
 
     /*
@@ -1976,11 +1977,11 @@ static int __fastcall main_hud_layout_hook(LPVOID self, LPVOID unused_edx, LONG 
     }
 
     if (!self || x != -1 || y != -1) {
-        return g_original_main_hud_layout(self, x, y);
+        return g_original_main_hud_layout(self, NULL, x, y);
     }
 
     /* 第一次先让原版按自己的规则完成布局。 */
-    result = g_original_main_hud_layout(self, x, y);
+    result = g_original_main_hud_layout(self, NULL, x, y);
 
     /*
      * Strategy enter/exit 的原版函数内部可能因为 SetDisplayMode/设备重建临时触发这一布局。
@@ -2017,7 +2018,7 @@ static int __fastcall main_hud_layout_hook(LPVOID self, LPVOID unused_edx, LONG 
 
     if (center_delta != 0) {
         centered_x = original_x + center_delta;
-        result = g_original_main_hud_layout(self, centered_x, original_y);
+        result = g_original_main_hud_layout(self, NULL, centered_x, original_y);
     }
 
     /*
@@ -2093,7 +2094,7 @@ static void append_candidates_at_point(char* line, DWORD line_size, LPVOID self,
  *
  * 所以这里的兜底并不是“自己发明打开窗口的方法”，而是逐字复用原版已经确认的同一个虚函数接口。
  */
-typedef void (__thiscall *FnUISetActive)(LPVOID self, LONG enabled, LONG reserved_zero);
+typedef void (__fastcall *FnUISetActive)(LPVOID self, void *, LONG enabled, LONG reserved_zero);
 
 /*
  * 安全读取一个顶层 UI 对象当前是否 active。
@@ -2180,7 +2181,7 @@ static BOOL fallback_toggle_top_button_target(DWORD control_id,
 
     set_active = (FnUISetActive)function_address;
     desired_active = before_active ? 0 : 1;
-    set_active(target, desired_active, 0);
+    set_active(target, NULL, desired_active, 0);
     return TRUE;
 }
 
@@ -2305,7 +2306,7 @@ static void __fastcall world_mouse_press_hook(LPVOID self, LPVOID unused_edx,
     }
 
     if (g_original_world_mouse_press) {
-        g_original_world_mouse_press(self, event_type, mouse_x, mouse_y);
+        g_original_world_mouse_press(self, NULL, event_type, mouse_x, mouse_y);
     }
 }
 
@@ -2328,7 +2329,7 @@ static int __fastcall ui_manager_mouse_release_hook(LPVOID self, LPVOID unused_e
                                                      LONG event_type, LONG mouse_x, LONG mouse_y)
 {
     int original_result;
-    POINT point;
+    POINT point = {0, 0};
     LONG test_x = mouse_x;
     LONG test_y = mouse_y;
     BOOL have_cursor = FALSE;
@@ -2374,7 +2375,7 @@ static int __fastcall ui_manager_mouse_release_hook(LPVOID self, LPVOID unused_e
     }
 
     /* 游戏自己的 UI 分派永远先跑。 */
-    original_result = g_original_ui_manager_mouse_release(self, event_type, mouse_x, mouse_y);
+    original_result = g_original_ui_manager_mouse_release(self, NULL, event_type, mouse_x, mouse_y);
 
     if (hit_id == 0x0Bu && g_top_button_0b_target_slot) {
         target_after = *g_top_button_0b_target_slot;
@@ -2679,7 +2680,7 @@ static BOOL install_global_mouse_release_hook(const TextRegion* region)
 static void __fastcall main_hud_event_hook(LPVOID self, LPVOID unused_edx,
                                            LONG event_type, LONG mouse_x, LONG mouse_y)
 {
-    POINT point;
+    POINT point = {0, 0};
     BOOL have_point = FALSE;
     LPVOID hit_child = (LPVOID)0;
     DWORD hit_id = 0xFFFFFFFFu;
@@ -2716,7 +2717,7 @@ static void __fastcall main_hud_event_hook(LPVOID self, LPVOID unused_edx,
     }
 
     /* 游戏自己的事件逻辑永远先执行。 */
-    g_original_main_hud_event(self, event_type, mouse_x, mouse_y);
+    g_original_main_hud_event(self, NULL, event_type, mouse_x, mouse_y);
 
     if (event_type != 1 || !self) {
         return;
@@ -3217,7 +3218,7 @@ static BOOL set_gameplay_resolution_profile(void)
 /*
  * 0x004B35F0 的真实 thiscall 类型：ECX=UI 管理器，栈上依次是 mode、width、height，ret 0x0C。
  */
-typedef int (__thiscall *FnJmmLoad)(LPVOID self, LONG mode, LONG width, LONG height);
+typedef int (__fastcall *FnJmmLoad)(LPVOID self, void *, LONG mode, LONG width, LONG height);
 
 static FnJmmLoad g_original_jmm_load = (FnJmmLoad)0;
 /*
@@ -3277,7 +3278,7 @@ static int __fastcall jmm_load_hook(LPVOID self, LPVOID unused_edx, LONG mode, L
         append_runtime_line(line);
     }
 
-    return g_original_jmm_load(self, mode, final_width, final_height);
+    return g_original_jmm_load(self, NULL, mode, final_width, final_height);
 }
 
 /*
@@ -3420,7 +3421,7 @@ static BOOL install_jmm_first_load_hook(const TextRegion* region)
  *
  * 这是已经从原版汇编逐条闭合的后半段逻辑。
  */
-typedef int (__thiscall *FnUIResolutionApply)(LPVOID self, LONG mode, LONG width, LONG height);
+typedef int (__fastcall *FnUIResolutionApply)(LPVOID self, void *, LONG mode, LONG width, LONG height);
 
 /*
  * v0.3-test4 直接调用完整 0x4B35F0 的实机结果：
@@ -3470,7 +3471,7 @@ static void broadcast_initial_ui_resolution(void)
 
         if (function_address >= 0x00400000u && function_address < 0x00600000u) {
             FnUIResolutionApply apply_resolution = (FnUIResolutionApply)function_address;
-            apply_resolution(node, 0, (LONG)g_target_width, (LONG)g_target_height);
+            apply_resolution(node, NULL, 0, (LONG)g_target_width, (LONG)g_target_height);
             ++applied;
         }
 
@@ -3533,7 +3534,7 @@ static DWORD apply_current_ui_resolution_broadcast(DWORD* visited_out)
          */
         if (function_address >= 0x00400000u && function_address < 0x00600000u) {
             FnUIResolutionApply apply_resolution = (FnUIResolutionApply)function_address;
-            apply_resolution(node, 0, (LONG)g_target_width, (LONG)g_target_height);
+            apply_resolution(node, NULL, 0, (LONG)g_target_width, (LONG)g_target_height);
             ++applied;
         }
 
@@ -3687,7 +3688,7 @@ static void try_steam_delayed_ui_sync(LPVOID hud)
 
     /* 完整复用游戏自己的 ReceiveMsg/JMM 入口；in_progress 防止内部广播再次递归触发本函数。 */
     g_steam_ui_sync_in_progress = TRUE;
-    result = g_original_jmm_load(g_jmm_manager, 0, (LONG)g_target_width, (LONG)g_target_height);
+    result = g_original_jmm_load(g_jmm_manager, NULL, 0, (LONG)g_target_width, (LONG)g_target_height);
     g_steam_ui_sync_in_progress = FALSE;
 
     /* 原版完整应用可能重排甚至重建 HUD，所以 after 阶段优先使用最新主 HUD 实例。 */
@@ -3752,25 +3753,25 @@ static void try_steam_delayed_ui_sync(LPVOID hud)
  *   - 每个对象仍然只调用一次原版 Draw，不会因为“最后再补画一遍”产生透明度叠加或动画推进两次。
  */
 
-typedef int  (__thiscall *FnUIDraw)(LPVOID self, DWORD draw_context);
-typedef void (__thiscall *FnUIManagerDraw)(LPVOID self, DWORD draw_context);
+typedef int  (__fastcall *FnUIDraw)(LPVOID self, void *, DWORD draw_context);
+typedef void (__fastcall *FnUIManagerDraw)(LPVOID self, void *, DWORD draw_context);
 
 
 /*
  * 原版 0x4B4800 类型：ECX 是 UI manager，唯一显式参数是指向当前鼠标逻辑坐标的 POINT。
  * 返回值是原版判定的“这一次输入应该交给哪个顶层 root”，没有命中时返回 NULL。
  */
-typedef LPVOID (__thiscall *FnUITopLevelPick)(LPVOID self, const POINT* point);
+typedef LPVOID (__fastcall *FnUITopLevelPick)(LPVOID self, void *, const POINT* point);
 
 /*
  * 原版 0x4B1D30 类型：ECX 是一个 UI 对象，返回一个至少包含 x/y/width/height 的临时矩形结构。
  * 正常对象会直接返回 object+0x14；特殊 JMM 参数下会返回游戏自己的临时全局矩形。
  * layer1d 只立即复制前四个 LONG，绝不长期保存这个返回指针。
  */
-typedef LONG* (__thiscall *FnUIGetHitRect)(LPVOID self);
+typedef LONG* (__fastcall *FnUIGetHitRect)(LPVOID self, void *);
 
 /* 原版 0x4D0210：从对象 +0x50 指向的 JMM 属性表读取一个整数属性。顶层 picker 用 key=0x0D 判断 root 是否参与鼠标选择。 */
-typedef LONG (__thiscall *FnUIPropertyGet)(LPVOID property_table, LONG key);
+typedef LONG (__fastcall *FnUIPropertyGet)(LPVOID property_table, void *, LONG key);
 
 /*
  * 0x408510（本体）/ 0x40F730（外传）的包装函数形状完全相同：
@@ -4266,7 +4267,7 @@ static BOOL layer_read_top_level_hit_rect(LPVOID object, HudRect* rect)
         return read_child_rect(object, rect);
     }
 
-    values = g_original_ui_get_hit_rect(object);
+    values = g_original_ui_get_hit_rect(object, NULL);
     if (!values) {
         return FALSE;
     }
@@ -4840,7 +4841,7 @@ static BOOL layer_top_level_root_accepts_mouse_input(LPVOID object)
         return FALSE;
     }
 
-    return (g_original_ui_property_get(property_table, 0x0D) == 1) ? TRUE : FALSE;
+    return (g_original_ui_property_get(property_table, NULL, 0x0D) == 1) ? TRUE : FALSE;
 }
 
 /*
@@ -4903,7 +4904,7 @@ static LPVOID __fastcall ui_top_level_pick_layer_hook(LPVOID self, LPVOID unused
      * 下面所有校正都只是“在原版结果已经拿到以后，极窄地替换这一次返回值”，
      * 不会写 manager+0x40，也不会碰任何 next/previous 链、child 命中字段或鼠标坐标。
      */
-    original_result = g_original_ui_top_level_pick(self, point);
+    original_result = g_original_ui_top_level_pick(self, NULL, point);
 
     if (g_layer_main_hud_global_slot) {
         hud = *g_layer_main_hud_global_slot;
@@ -5096,7 +5097,7 @@ static int layer_target_draw_common(LPVOID self, DWORD draw_context, LayerTarget
         }
     }
 
-    return hook->original_draw(self, draw_context);
+    return hook->original_draw(self, NULL, draw_context);
 }
 
 static int __fastcall layer_equipment_draw_hook(LPVOID self, LPVOID unused_edx, DWORD draw_context)
@@ -5180,7 +5181,7 @@ static int __fastcall layer_dynamic_auxiliary_draw_hook(LPVOID self, LPVOID unus
         }
     }
 
-    return hook->original_draw(self, draw_context);
+    return hook->original_draw(self, NULL, draw_context);
 }
 
 /*
@@ -5201,7 +5202,7 @@ static int __fastcall layer_main_hud_draw_hook(LPVOID self, LPVOID unused_edx, D
         return 1;
     }
 
-    result = g_original_main_hud_draw(self, draw_context);
+    result = g_original_main_hud_draw(self, NULL, draw_context);
 
     if (g_layer_draw_scope_depth == 1u &&
         g_layer_draw_scope_active &&
@@ -5218,7 +5219,7 @@ static int __fastcall layer_main_hud_draw_hook(LPVOID self, LPVOID unused_edx, D
             }
 
             *(LPVOID*)((BYTE*)g_layer_ui_manager + 0x20u) = item->object;
-            item->original_draw(item->object, item->draw_context);
+            item->original_draw(item->object, NULL, item->draw_context);
         }
 
         /* 原版 manager 接下来会从“当前 HUD 对象”的 +0x08 继续走，所以必须恢复 current。 */
@@ -5361,7 +5362,7 @@ static void __fastcall ui_manager_draw_layer_scope_hook(LPVOID self, LPVOID unus
      */
     if (g_layer_draw_scope_depth != 0u) {
         ++g_layer_draw_scope_depth;
-        g_original_ui_manager_draw(self, draw_context);
+        g_original_ui_manager_draw(self, NULL, draw_context);
         --g_layer_draw_scope_depth;
         return;
     }
@@ -5447,11 +5448,11 @@ static void __fastcall ui_manager_draw_layer_scope_hook(LPVOID self, LPVOID unus
             LONG base_x = *(LONG*)((BYTE*)hud + UI_OBJECT_X_OFFSET) - (g_center_main_hud ? delta : 0);
             LONG base_y = *(LONG*)((BYTE*)hud + UI_OBJECT_Y_OFFSET);
             g_center_main_hud = desired;
-            g_original_main_hud_layout(hud, base_x + (desired ? delta : 0), base_y);
+            g_original_main_hud_layout(hud, NULL, base_x + (desired ? delta : 0), base_y);
         }
     }
     Runtime_EmitEvent(RUNTIME_EVENT_UI_DRAW_BEGIN, self, draw_context, 0u);
-    g_original_ui_manager_draw(self, draw_context);
+    g_original_ui_manager_draw(self, NULL, draw_context);
     Runtime_EmitEvent(RUNTIME_EVENT_UI_DRAW_END, self, draw_context, 0u);
 
     /*
@@ -5471,7 +5472,7 @@ static void __fastcall ui_manager_draw_layer_scope_hook(LPVOID self, LPVOID unus
             DeferredLayerDraw* item = &g_deferred_layer_draws[i];
             if (item->object && item->original_draw) {
                 *(LPVOID*)((BYTE*)self + 0x20u) = item->object;
-                item->original_draw(item->object, item->draw_context);
+                item->original_draw(item->object, NULL, item->draw_context);
             }
         }
         /* 补画结束后恢复“原版 manager Draw 返回时的值”，而不是假定必须为 NULL。 */
@@ -5973,11 +5974,7 @@ static BOOL resolve_required_apis(void)
 /* 12. 插件总初始化                                                                                     */
 /* ============================================================================================== */
 
-/* GCC16.1在这个很大的启动安装函数上触发cfgcleanup内部错误。
- * 只降低一次性初始化的优化，帧循环、绘制和输入函数继续保持O2，避免影响游戏性能。 */
-#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ == 16
-__attribute__((optimize("O1")))
-#endif
+/* 启动时核对准确EXE签名并逐项安装显示补丁；任一验证失败都保留对应原行为。 */
 static void initialize_display_fix(void)
 {
     char module_path[1024];

@@ -10,23 +10,23 @@ static unsigned packets,portal_packets,original_hover_calls;
 static bool block_inspect,allow_portal;
 static void *map_pointer;
 static unsigned static_checks;
-static int __attribute__((thiscall)) static_gate(void *o) { ++static_checks;return Read32(o,0xBC)==0 || Read32(o,0xBC)==2; }
-static int __attribute__((thiscall)) basic_get(void *role,int i) {CHECK(role==roles[0] && i==1);return 111;}
-static int __attribute__((thiscall)) portal_gate(void *object)
-{ CHECK(object==static_objects[0] || object==static_objects[1] || object==static_objects[2]);return allow_portal; }
+static int __fastcall static_gate(void *o, void *unused_edx) { (void)unused_edx; ++static_checks;return Read32(o,0xBC)==0 || Read32(o,0xBC)==2; }
+static int __fastcall basic_get(void *role, void *unused_edx,int i) { (void)unused_edx;CHECK(role==roles[0] && i==1);return 111;}
+static int __fastcall portal_gate(void *object, void *unused_edx)
+{ (void)unused_edx; CHECK(object==static_objects[0] || object==static_objects[1] || object==static_objects[2]);return allow_portal; }
 static BYTE *grid_cell(unsigned x,unsigned y) { return inspect_cells+(y*9+x)*19; }
-static int __attribute__((thiscall)) inspect_submit(void *self,int opcode,int a,int b,int c)
-{
-    ++packets;native_submit(self,opcode,a,b,c);
+static int __fastcall inspect_submit(void *self, void *unused_edx,int opcode,int a,int b,int c)
+{ (void)unused_edx;
+    ++packets;native_submit(self, NULL,opcode,a,b,c);
     if (opcode==20) {CHECK(a==5 && b==4 && c==7);++portal_packets;Write32(roles[0],g_profile->pending_offset,20);Write32(roles[0],g_profile->pending_offset+12,(uint32_t)c);}
     return 1;
 }
-static int __attribute__((thiscall)) inspect_hover(void *self,int handle)
-{ CHECK(self==manager_data && handle>=0 && handle<=7);Write32(self,4,(uint32_t)handle);return 1; }
-static int __attribute__((thiscall)) inspect_gate(void *self,int handle)
-{ CHECK(self==manager_data && (handle==3 || handle==4));return block_inspect; }
-static int __attribute__((thiscall)) original_hover(void *self,int event,int x,void *y)
-{
+static int __fastcall inspect_hover(void *self, void *unused_edx,int handle)
+{ (void)unused_edx; CHECK(self==manager_data && handle>=0 && handle<=7);Write32(self,4,(uint32_t)handle);return 1; }
+static int __fastcall inspect_gate(void *self, void *unused_edx,int handle)
+{ (void)unused_edx; CHECK(self==manager_data && (handle==3 || handle==4));return block_inspect; }
+static int __fastcall original_hover(void *self, void *unused_edx,int event,int x,void *y)
+{ (void)unused_edx;
     CHECK(self==mouse_data && event==11 && x==22 && y==(void *)33);++original_hover_calls;
     Write32(manager_data,4,7);return 9;
 }
@@ -97,7 +97,7 @@ static void regression(bool expansion)
     ptr(mouse_data,0x40,static_objects[1]);static_checks=0;update();CHECK(static_checks==1);CHECK(Read32(manager_data,4)==5);
     Inspect_Activate();CHECK(last_opcode==23 && arg1==5);
     BYTE mouse_copy[sizeof mouse_data];memcpy(mouse_copy,mouse_data,sizeof mouse_data);
-    CHECK(((This3)patched_callee((uintptr_t)hover_code))(mouse_data,11,22,(void *)33)==0);
+    CHECK(((This3)patched_callee((uintptr_t)hover_code))(mouse_data, NULL,11,22,(void *)33)==0);
     CHECK(original_hover_calls==0 && Read32(manager_data,4)==5 && !memcmp(mouse_copy,mouse_data,sizeof mouse_data));
     Write32(static_objects[0],0xBC,2);update();CHECK(Read32(manager_data,4)==5);
     Write32(static_objects[0],0xBC,1);update();CHECK(Read32(manager_data,4)==0);
@@ -129,7 +129,7 @@ static void regression(bool expansion)
     Write32(world_data,0x58,0);Inspect_Reset();Write32(world_data,0x58,1);Inspect_Update(roles[0]);CHECK(portal_packets==2);
     /* 物理来源恢复原WorldMouseMove，清理不得撤掉其它来源的新悬停。 */
     Inspect_Reset();g_intent.layer=LAYER_NATIVE;
-    CHECK(((This3)patched_callee((uintptr_t)hover_code))(mouse_data,11,22,(void *)33)==9);
+    CHECK(((This3)patched_callee((uintptr_t)hover_code))(mouse_data, NULL,11,22,(void *)33)==9);
     CHECK(original_hover_calls==1 && Read32(manager_data,4)==7);Inspect_Reset();CHECK(Read32(manager_data,4)==7);
     g_input.connected=false;CHECK(!Inspect_Update(roles[0]));
     Inspect_Shutdown();CHECK(patched_callee((uintptr_t)hover_code)==(uintptr_t)original_hover);

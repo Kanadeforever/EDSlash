@@ -28,7 +28,7 @@ def verify(asi, config):
             break
         imports.append(pe.string(struct.unpack_from("<I", descriptor, 12)[0]).lower())
         rva += 20
-    if any(name.startswith(("sdl", "libgcc", "libstdc++", "libwinpthread")) for name in imports):
+    if any(name.startswith(("sdl", "libgcc", "libstdc++", "libwinpthread", "vcruntime", "msvcp", "ucrtbase", "api-ms-win-crt")) for name in imports):
         raise RuntimeError(f"发现外置SDL或编译器运行库依赖：{imports}")
     if not all(pe.directory(5)):
         raise RuntimeError("缺少重定位表，不能可靠加载到实际可用地址。")
@@ -68,15 +68,49 @@ def runtime_sections(path, include_debug=False):
     return result
 
 
-def verify_debug_info(debug_asi, release_asi):
-    """完整件必须有源码调试段，发行件必须没有残留调试段。"""
-    debug = runtime_sections(debug_asi, include_debug=True)
-    release = runtime_sections(release_asi, include_debug=True)
-    if any(name not in debug or not debug[name][2] for name in (".debug_info", ".debug_line")):
-        raise RuntimeError("_debug缺少源码调试信息，未发布。")
-    if any(name.startswith(".debug") and content[2] for name, content in release.items()):
-        raise RuntimeError("发行件残留调试段，未发布。")
-    print("完整版源码调试段存在，发行件调试段已剥离。")
+def verify_debug_info(debug_asi, release_asi, pdb_path):
+    """核对外置PDB的GUID/age与ASI的CodeView记录，拒绝误用旧PDB。"""
+    pe = PE(debug_asi)
+    rva, length = pe.directory(6)
+    identity = None
+    for offset in range(0, length, 28):
+        record = pe.read(pe.base + rva + offset, 28)
+        kind, size, raw = struct.unpack_from("<I", record, 12)[0], struct.unpack_from("<I", record, 16)[0], struct.unpack_from("<I", record, 24)[0]
+        if kind == 2 and pe.data[raw:raw + 4] == b"RSDS":
+            data = pe.data[raw:raw + size]
+            identity = (data[4:20], struct.unpack_from("<I", data, 20)[0])
+            if data[24:].split(b"\0", 1)[0] != b"EDSlash.pdb":
+                raise RuntimeError("ASI的PDB引用必须为EDSlash.pdb，不得写入本机绝对路径。")
+    if not identity:
+        raise RuntimeError("调试ASI缺少MSVC CodeView身份。")
+    pdb = Path(pdb_path).read_bytes()
+    if not pdb.startswith(b"Microsoft C/C++ MSF 7.00\r\n\x1aDS\0\0\0"):
+        raise RuntimeError("PDB格式无效。")
+    block_size, _, blocks, directory_size, _, block_map = struct.unpack_from("<6I", pdb, 32)
+    if block_size < 512 or block_size > 65536 or blocks * block_size > len(pdb):
+        raise RuntimeError("PDB块目录无效。")
+    # MSF文件把流目录和各流分散到块中；先按映射重建目录，再读取身份流。
+    block_count = (directory_size + block_size - 1) // block_size
+    directory_blocks = struct.unpack_from(f"<{block_count}I", pdb, block_map * block_size)
+    directory = b"".join(pdb[b * block_size:(b + 1) * block_size] for b in directory_blocks)[:directory_size]
+    stream_count = struct.unpack_from("<I", directory)[0]
+    if stream_count < 2 or stream_count > 65536:
+        raise RuntimeError("PDB流目录无效。")
+    sizes = struct.unpack_from(f"<{stream_count}I", directory, 4)
+    cursor = 4 + stream_count * 4
+    info = None
+    for index, size in enumerate(sizes):
+        count = 0 if size == 0xFFFFFFFF else (size + block_size - 1) // block_size
+        mapping = struct.unpack_from(f"<{count}I", directory, cursor)
+        cursor += count * 4
+        if index == 1:
+            info = b"".join(pdb[b * block_size:(b + 1) * block_size] for b in mapping)[:size]
+            break
+    if not info or len(info) < 28 or (info[12:28], struct.unpack_from("<I", info, 8)[0]) != identity:
+        raise RuntimeError("PDB与ASI的GUID/age不匹配，不能交付错误调试资料。")
+    if Path(debug_asi).read_bytes() != Path(release_asi).read_bytes():
+        raise RuntimeError("压缩前发行与调试ASI必须来自同一链接件。")
+    print("MSVC外置PDB身份与ASI一致，发行／调试ASI字节完全相同。")
     return True
 
 
@@ -86,6 +120,29 @@ def verify_variants(debug_asi, release_asi):
         raise RuntimeError("发行件与完整版的运行段字节或虚拟布局不同，未发布。")
     print("发行件／完整版运行段及虚拟布局逐段一致。")
     return True
+
+def test_pdb_rejections(debug_asi, release_asi, pdb_path):
+    """用真实ASI/PDB的损坏副本证明身份和文件格式检查会拒绝错误调试资料。"""
+    pe=PE(debug_asi);rva,length=pe.directory(6);guid_offset=None
+    for offset in range(0,length,28):
+        record=pe.read(pe.base+rva+offset,28)
+        raw=struct.unpack_from('<I',record,24)[0]
+        if struct.unpack_from('<I',record,12)[0]==2 and pe.data[raw:raw+4]==b'RSDS':
+            guid_offset=raw+4;break
+    if guid_offset is None:raise RuntimeError('PDB身份反例缺少CodeView记录')
+    temporary_asi=Path(debug_asi).with_name('EDSlash-pdb-rejection.asi')
+    temporary_pdb=Path(pdb_path).with_name('EDSlash-pdb-rejection.pdb')
+    changed=bytearray(pe.data);changed[guid_offset]^=1;temporary_asi.write_bytes(changed)
+    changed_pdb=bytearray(Path(pdb_path).read_bytes());changed_pdb[0]^=1;temporary_pdb.write_bytes(changed_pdb)
+    try:
+        for label,debug,release,symbols in [('身份不匹配',temporary_asi,temporary_asi,pdb_path),
+                                           ('格式损坏',debug_asi,release_asi,temporary_pdb)]:
+            try:verify_debug_info(debug,release,symbols)
+            except RuntimeError:continue
+            raise RuntimeError('PDB验证没有拒绝'+label)
+    finally:
+        temporary_asi.unlink();temporary_pdb.unlink()
+    return 'CodeView GUID不匹配和PDB格式损坏均被拒绝；未执行损坏副本'
 
 def import_symbols(path):
     """导入描述表排列可变，真正业务依赖IAT地址及对应DLL/函数，必须逐项一致。"""
@@ -105,13 +162,55 @@ def import_symbols(path):
     raise RuntimeError('导入描述表没有结束标记，拒绝压缩件')
 
 def verify_upx_roundtrip(original,unpacked):
-    """只允许UPX重排导入元数据；其余运行段字节和全部虚拟布局严格一致。"""
+    """只允许UPX重排导入及移除已解析的调试元数据，其余字节/布局严格一致。"""
     before,after=runtime_sections(original),runtime_sections(unpacked)
+    a,b=PE(original),PE(unpacked)
+    # MSVC把CodeView、VCFeature及PGO调试记录放在.rdata，UPX可清除它们。
+    # 只屏蔽PE调试目录实际指向的元数据字节，不能跳过整个只读数据段。
+    ignored=[]
+    for pe in (a,b):
+        # MSVC的导入描述符/名称/查找表同样位于.rdata，UPX可能重排这些元数据。
+        # IAT的RVA、DLL及函数/序号在后面逐项核对，普通常量不在屏蔽范围内。
+        import_rva,_=pe.directory(1)
+        descriptor_rva=import_rva
+        while descriptor_rva:
+            record=pe.read(pe.base+descriptor_rva,20)
+            ignored.append((descriptor_rva,descriptor_rva+20))
+            if not any(record):break
+            lookup,_,_,dll_name,iat=struct.unpack('<5I',record)
+            ignored.append((dll_name,dll_name+len(pe.string(dll_name))+1))
+            lookup=lookup or iat;index=0
+            while True:
+                entry=struct.unpack('<I',pe.read(pe.base+lookup+index*4,4))[0]
+                ignored.append((lookup+index*4,lookup+index*4+4))
+                ignored.append((iat+index*4,iat+index*4+4))
+                if not entry:break
+                if not entry&0x80000000:
+                    ignored.append((entry,entry+2+len(pe.string(entry+2))+1))
+                index+=1
+            descriptor_rva+=20
+        debug_rva,debug_size=pe.directory(6)
+        if debug_rva and debug_size:
+            ignored.append((debug_rva,debug_rva+debug_size))
+            for offset in range(0,debug_size,28):
+                record=pe.read(pe.base+debug_rva+offset,28)
+                kind,size,data_rva=struct.unpack_from('<III',record,12)
+                if kind not in (2,12,13):
+                    raise RuntimeError('UPX调试元数据包含未支持类型，不能跳过：'+str(kind))
+                if size and data_rva:ignored.append((data_rva,data_rva+size))
+    def without_debug(section):
+        rva,virtual_size,content=section
+        value=bytearray(content)
+        for start,end in ignored:
+            begin=max(start,rva)-rva;finish=min(end,rva+len(value))-rva
+            if begin<finish:value[begin:finish]=b'\0'*(finish-begin)
+        return rva,virtual_size,bytes(value)
+    before={name:without_debug(section) for name,section in before.items()}
+    after={name:without_debug(section) for name,section in after.items()}
     if before.keys()!=after.keys():raise RuntimeError('UPX解压段集合不一致')
     for name,value in before.items():
-        if value[:2]!=after[name][:2] or (name!='.idata' and value[2]!=after[name][2]):
+        if value[:2]!=after[name][:2] or value[2]!=after[name][2]:
             raise RuntimeError('UPX解压运行段变化：'+name)
-    a,b=PE(original),PE(unpacked)
     if a.base!=b.base or a.machine!=b.machine or a.read(a.base+a.directory(0)[0],40)!=b.read(b.base+b.directory(0)[0],40):
         raise RuntimeError('UPX解压映像或导出表不一致')
     if struct.unpack_from('<I',a.data,a.opt+16)!=struct.unpack_from('<I',b.data,b.opt+16):
@@ -119,17 +218,19 @@ def verify_upx_roundtrip(original,unpacked):
     symbols=import_symbols(original)
     if symbols!=import_symbols(unpacked):raise RuntimeError('UPX解压导入地址或DLL/函数变化')
     print(f'UPX解压非导入段字节/布局与{len(symbols)}项导入地址及函数语义一致。')
-    return {'非导入运行段':'字节及虚拟布局完全一致','导入项数':len(symbols),'导入表':'IAT地址、DLL及函数语义一致，允许UPX重排元数据'}
+    return {'非导入运行段':'除已解析调试元数据外，字节及虚拟布局完全一致','导入项数':len(symbols),'导入表':'IAT地址、DLL及函数语义一致，允许UPX重排元数据'}
 
 def test_upx_roundtrip_rejections(original,unpacked):
-    """用真实解压PE的两种损坏副本确认验证器拒绝代码或导入变化，不执行副本。"""
+    """用真实解压PE损坏副本核对代码、只读业务数据和导入仍受严格保护。"""
     pe=PE(unpacked);sections=runtime_sections(unpacked);raw=Path(unpacked).read_bytes()
     def offset(rva):
         for start,size,at in pe.sections:
             if start<=rva<start+size:return at+rva-start
         raise RuntimeError('损坏回放地址不在文件内')
     descriptor=pe.read(pe.base+pe.directory(1)[0],20)
-    points=[('代码字节',offset(sections['.text'][0])),('导入DLL',offset(struct.unpack_from('<I',descriptor,12)[0]))]
+    points=[('代码字节',offset(sections['.text'][0])),
+            ('只读业务数据',offset(sections['.rdata'][0]+sections['.rdata'][1]//2)),
+            ('导入DLL',offset(struct.unpack_from('<I',descriptor,12)[0]))]
     temporary=Path(unpacked).with_name('EDSlash-invalid-check.asi')
     for label,at in points:
         changed=bytearray(raw);changed[at]^=1;temporary.write_bytes(changed);rejected=False
@@ -137,7 +238,7 @@ def test_upx_roundtrip_rejections(original,unpacked):
         except RuntimeError:rejected=True
         finally:temporary.unlink()
         if not rejected:raise RuntimeError('压缩验证没有拒绝'+label+'损坏')
-    return '代码字节和导入DLL变更均被拒绝；没有执行损坏副本'
+    return '代码、只读业务数据和导入DLL变更均被拒绝；没有执行损坏副本'
 
 if __name__ == "__main__":
     verify(Path(sys.argv[1]), Path(sys.argv[2]))

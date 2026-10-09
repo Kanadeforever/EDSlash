@@ -1,0 +1,5 @@
+; ASI加载器只需要一个公共入口；模块内部函数不进入导出表。
+; 由链接器处理x86的C符号修饰，对外名称固定为InitializeASI。
+LIBRARY EDSlash
+EXPORTS
+    InitializeASI

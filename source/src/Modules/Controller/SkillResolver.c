@@ -9,7 +9,7 @@ static uint16_t word(const void *p,unsigned offset)
 
 static void *lookup(uintptr_t table,int id)
 {
-    return (void *)(uintptr_t)((This1)g_profile->lookup)((void *)table,id);
+    return (void *)(uintptr_t)((This1)g_profile->lookup)((void *)table, NULL,id);
 }
 
 static uint32_t elapsed(uint32_t now,uint32_t then)
@@ -59,13 +59,13 @@ bool Skill_Resolve(void *role,int selection,const WorldPoint *point,const Action
         out->selector=Memory_Readable(record,0x29) ? word(record,0x27):-1;
         return true;
     }
-    int count=((This1)g_profile->ui_property)(choices,1);
+    int count=((This1)g_profile->ui_property)(choices, NULL,1);
     if (count<0 || count>1024) return false;
     void *winner=NULL;
     int best=-1;
     for (int i=0;i<count;++i) {
-        int group_id=((This1)g_profile->ui_property)(choices,i+2);
-        if (((This1)g_profile->skill_eligibility)(role,group_id)==-1) continue;
+        int group_id=((This1)g_profile->ui_property)(choices, NULL,i+2);
+        if (((This1)g_profile->skill_eligibility)(role, NULL,group_id)==-1) continue;
         void *group=lookup(g_profile->skill_groups,group_id);
         if (!Memory_Readable(group,0x2E)) continue;
         unsigned members=Read32(group,0x26);

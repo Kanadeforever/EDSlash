@@ -72,19 +72,19 @@ void *Game_Player(void)
 static void submit(int opcode, int a, int b, int c)
 {
     void *owner = manager();
-    if (Memory_Readable(owner, 0x10)) ((This4)g_profile->submit)(owner, opcode, a, b, c);
+    if (Memory_Readable(owner, 0x10)) ((This4)g_profile->submit)(owner, NULL, opcode, a, b, c);
 }
 
 static bool move_cell(void *map,unsigned width,BYTE *cells,unsigned kind,int x,int y)
 {
     /* 只询问原地形资格，动态角色占用及最终碰撞仍交给原移动状态处理。
      * 每格19字节；先验证边界和乘法，避免坏地图尺寸导致越界读取。 */
-    if (!((This2)g_profile->map_bounds)(map,x,y)) return false;
+    if (!((This2)g_profile->map_bounds)(map, NULL,x,y)) return false;
     if (!width || width>65536 || x<0 || y<0) return false;
     uint64_t index=(uint64_t)(unsigned)y*width+(unsigned)x;
     if (index>UINT32_MAX/19u) return false;
     BYTE *cell=cells+(size_t)index*19u;
-    return Memory_Readable(cell,19) && ((This1)g_profile->cell_passable)(cell,(int)kind);
+    return Memory_Readable(cell,19) && ((This1)g_profile->cell_passable)(cell, NULL,(int)kind);
 }
 
 static bool move_clip(void *role,int *goal_x,int *goal_y)
@@ -166,7 +166,7 @@ void Game_Release(void)
     void *role = resolve(movement_owner);
     if (movement_owner && world() == owned_world && role == player() && role_valid(role)) {
         if (Read32(role, 0x73) == 0x0B && !Read32(role, g_profile->active_offset))
-            ((This4)g_profile->install_state)(role, 1, 0, 0, 0);
+            ((This4)g_profile->install_state)(role, NULL, 1, 0, 0, 0);
         submit(3, 0, 0, 0);
     }
     if (guard_owned && world() == owned_world && role_valid(player()) && !Input_PhysicalDown(VK_MENU))
@@ -183,7 +183,7 @@ static bool enemy(void *me, void *candidate)
     int group = (int)Read32(candidate, 0x1A7);
     if (group < 0 || group > 99) return false;
     void *record = ReadPtr(candidate, 0x18B);
-    if (!Memory_Readable(record, 4) || ((This2)g_profile->template_value)(record, 0x1F, 1) != 0xFFFF) return false;
+    if (!Memory_Readable(record, 4) || ((This2)g_profile->template_value)(record, NULL, 0x1F, 1) != 0xFFFF) return false;
     /* 原版关系查询只是组合资格之一，单独 relation!=0 不代表敌人。 */
     typedef int (__cdecl *Relation)(void *, void *);
     return ((Relation)g_profile->relation)(me, candidate) != 0;
@@ -239,7 +239,7 @@ static bool skill_choice(unsigned slot,bool user_binding,int *selection,bool *le
     if(slot>=14 || !selection || !left_style)return false;
     if(user_binding) {
         /* 配置按存档Player的创建角色编号保存；场景Actor同偏移是其它数据，不能混用。 */
-        void *archive=g_profile->inventory_get ? (void *)(uintptr_t)((This0)g_profile->inventory_get)((void *)g_profile->inventory_root):NULL;
+        void *archive=g_profile->inventory_get ? (void *)(uintptr_t)((This0)g_profile->inventory_get)((void *)g_profile->inventory_root, NULL):NULL;
         unsigned role=Memory_Readable(archive,0x34C) ? Read32(archive,0x348):0;
         ConfigBinding binding=RuntimeConfig_GetBinding(Runtime_GetContext()->profile->game_id,
             role,slot+1);
@@ -266,15 +266,15 @@ static void shortcuts(void)
     static const int six[] = {PAD_A,PAD_B,PAD_X,PAD_Y,PAD_LEFT,PAD_RIGHT};
     if (g_intent.layer == LAYER_MEDICINE) {
         for (int i=0;i<6;++i) if (g_intent.pressed & KEY(six[i])) {
-            ((This1)g_profile->quick_use)(hud,i);
+            ((This1)g_profile->quick_use)(hud, NULL,i);
             Log_Write(ControllerText_Game_RecoveryItemShortcutLog,i+1);
         }
     } else if (g_intent.layer == LAYER_ITEM) {
         for (int i=0;i<6;++i) if (g_intent.pressed & KEY(six[i])) {
             int slot=(int)Read32(hud,0x208+(unsigned)(i+6)*0xE4);
             if (slot<0 || slot>135) {Log_Write(ControllerText_Game_ThrowSlotInvalidLog,i+1);continue;}
-            void *inventory=(void *)(uintptr_t)((This0)g_profile->inventory_get)((void *)g_profile->inventory_root);
-            void *item=inventory ? (void *)(uintptr_t)((This1)g_profile->item_at)(inventory,slot):NULL;
+            void *inventory=(void *)(uintptr_t)((This0)g_profile->inventory_get)((void *)g_profile->inventory_root, NULL);
+            void *item=inventory ? (void *)(uintptr_t)((This1)g_profile->item_at)(inventory, NULL,slot):NULL;
             if (!Memory_Readable(item,0x24) || (int)Read32(item,0x1C)<=0) {
                 Log_Write(ControllerText_Game_ThrowSlotEmptyLog,i+1);continue;
             }
@@ -330,17 +330,17 @@ static bool jump_update(void *role)
             Log_Write(ControllerText_Aim_BaseSkillIneligibleLog,selector);return true;
         }
         int method=resolved.method;
-        void *record=(void *)(uintptr_t)((This1)g_profile->lookup)((void *)g_profile->methods,method);
+        void *record=(void *)(uintptr_t)((This1)g_profile->lookup)((void *)g_profile->methods, NULL,method);
         if(!Memory_Readable(record,0x32)) {Log_Write(ControllerText_Aim_MethodUnreadableLog,method);return true;}
         /* 原坐标Runtime使用距离档×64，裸距离0也可能对应有效的缓存档。
          * getter已在四原EXE核对，不以随意固定距离绕过原游戏的上限。 */
-        int tier=((This1)g_profile->method_range)(role,method);
+        int tier=((This1)g_profile->method_range)(role, NULL,method);
         if(tier<=0 || tier>1024) {Log_Write(ControllerText_Aim_InvalidJumpDistanceLog,selector,method,tier);return true;}
         int maximum=tier*64;
         /* 清理此前本插件的走路请求后才建立预览，不能边走边改变起点。 */
         Game_Release();Combat_Suspend();
         /* B是明确的新操作，也应停止刚从物理来源接管的普通走路；不取消活动技能。 */
-        if(Read32(role,0x73)==0x0B)((This4)g_profile->install_state)(role,1,0,0,0);
+        if(Read32(role,0x73)==0x0B)((This4)g_profile->install_state)(role, NULL,1,0,0,0);
         jump.active=true;jump.world=world();jump.actor=Read32(role,0x14);
         jump.started=g_input.now;jump.expand_ms=(uint32_t)RuntimeConfig_GetInt(CONFIG_AIM_EXPAND_MS);jump.selector=selector;jump.left_style=left_style;jump.maximum=maximum;
         jump.dx=0;jump.dy=1;
@@ -348,7 +348,7 @@ static bool jump_update(void *role)
         for(unsigned i=0;i<count;++i) {
             float angle=(float)i*6.28318530718f/count;
             WorldPoint probe={origin.x+(int)lroundf(cosf(angle)*256),origin.y+(int)lroundf(sinf(angle)*256)};
-            if((unsigned)((This2)g_profile->facing_direction)(role,(int)(uintptr_t)&probe,(int)(uintptr_t)&origin)==Read32(role,0x14B)) {
+            if((unsigned)((This2)g_profile->facing_direction)(role, NULL,(int)(uintptr_t)&probe,(int)(uintptr_t)&origin)==Read32(role,0x14B)) {
                 jump.dx=cosf(angle);jump.dy=sinf(angle);break;
             }
         }
@@ -385,9 +385,9 @@ bool Game_JumpAnchor(POINT *point)
     if(!g_profile->projection || !Memory_Readable((void *)g_profile->projection_global,0x14))return false;
     /* 使用原投影函数求屏幕0点与两条基向量，再解二维方程；相机/滚屏字段由原函数读取。
      * 不写MouseManager。屏幕指示与正式交回的世界落点使用同一个point。 */
-    typedef int (__attribute__((thiscall)) *Projection)(void *,WorldPoint *,int,int);
+    typedef int (__fastcall *Projection)(void *, void *,WorldPoint *,int,int);
     Projection project=(Projection)g_profile->projection;void *camera=(void *)g_profile->projection_global;
-    WorldPoint base,xaxis,yaxis;project(camera,&base,0,0);project(camera,&xaxis,1,0);project(camera,&yaxis,0,1);
+    WorldPoint base,xaxis,yaxis;project(camera, NULL,&base,0,0);project(camera, NULL,&xaxis,1,0);project(camera, NULL,&yaxis,0,1);
     double a=xaxis.x-base.x,b=yaxis.x-base.x,c=xaxis.y-base.y,d=yaxis.y-base.y;
     double determinant=a*d-b*c;if(fabs(determinant)<0.01)return false;
     double x=jump.point.x-base.x,y=jump.point.y-base.y;
