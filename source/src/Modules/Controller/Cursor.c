@@ -1,3 +1,4 @@
+#include "ControllerText.h"
 #include "Cursor.h"
 #include "Menu.h"
 #include "Crash.h"
@@ -112,6 +113,6 @@ bool Cursor_Initialize(void)
     if(!RuntimeFocus_Register(RUNTIME_MODULE_CONTROLLER,provide_focus,NULL)) {
         Cursor_Shutdown();return false;
     }
-    if(!Crash_Initialize()) Log_Write("[诊断] 未能注册异常地址记录，普通输入仍可用。");
-    installed=true;Log_Write("[光标] 格子/物品确认/动作菜单由Runtime动态框提示，持有图标居中；其它页保留原反馈。");return true;
+    if(!Crash_Initialize()) Log_Write(ControllerText_Cursor_CrashRecorderUnavailableLog);
+    installed=true;Log_Write(ControllerText_Cursor_FocusFeedbackReadyLog);return true;
 }

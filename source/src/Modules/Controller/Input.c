@@ -1,3 +1,4 @@
+#include "ControllerText.h"
 #include "Plugin.h"
 #include <stdio.h>
 #include <math.h>
@@ -28,7 +29,7 @@ bool Input_Initialize(void)
     /* 这里只由Loader锁外的游戏输入线程调用。只初始化输入子系统，不接管音视频。 */
     SDL_SetMainReady();
     if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) {
-        init_state=-1;Log_Write("[SDL][停止] 静态SDL输入初始化失败：%s",SDL_GetError());return false;
+        init_state=-1;Log_Write(ControllerText_Sdl_InitializationFailedLog,SDL_GetError());return false;
     }
     init_state=1;
     WCHAR path[MAX_PATH];
@@ -36,18 +37,18 @@ bool Input_Initialize(void)
     if (length>0 && length<MAX_PATH) {
         DWORD attributes=GetFileAttributesW(path);
         if (attributes==INVALID_FILE_ATTRIBUTES) {
-            Log_Write("[SDL][映射] 未提供外部数据库，继续使用内置映射。");
+            Log_Write(ControllerText_Sdl_ExternalMappingsMissingLog);
         } else if (!(attributes&FILE_ATTRIBUTE_DIRECTORY)) {
             char utf8[MAX_PATH*4];
             /* SDL文件接口使用UTF-8，中文目录必须转换成UTF-8，不能用系统ANSI代替。 */
             if (WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,path,-1,utf8,sizeof utf8,NULL,NULL)) {
                 int count=SDL_AddGamepadMappingsFromFile(utf8);
-                if (count<0) Log_Write("[SDL][映射] 外部文件加载失败，继续使用内置映射：%s",SDL_GetError());
-                else Log_Write("[SDL][映射] 外部文件载入%d条映射。",count);
-            } else Log_Write("[SDL][映射] 路径转换失败，继续使用内置映射。");
-        } else Log_Write("[SDL][映射] 同名路径是目录，继续使用内置映射。");
+                if (count<0) Log_Write(ControllerText_Sdl_ExternalMappingsLoadFailedLog,SDL_GetError());
+                else Log_Write(ControllerText_Sdl_ExternalMappingsLoadedLog,count);
+            } else Log_Write(ControllerText_Sdl_MappingPathConversionFailedLog);
+        } else Log_Write(ControllerText_Sdl_MappingPathIsDirectoryLog);
     }
-    Log_Write("[SDL] 静态SDL %d.%d.%d输入子系统已就绪。",SDL_MAJOR_VERSION,SDL_MINOR_VERSION,SDL_MICRO_VERSION);
+    Log_Write(ControllerText_Sdl_InputSubsystemReadyLog,SDL_MAJOR_VERSION,SDL_MINOR_VERSION,SDL_MICRO_VERSION);
     return true;
 }
 void Input_Shutdown(void)
@@ -69,7 +70,7 @@ static bool poll_input(PadInput *input)
     SDL_UpdateGamepads();
     if (pad && !SDL_GamepadConnected(pad)) {
         SDL_CloseGamepad(pad); pad = NULL;
-        Log_Write("[手柄] 已断开，释放插件拥有的输入。");
+        Log_Write(ControllerText_Device_DisconnectedLog);
     }
     if (!pad && (!last_find || input->now - last_find >= 1000)) {
         last_find = input->now;
@@ -79,7 +80,7 @@ static bool poll_input(PadInput *input)
             for (int i = 0; i < count && !pad; ++i) pad = SDL_OpenGamepad(ids[i]);
             SDL_free(ids);
         }
-        if (pad) Log_Write("[手柄] 已连接；请松开摇杆、扳机和按键后开始操作。");
+        if (pad) Log_Write(ControllerText_Device_ConnectedReleaseInputsLog);
     }
     if (!pad) return false;
     for (int i = 0; i <= PAD_RIGHT; ++i)
@@ -102,7 +103,7 @@ void Input_Rumble(unsigned ms)
 {
     if (pad && RuntimeConfig_GetInt(CONFIG_RUMBLE)) {
         if (!SDL_RumbleGamepad(pad, ms ? 18000 : 0, ms ? 18000 : 0, ms))
-            Log_Write("[震动] 当前设备未接受震动：%s", SDL_GetError());
+            Log_Write(ControllerText_Device_RumbleRejectedLog, SDL_GetError());
     }
 }
 

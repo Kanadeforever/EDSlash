@@ -1,3 +1,4 @@
+#include "QOLText.h"
 #include "AutoPickup.h"
 #include "../../Runtime/Perf.h"
 #include "GroundItems.h"
@@ -184,12 +185,12 @@ static void run_native_pickup_scan(void)
     action = locate_pickup_action();
     if (action == 0ul) {
         if (++g_wait_scans==10ul)
-            RuntimeWin32_Log(g_self_module, "[QoL][等待] 尚未定位唯一拾取对象，未调用动作；进入场景后继续检查。");
+            RuntimeWin32_Log(g_self_module, QOLText_AutoPickup_WaitingForUniqueTargetLog);
         return;
     }
     if (!g_scan_logged) {
         g_scan_logged=1;
-        RuntimeWin32_Log(g_self_module, "[QoL][运行] 已定位拾取对象，开始调用原版动作22扫描；是否入包由原版判断。");
+        RuntimeWin32_Log(g_self_module, QOLText_AutoPickup_NativeScanStartedLog);
     }
 
     /*

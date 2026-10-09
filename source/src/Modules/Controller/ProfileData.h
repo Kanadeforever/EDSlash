@@ -1,7 +1,7 @@
 /* 四样本基线表由 tools/controller/generate_profiles.py 生成；来源见 profiles.json。 */
 static const Profile profiles[] = {
     {
-        .name = "本体非 Steam 1.05", .sha256 = "c8d1aa33272a2c28e94f0d18eda2d6a8fcb14796644d8f8bed467b744ddc94b5",
+        .name = ControllerText_Profile_DaoJianNonSteamName, .sha256 = "c8d1aa33272a2c28e94f0d18eda2d6a8fcb14796644d8f8bed467b744ddc94b5",
         .game_id = 1u,
         .entry = 0x10F0EFu, .size = 0x173000u,
         .keyboard_iat = 0x00528390u,
@@ -272,7 +272,7 @@ static const Profile profiles[] = {
         .inspect_ready_offset = 0x00000406u,
     },
     {
-        .name = "外传非 Steam 2.01", .sha256 = "04e34dd68b373b9b2ddf300ca4bfcabb6e6b89ceb9d437af67cbad5e7286fbe4",
+        .name = ControllerText_Profile_WaiZhuanNonSteamName, .sha256 = "04e34dd68b373b9b2ddf300ca4bfcabb6e6b89ceb9d437af67cbad5e7286fbe4",
         .game_id = 2u,
         .entry = 0x127BCFu, .size = 0x1A5000u,
         .keyboard_iat = 0x005513ACu,
@@ -543,7 +543,7 @@ static const Profile profiles[] = {
         .inspect_ready_offset = 0x00000412u,
     },
     {
-        .name = "本体Steam 1.05", .sha256 = "0887ceae7589999a389ec271d690e1c55204d59575f8f2adb5ef46a1e605b3f5",
+        .name = ControllerText_Profile_DaoJianSteamName, .sha256 = "0887ceae7589999a389ec271d690e1c55204d59575f8f2adb5ef46a1e605b3f5",
         .game_id = 1u,
         .entry = 0x10F0EFu, .size = 0x173000u,
         .keyboard_iat = 0x00528390u,
@@ -814,7 +814,7 @@ static const Profile profiles[] = {
         .inspect_ready_offset = 0x00000406u,
     },
     {
-        .name = "外传Steam 2.01", .sha256 = "97ae4c2350618f38a74c3d02bf315c749fc448f705e860129372ebd592ed66e5",
+        .name = ControllerText_Profile_WaiZhuanSteamName, .sha256 = "97ae4c2350618f38a74c3d02bf315c749fc448f705e860129372ebd592ed66e5",
         .game_id = 2u,
         .entry = 0x127BCFu, .size = 0x1A5000u,
         .keyboard_iat = 0x005513ACu,

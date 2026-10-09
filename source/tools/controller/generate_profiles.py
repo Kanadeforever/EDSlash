@@ -14,7 +14,7 @@ def render(data):
     if [(p['tag'],p['edition']) for p in profiles] != [('DaoJian','NonSteam'),('WaiZhuan','NonSteam'),('DaoJian','Steam'),('WaiZhuan','Steam')]:
         raise ValueError('必须按顺序提供本体/外传的非Steam及Steam四个档案')
     for p in profiles:
-        lines.extend(['    {', f'        .name = "{p["name"]}", .sha256 = "{p["sha256"]}",'])
+        lines.extend(['    {', f'        .name = ControllerText_Profile_{p["tag"]}{p["edition"]}Name, .sha256 = "{p["sha256"]}",'])
         lines.append(f'        .game_id = {p["game_id"]}u,')
         lines.append(f'        .entry = 0x{p["entry"]:X}u, .size = 0x{p["size"]:X}u,')
         for key, value in (p['addresses'] | p['offsets']).items():

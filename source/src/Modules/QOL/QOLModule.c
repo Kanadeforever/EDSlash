@@ -1,3 +1,4 @@
+#include "QOLText.h"
 #include "QOLModule.h"
 #include "GroundItems.h"
 #include "ItemClassifier.h"
@@ -202,26 +203,26 @@ int QOLModule_Initialize(const RuntimeContext* runtime)
         return 0;
     }
     if (!RuntimeWin32_IsReady() || !RuntimeInput_IsReady()) {
-        RuntimeWin32_Log(runtime->self_module,"[QoL][停止] 公共输入帧或Win32桥不可用，未安装拾取Hook。");
+        RuntimeWin32_Log(runtime->self_module,QOLText_Startup_SharedInputUnavailableLog);
         return 0;
     }
-    RuntimeWin32_Log(runtime->self_module, "[QoL] 统一模块：初始化地面名称、自动拾取与成功提示。");
+    RuntimeWin32_Log(runtime->self_module, QOLText_Startup_ModuleInitializingLog);
     if (!verify_qol_entries(runtime->profile)) {
-        RuntimeWin32_Log(runtime->self_module, "[QoL][停止] 原生入口签名不匹配，未安装模块。");
+        RuntimeWin32_Log(runtime->self_module, QOLText_Startup_NativeSignatureMismatchLog);
         return 0;
     }
     if (!load_settings(runtime->self_module, &settings)) {
-        RuntimeWin32_Log(runtime->self_module, "[QoL][停止] 无法定位同目录配置文件。");
+        RuntimeWin32_Log(runtime->self_module, QOLText_Startup_ConfigPathUnavailableLog);
         return 0;
     }
 
-    RuntimeWin32_LogNumber(runtime->self_module, "[QoL] 地面名称常显=", (unsigned long)settings.show_ground_names);
-    RuntimeWin32_LogNumber(runtime->self_module, "[QoL] 自动拾取模式=", (unsigned long)settings.pickup_policy);
-    RuntimeWin32_LogNumber(runtime->self_module, "[QoL] 扫描间隔毫秒=", settings.scan_interval_ms);
-    RuntimeWin32_LogNumber(runtime->self_module, "[QoL] 掉落等待毫秒=", settings.drop_delay_ms);
+    RuntimeWin32_LogNumber(runtime->self_module, QOLText_Config_ItemNamesAlwaysVisibleLog, (unsigned long)settings.show_ground_names);
+    RuntimeWin32_LogNumber(runtime->self_module, QOLText_Config_AutoPickupModeLog, (unsigned long)settings.pickup_policy);
+    RuntimeWin32_LogNumber(runtime->self_module, QOLText_Config_ScanIntervalLog, settings.scan_interval_ms);
+    RuntimeWin32_LogNumber(runtime->self_module, QOLText_Config_DropWaitLog, settings.drop_delay_ms);
 
     if (!PickupNotice_Initialize(runtime)) {
-        RuntimeWin32_Log(runtime->self_module,"[QoL][停止] 拾取提示接口或公共事件订阅验证失败。");return 0;
+        RuntimeWin32_Log(runtime->self_module,QOLText_Startup_PickupNoticeValidationFailedLog);return 0;
     }
 
     if (!GroundItems_Initialize(runtime,
@@ -238,21 +239,21 @@ int QOLModule_Initialize(const RuntimeContext* runtime)
     }
 
     if (!install_ground_hook(runtime->profile)) {
-        RuntimeWin32_Log(runtime->self_module, "[QoL][停止] 地面物品入口安装失败，开始回滚。");
+        RuntimeWin32_Log(runtime->self_module, QOLText_Startup_GroundItemHookFailedLog);
         rollback_hooks();
         return 0;
     }
 
     if (!install_pickup_hook(runtime->profile)) {
-        RuntimeWin32_Log(runtime->self_module, "[QoL][停止] 自动拾取入口安装失败，开始回滚。");
+        RuntimeWin32_Log(runtime->self_module, QOLText_Startup_AutoPickupHookFailedLog);
         rollback_hooks();
         return 0;
     }
 
-    if(!RandomNameUI_Initialize(runtime))RuntimeWin32_Log(runtime->self_module,"[QoL][随机名称] 原名称接口未通过校验，保留原手工输入。");
+    if(!RandomNameUI_Initialize(runtime))RuntimeWin32_Log(runtime->self_module,QOLText_Startup_RandomNameInterfaceUnavailableLog);
     if (!Runtime_Subscribe(RUNTIME_EVENT_INPUT_FRAME_END,after_input,(void*)0)) {
         rollback_hooks();return 0;
     }
-    RuntimeWin32_Log(runtime->self_module, "[QoL][成功] 地面名称与自动拾取入口已就绪；实际运行仍需场景验证。");
+    RuntimeWin32_Log(runtime->self_module, QOLText_Startup_HooksReadyLog);
     return 1;
 }

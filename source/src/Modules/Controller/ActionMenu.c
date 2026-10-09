@@ -1,3 +1,4 @@
+#include "ControllerText.h"
 #include "Menu.h"
 #include "Combat.h"
 #include <math.h>
@@ -104,18 +105,18 @@ bool ActionMenu_Update(void)
         /* 原Open生成当前侧技能/非空连招并捕获UI，第一次拨杆只展开，不额外跳一项。 */
         ((This1)g_profile->menu_action_open)(root,0);seed();selection.direction=direction;
         g_intent.layer=LAYER_ACTION_MENU;
-        Log_Write("[动作菜单] 原右手菜单展开；长期槽位保留，松任一扳机确认当前侧。");return false;
+        Log_Write(ControllerText_ActionMenu_OpenedLog);return false;
     }
     g_intent.layer=LAYER_ACTION_MENU;
     if (!held) {
         project();((This0)g_profile->menu_action_commit)(selection.root);
-        Log_Write("[动作菜单] 原%s手选择=%d已确认。",selection.side ? "左":"右",selection.selector);
+        Log_Write(ControllerText_ActionMenu_SelectionConfirmedLog,selection.side ? ControllerText_LeftSideLabel:ControllerText_RightSideLabel,selection.selector);
         ActionMenu_Suspend();return true;
     }
     if (g_intent.pressed&KEY(PAD_R3)) {
         /* 同一个原菜单换侧只重建候选链，未聚焦侧的浏览不会顺带提交。 */
         selection.side^=1;((This1)g_profile->menu_action_rebuild)(selection.root,(int)selection.side);seed();
-        Log_Write("[动作菜单] 聚焦改为%s手，另侧长期选择未改。",selection.side ? "左":"右");return false;
+        Log_Write(ControllerText_ActionMenu_FocusSideChangedLog,selection.side ? ControllerText_LeftSideLabel:ControllerText_RightSideLabel);return false;
     }
     if (direction && (direction!=selection.direction || (int32_t)(g_input.now-selection.repeat)>=0)) {
         ActionNode list[128];unsigned count=nodes(selection.root,list),at=0;

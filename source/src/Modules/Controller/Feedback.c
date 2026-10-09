@@ -1,3 +1,4 @@
+#include "ControllerText.h"
 #include "Feedback.h"
 #include <string.h>
 
@@ -108,18 +109,18 @@ void Feedback_Ultimate(unsigned slot)
         if (!Memory_Readable(group,0x36) || (int)Read32(group,0x32)<1000) continue;
         if (index++!=slot) continue;
         if (((This1)g_profile->skill_eligibility)(role,id)==-1) {
-            Log_Write("[必杀技] 槽%u目前不符合原版资格。",slot+1);return;
+            Log_Write(ControllerText_Finisher_SlotIneligibleLog,slot+1);return;
         }
         if ((int)Read32(ui,0xBF4)==id) {
             Combat_Request(id,ACTION_ULTIMATE,false);
-            Log_Write("[必杀技] 槽%u第二次确认，请求释放组=%d。",slot+1,id);
+            Log_Write(ControllerText_Finisher_ReleaseRequestedLog,slot+1,id);
         } else {
             ((This1)g_profile->prepared_set)(ui,id);
-            Log_Write("[必杀技] 槽%u准备组=%d，沿用原版有效窗口。",slot+1,id);
+            Log_Write(ControllerText_Finisher_PreparedLog,slot+1,id);
         }
         return;
     }
-    Log_Write("[必杀技] 角色未配置第%u个必杀组。",slot+1);
+    Log_Write(ControllerText_Finisher_SlotUnconfiguredLog,slot+1);
 }
 
 bool Feedback_Initialize(void)

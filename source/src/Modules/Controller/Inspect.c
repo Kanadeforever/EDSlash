@@ -1,3 +1,4 @@
+#include "ControllerText.h"
 #include "Inspect.h"
 #include "Combat.h"
 #include "../../Runtime/Perf.h"
@@ -205,7 +206,7 @@ static bool inspect_update(void *role)
         }
     }
     focus_world=current_world;
-    if (old_focus!=focus) Log_Write("[调查焦点] 句柄=%08lx 原事件=%lu 动态候选=%u 静态格=%u 360度近身，前方优先。",
+    if (old_focus!=focus) Log_Write(ControllerText_Inspect_FocusTargetLog,
         (unsigned long)focus,(unsigned long)focus_kind,dynamic_count,static_count);
     Inspect_Project();
     if (zone_request && (zone_request!=focus || focus_kind!=20)) zone_request=0;
@@ -251,7 +252,7 @@ bool Inspect_Activate(void)
 {
     void *object=Game_Resolve(focus);
     if (!object || focus_world!=world()) {
-        Log_Write("[调查] 近身没有有效目标，动态=%u 静态格=%u 地图=%08lx 格=%d,%d。",
+        Log_Write(ControllerText_Inspect_NoNearbyTargetLog,
             dynamic_count,static_count,(unsigned long)(uintptr_t)scene_map,focus_grid_x,focus_grid_y);return false;
     }
     bool submitted=false;
@@ -261,12 +262,12 @@ bool Inspect_Activate(void)
     else if (focus_kind==100 && static_valid(object)) {
         void *role=Game_Player();int group=((This1)g_profile->inspect_basic_get)(role,1);
         WorldPoint point={focus_grid_x*64+32,focus_grid_y*64+32};
-        if (group<0) {Log_Write("[调查][拒绝] 原基础动作当前不可用。");return false;}
+        if (group<0) {Log_Write(ControllerText_Inspect_BaseActionUnavailableLog);return false;}
         Combat_RequestPoint(group,&point);Combat_Update(role,Combat_Target());
-        Log_Write("[调查操作] 静态原基础技能组=%d，目标点=%d,%d。",group,point.x,point.y);return true;
+        Log_Write(ControllerText_Inspect_StaticActionRequestedLog,group,point.x,point.y);return true;
     } else if (focus_kind==1 && static_valid(object)) {submit(1,focus);return true;}
     else if ((focus_kind==20 || focus_kind==23 || focus_kind==24) && static_valid(object)) {
-        if (focus_kind==20 && !portal_near()) {Log_Write("[调查][拒绝] 尚未进入原换区区域，A不提交换区。");return false;}
+        if (focus_kind==20 && !portal_near()) {Log_Write(ControllerText_Inspect_ExitRegionNotEnteredLog);return false;}
         submit(focus_kind,focus);
         submitted=true;
         if (focus_kind==20) {zone_request=focus;requested_at=g_input.now;}
@@ -275,7 +276,7 @@ bool Inspect_Activate(void)
         interaction.target=focus;interaction.kind=focus_kind;interaction.actor=Read32(Game_Player(),0x14);
         interaction.world=world();interaction.at=g_input.now;interaction.x=g_intent.lx;interaction.y=g_intent.ly;
     }
-    Log_Write("[调查操作] 原事件=%lu 句柄=%08lx。",(unsigned long)focus_kind,(unsigned long)focus);
+    Log_Write(ControllerText_Inspect_NativeEventRequestedLog,(unsigned long)focus_kind,(unsigned long)focus);
     return submitted;
 }
 static int __attribute__((fastcall)) hover_hook(void *mouse,void *unused,int event,int x,void *y)
@@ -308,6 +309,6 @@ bool Inspect_Initialize(void)
     if (!HookManager_Claim(SHARED_HOOK_CONTROLLER_INSPECT,RUNTIME_MODULE_CONTROLLER)) return false;
     BYTE replacement[5]={0xE8};relative=(int32_t)((uintptr_t)hover_hook-target-5);memcpy(replacement+1,&relative,4);
     installed=Memory_Patch((void *)target,replacement,5);
-    if (installed) Log_Write("[调查] 动态交互/静态87、88、89、原TransGo出口及360度近身焦点接通，原WorldHover事件已隔离。");
+    if (installed) Log_Write(ControllerText_Inspect_InterfacesReadyLog);
     return installed;
 }

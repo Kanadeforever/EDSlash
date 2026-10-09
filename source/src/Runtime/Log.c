@@ -1,3 +1,4 @@
+#include "RuntimeText.h"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdio.h>
@@ -44,7 +45,7 @@ int RuntimeLog_Initialize(void *module)
     file=CreateFileW(path,GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,NULL,
         CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL);
     if (file==INVALID_HANDLE_VALUE) return 0;
-    initialized=1;RuntimeLog_Line("EDSlash：构建身份=" EDSLASH_BUILD_ID "；作者：" EDSLASH_AUTHOR);return 1;
+    initialized=1;RuntimeLog_Write(RuntimeText_Log_BuildIdentityAndAuthor,EDSLASH_BUILD_ID,EDSLASH_AUTHOR);return 1;
 }
 static unsigned take_chunk(char *output,unsigned capacity)
 {

@@ -1,3 +1,4 @@
+#include "ControllerText.h"
 #include "Combat.h"
 #include "Feedback.h"
 #include <math.h>
@@ -97,7 +98,7 @@ void Combat_SelectCombo(unsigned index)
     combat.combo_slot=index;combat.combo_cursor=-1;combat.combo_ready=true;++combat.combo_epoch;
     if (combat.pending && combat.source==ACTION_COMBO) combat.pending=false;
     if (Memory_Readable(hud,0x130)) ((This1)g_profile->right_set)(hud,-1-(int)index);
-    Log_Write("[连招] 切换独立套组=%u，下一次 Y 从首项开始。",index+1);
+    Log_Write(ControllerText_Combat_ComboGroupChangedLog,index+1);
 }
 
 static int combo_selection(void *hud)
@@ -133,7 +134,7 @@ void Combat_Record(int selector,int direction)
 {
     if (!Combat_OwnsHistory()) return;
     if (!combat.issued || (combat.issued_selector>=0 && combat.issued_selector!=selector)) {
-        Log_Write("[战斗通知] 未匹配到本次手柄提交，组=%d；不推进手柄历史或连招游标。",selector);
+        Log_Write(ControllerText_Combat_UnmatchedNotificationLog,selector);
         return;
     }
     combat.issued=false;++combat.execution_serial;
@@ -156,8 +157,8 @@ void Combat_Record(int selector,int direction)
         /* 以保存的左右手来源推进原生自定义连招游标，不读取任何鼠标按钮全局标志。 */
         Write32(hud,0x120,(uint32_t)combat.issued_index);
     }
-    Log_Write("[战斗执行] 原生动作已建立，组=%d 方向=%d 来源=%s 历史=%u。",
-        selector,direction,combat.issued_right ? "右手":"左手",combat.history.count);
+    Log_Write(ControllerText_Combat_NativeActionCreatedLog,
+        selector,direction,combat.issued_right ? ControllerText_RightHandLabel:ControllerText_LeftHandLabel,combat.history.count);
 }
 
 void Combat_End(void)
@@ -198,7 +199,7 @@ void Combat_ExportHistory(void)
     /* 旧鼠标阶段尚未完成的重试不能在交接后重新冒出来；成功历史与重试请求分开处理。 */
     if (Memory_Readable(mouse,0x78)) Write32(mouse,0x74,0);
     combat.pending=false;combat.owned=false;
-    Log_Write("[输入交接] 手柄到物理鼠标，成功历史=%u；保留套组进度。",combat.history.count);
+    Log_Write(ControllerText_Combat_HandoffToMouseLog,combat.history.count);
 }
 
 void Combat_ImportHistory(void)
@@ -211,7 +212,7 @@ void Combat_ImportHistory(void)
     uint32_t count=Read32(mouse,0x5C);
     void *node=ReadPtr(mouse,0x60);
     /* 原链表节点保存 next/previous/selector；限制数量并逐节点检查，拒绝损坏或循环链。 */
-    if (count>64) {Log_Write("[输入交接] 鼠标历史超出上限，按新序列接管。");return;}
+    if (count>64) {Log_Write(ControllerText_Combat_MouseHistoryOverflowLog);return;}
     for (unsigned i=0;i<count;++i) {
         if (!Memory_Readable(node,12)) {memset(&combat.history,0,sizeof combat.history);return;}
         combat.history.selectors[combat.history.count++]=(int)Read32(node,8);
@@ -222,7 +223,7 @@ void Combat_ImportHistory(void)
     combat.history.ended=combat.history.end_tick!=0xFFFFFFFFu;
     combat.history.direction=(int)Read32(mouse,0x54);combat.history_extra=(int)Read32(mouse,0x58);
     combat.owned=true;
-    Log_Write("[输入交接] 物理鼠标到手柄，成功历史=%u；保留当前目标。",combat.history.count);
+    Log_Write(ControllerText_Combat_HandoffToControllerLog,combat.history.count);
 }
 
 static WorldPoint aim_point(void *role)
@@ -312,8 +313,8 @@ void Combat_Update(void *role,uint32_t candidate)
             combat.source=ACTION_RIGHT;
         } else {combat.selection=((This0)g_profile->left_get)(hud);combat.source=ACTION_LEFT;}
         combat.right=right;combat.pending=combat.selection>=0;combat.retries=5;fresh=true;
-        if (edge) Log_Write("[战斗输入] 来源=%s 选择=%d 新按=1 忙碌=%d 历史=%u 已结束=%d。",
-            right ? "右手":"左手",combat.selection,active,combat.history.count,combat.history.ended);
+        if (edge) Log_Write(ControllerText_Combat_NewPressLog,
+            right ? ControllerText_RightHandLabel:ControllerText_LeftHandLabel,combat.selection,active,combat.history.count,combat.history.ended);
     }
     if (!combat.pending) return;
     if (!fresh) {
@@ -322,7 +323,7 @@ void Combat_Update(void *role,uint32_t candidate)
         /* 原版新按下可直接解析时间窗口，只有缓冲重试受忙碌门控制。
            不手工取消活动 Runtime，能否衔接或中断仍由原版动作协议决定。 */
         if (active) {
-            if (!combat.retries) {combat.pending=false;Log_Write("[战斗丢弃] 缓冲期间持续忙碌，选择=%d。",combat.selection);}
+            if (!combat.retries) {combat.pending=false;Log_Write(ControllerText_Combat_BufferExpiredWhileBusyLog,combat.selection);}
             return;
         }
     }
@@ -334,10 +335,10 @@ void Combat_Update(void *role,uint32_t candidate)
         if (combat.history.count && combat.history.ended) {
             /* 原解析失败且历史已有结束标记时清历史，再让缓冲按起手解析；
              * 不能让旧序列持续阻止其它快捷技能。 */
-            Log_Write("[战斗恢复] 旧序列不匹配选择=%d，清理已结束历史 %u 项后重试。",combat.selection,combat.history.count);
+            Log_Write(ControllerText_Combat_ClearEndedHistoryAndRetryLog,combat.selection,combat.history.count);
             memset(&combat.history,0,sizeof combat.history);
         }
-        if (!combat.retries) {combat.pending=false;Log_Write("[战斗丢弃] 招式仍不可解析，选择=%d。",combat.selection);}
+        if (!combat.retries) {combat.pending=false;Log_Write(ControllerText_Combat_UnresolvedActionDiscardedLog,combat.selection);}
         return;
     }
     combat.pending=false;
@@ -372,8 +373,8 @@ void Combat_Update(void *role,uint32_t candidate)
         opcode=10;a2=point.x;a3=point.y;
     }
     submit(opcode,resolved.method,a2,a3);
-    Log_Write("[战斗提交] 来源=%s 选择=%d 招式=%d 事件=%d 参数=%d,%d 通知=%d。",
-        combat.right ? "右手":"左手",combat.selection,resolved.method,opcode,a2,a3,combat.execution_serial!=before_serial);
+    Log_Write(ControllerText_Combat_ActionSubmittedLog,
+        combat.right ? ControllerText_RightHandLabel:ControllerText_LeftHandLabel,combat.selection,resolved.method,opcode,a2,a3,combat.execution_serial!=before_serial);
     /* 忙碌时的首次请求若未执行、也未进入原版 PendingAction，则只留在有期限的手柄缓冲。
        恢复之前已提交动作的来源，防止它稍后执行时被误认成这次新按键。 */
     unsigned pending=g_profile->pending_offset;

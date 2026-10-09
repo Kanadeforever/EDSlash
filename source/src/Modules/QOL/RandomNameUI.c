@@ -1,3 +1,4 @@
+#include "QOLText.h"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <string.h>
@@ -68,7 +69,7 @@ static void birthday_pick(unsigned *month,unsigned *day)
 int RandomNameUI_Request(void *page)
 {
     HWND window;void *input=name_widget(page,&window);if(!input){
-        RuntimeLog_Write("[随机名称][拒绝] 原因=%u 页面=%08lX；1未就绪/2页/3模组窗口/4模态/5名称类/6父页/7隐藏/8句柄/9线程。",refusal,(unsigned long)(uintptr_t)page);
+        RuntimeLog_Write(QOLText_RandomName_PageValidationRejectedLog,refusal,(unsigned long)(uintptr_t)page);
         RandomNameUI_End();return 0;}
     void *month_input=NULL,*day_input=NULL;
     if(backend.birthday) {
@@ -76,31 +77,31 @@ int RandomNameUI_Request(void *page)
         if(rd(month_input,0)!=backend.menu_name_vtable || rd(day_input,0)!=backend.menu_name_vtable ||
            rd(month_input,0x28)!=0xDF || rd(day_input,0x28)!=0xE0 ||
            rd(month_input,0xA4)!=(uintptr_t)page || rd(day_input,0xA4)!=(uintptr_t)page) {
-            RuntimeLog_Line("[随机名称][拒绝] 外传生日控件身份不符，保留原姓名和生日。");return 0;
+            RuntimeLog_Line(QOLText_RandomName_BirthdayControlsRejectedLog);return 0;
         }
     }
     /* 原程序的ANSI编辑/CString链按GBK运行；未确认的系统代码页不写乱码。 */
-    if(GetACP()!=936){RuntimeLog_Line("[随机名称] 当前名称编辑编码不是GBK，未覆盖原文本。");return 0;}
+    if(GetACP()!=936){RuntimeLog_Line(QOLText_RandomName_NonGbkEncodingRejectedLog);return 0;}
     if(!session.active || page_identity!=(uintptr_t)page || window_identity!=(uintptr_t)window) {
         RandomName_Begin(&session,GetTickCount()^(uint32_t)(uintptr_t)window);page_identity=(uintptr_t)page;window_identity=(uintptr_t)window;
     }
     WCHAR current_wide[64];char current[192],generated[RANDOM_NAME_CAPACITY];
     if(!GetWindowTextW(window,current_wide,64))current_wide[0]=0;
     if(!WideCharToMultiByte(CP_UTF8,0,current_wide,-1,current,sizeof current,NULL,NULL))return 0;
-    LRESULT limit=SendMessageW(window,EM_GETLIMITTEXT,0,0);if(limit<4){RuntimeLog_Write("[随机名称][拒绝] 编辑容量=%ld，不足两个汉字。",(long)limit);return 0;}
+    LRESULT limit=SendMessageW(window,EM_GETLIMITTEXT,0,0);if(limit<4){RuntimeLog_Write(QOLText_RandomName_EditCapacityRejectedLog,(long)limit);return 0;}
     AcceptContext context={(unsigned)limit,{0}};
     unsigned characters=context.limit/2;if(characters>4)characters=4;
     /* 尚未证明原角色selector的性别对应，按生成核心约定使用中性池。 */
     int result=RandomName_Generate(&session,RANDOM_NAME_NEUTRAL,characters,current,accept_name,&context,generated,sizeof generated);
-    if(!result){RuntimeLog_Line("[随机名称][拒绝] 候选未通过GBK无损编码或名称字节容量检查。");return 0;}
+    if(!result){RuntimeLog_Line(QOLText_RandomName_CandidateEncodingRejectedLog);return 0;}
     /* 原setter同步CString、编辑框和外传光标位置；不能自行写D4或模拟确认。 */
     ((SetText)backend.menu_name_set)(input,context.encoded);
     if(backend.birthday) {
         unsigned month,day;char month_text[4],day_text[4];birthday_pick(&month,&day);
         snprintf(month_text,sizeof month_text,"%u",month);snprintf(day_text,sizeof day_text,"%u",day);
         ((SetText)backend.menu_name_set)(month_input,month_text);((SetText)backend.menu_name_set)(day_input,day_text);
-        RuntimeLog_Write("[随机名称] 已填入名称和生日%u月%u日，等待玩家确认创建。",month,day);
-    } else RuntimeLog_Line("[随机名称] 已填入名称，等待玩家确认创建。");return 1;
+        RuntimeLog_Write(QOLText_RandomName_NameAndBirthdayFilledLog,month,day);
+    } else RuntimeLog_Line(QOLText_RandomName_NameFilledLog);return 1;
 }
 void RandomNameUI_AfterInputFrame(void)
 {

@@ -1,3 +1,4 @@
+#include "RuntimeText.h"
 #include "Toml.h"
 #include <stdio.h>
 #include <string.h>
@@ -191,10 +192,10 @@ int Toml_Parse(TomlDocument *doc,const char *bytes,size_t size)
 {
     if (!doc) return 0;
     memset(doc,0,sizeof *doc);
-    if (!bytes || !size || size>=TOML_CAPACITY) return fail(doc,0,"配置为空或超过64KiB限制");
+    if (!bytes || !size || size>=TOML_CAPACITY) return fail(doc,0,RuntimeText_Toml_EmptyOrOversizedError);
     if (memchr(bytes,0,size) || !toml_utf8_valid_((const unsigned char *)bytes,(unsigned)size))
-        return fail(doc,0,"配置不是有效UTF-8文本");
-    if (size>=3 && !memcmp(bytes,"\xEF\xBB\xBF",3)) return fail(doc,0,"配置必须使用UTF-8无BOM");
+        return fail(doc,0,RuntimeText_Toml_InvalidUtf8Error);
+    if (size>=3 && !memcmp(bytes,"\xEF\xBB\xBF",3)) return fail(doc,0,RuntimeText_Toml_BomNotAllowedError);
     memcpy(doc->bytes,bytes,size);doc->size=size;
     char table[96]="",tables[128][96];unsigned table_count=0,line_number=0;
     size_t position=0;
@@ -207,36 +208,36 @@ int Toml_Parse(TomlDocument *doc,const char *bytes,size_t size)
         if (!line.length) continue;
         if (line.data[0]=='[') {
             if (line.length<3 || line.data[line.length-1]!=']' || line.data[1]=='[')
-                return fail(doc,line_number,"只支持普通配置表，不支持数组表");
+                return fail(doc,line_number,RuntimeText_Toml_ArrayTableUnsupportedError);
             RuntimeTomlSlice name={line.data+1,line.length-2};name=toml_trim_(name);
             if (!toml_bare_name_valid_(name) || name.length>=sizeof table ||
                 name.data[0]=='.' || name.data[name.length-1]=='.')
-                return fail(doc,line_number,"配置表名无效");
+                return fail(doc,line_number,RuntimeText_Toml_InvalidTableNameError);
             memcpy(table,name.data,name.length);table[name.length]=0;
-            if (strstr(table,"..")) return fail(doc,line_number,"配置表名含空分组");
+            if (strstr(table,"..")) return fail(doc,line_number,RuntimeText_Toml_EmptyTableGroupError);
             for (unsigned i=0;i<table_count;++i)
-                if (!strcmp(tables[i],table)) return fail(doc,line_number,"配置表重复定义");
-            if (table_count>=128) return fail(doc,line_number,"配置表数量过多");
+                if (!strcmp(tables[i],table)) return fail(doc,line_number,RuntimeText_Toml_DuplicateTableError);
+            if (table_count>=128) return fail(doc,line_number,RuntimeText_Toml_TableCapacityError);
             strcpy(tables[table_count++],table);continue;
         }
         const char *equal=memchr(line.data,'=',line.length);
-        if (!equal) return fail(doc,line_number,"配置项缺少等号");
+        if (!equal) return fail(doc,line_number,RuntimeText_Toml_MissingEqualsError);
         RuntimeTomlSlice key={line.data,(unsigned)(equal-line.data)};
         RuntimeTomlSlice value={equal+1,line.length-(unsigned)(equal+1-line.data)};
         key=toml_trim_(key);value=toml_trim_(value);
         if (!toml_bare_name_valid_(key) || key.length>=sizeof doc->entries[0].key ||
             memchr(key.data,'.',key.length) || !value.length)
-            return fail(doc,line_number,"配置键名或值无效");
+            return fail(doc,line_number,RuntimeText_Toml_InvalidKeyOrValueError);
         char key_text[48];memcpy(key_text,key.data,key.length);key_text[key.length]=0;
-        if (Toml_Find(doc,table,key_text)) return fail(doc,line_number,"配置键重复定义");
-        if (doc->count>=TOML_MAX_ENTRIES) return fail(doc,line_number,"配置项数量过多");
+        if (Toml_Find(doc,table,key_text)) return fail(doc,line_number,RuntimeText_Toml_DuplicateKeyError);
+        if (doc->count>=TOML_MAX_ENTRIES) return fail(doc,line_number,RuntimeText_Toml_EntryCapacityError);
         TomlEntry *entry=&doc->entries[doc->count++];
         strcpy(entry->table,table);strcpy(entry->key,key_text);entry->line=line_number;
         entry->value_begin=(size_t)(value.data-doc->bytes);entry->value_end=entry->value_begin+value.length;
         int scalar;char string[TOML_CAPACITY];
         if (!Toml_Bool(doc,entry,&scalar) && !Toml_Integer(doc,entry,&scalar) &&
             !Toml_Percent(doc,entry,&scalar) && !Toml_String(doc,entry,string,sizeof string))
-            return fail(doc,line_number,"值必须是布尔、十进制整数、百分比或双引号字符串");
+            return fail(doc,line_number,RuntimeText_Toml_UnsupportedValueTypeError);
     }
     return 1;
 }

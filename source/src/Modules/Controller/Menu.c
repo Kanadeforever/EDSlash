@@ -1,3 +1,4 @@
+#include "ControllerText.h"
 #include "Menu.h"
 #include "../../Runtime/SettingsWindow.h"
 #include "../QOL/QOLModule.h"
@@ -448,7 +449,7 @@ static bool grid_cancel(void)
     if (slot>=0 && slot<136 && !((This1)g_profile->item_at)(container,slot))
         ((This1)g_profile->menu_item_swap)(container,slot);
     if (Read32(container,0x2C4)==UINT32_MAX) memset(&carried,0,sizeof carried);
-    else Log_Write("[物品菜单] 没有可放回的空位，保留持有物品和当前页面。");
+    else Log_Write(ControllerText_Menu_HeldItemReturnSlotMissingLog);
     return true;
 }
 static void grid_switch(void *root)
@@ -467,7 +468,7 @@ static void grid_switch(void *root)
         clear_focus();state.root=next;state.grid_buttons=false;
         state.id=(target<=SHOP_KIND ? GRID_CELL_BASE:slot_first[target-BAG_KIND])+state.grid_slot[target-BAG_KIND];
         state.direction=0;state.barrier=true;
-        project();Log_Write("[物品菜单] 焦点切换到原面板%02X。",grid_ids[target-BAG_KIND]);
+        project();Log_Write(ControllerText_Menu_ItemPanelFocusChangedLog,grid_ids[target-BAG_KIND]);
     }
 }
 static void *quest_list(void *root)
@@ -500,7 +501,7 @@ static void quest_update(void *root)
             unsigned target=0x78+((current-0x78+(left ? 3:1))%4);
             /* 原分类helper会记住各分类位置、重建列表、更新文字和原选中外观。 */
             ((This2)g_profile->menu_quest_switch)(root,(int)target,-1);
-            Log_Write("[日志菜单] 切换分类=%02X。",target);
+            Log_Write(ControllerText_Menu_JournalCategoryChangedLog,target);
             state.direction=0;state.barrier=true;
         }
         return;
@@ -526,7 +527,7 @@ static void quest_update(void *root)
                 if (index<0) index=0;
                 if (index>=total) index=total-1;
                 if (index!=previous) ((This1)g_profile->menu_quest_select)(root,index);
-                Log_Write("[日志菜单] 分类=%02lX 当前项=%lu。",(unsigned long)Read32(root,0xC0),
+                Log_Write(ControllerText_Menu_JournalCurrentEntryLog,(unsigned long)Read32(root,0xC0),
                     (unsigned long)Read32(list,0xF4));
             }
             state.next_repeat=g_input.now+(dir==state.direction ? 110u:350u);
@@ -594,7 +595,7 @@ static void load_update(void *root)
             ((This1)g_profile->menu_load_select)(root,next);state.id=0x100+(unsigned)next;
         }
         state.next_repeat=g_input.now+(dir==state.direction ? 110u:350u);
-        Log_Write("[读档焦点] 页起点=%lu 页内槽=%lu 有效槽=%u。",(unsigned long)Read32(root,0xD0),(unsigned long)Read32(root,0xD4),rows);
+        Log_Write(ControllerText_Menu_LoadSlotFocusLog,(unsigned long)Read32(root,0xD0),(unsigned long)Read32(root,0xD4),rows);
     }
     state.direction=dir;
     if ((g_intent.pressed & KEY(PAD_B)) || g_intent.menu_toggle) {
@@ -618,13 +619,13 @@ static void load_update(void *root)
         if (Read32(dialog,0)==g_profile->menu_message_vtable && text && Menu_CursorAnchor(&anchor)) {
             typedef int (__attribute__((thiscall)) *Open)(void *,void *,const char *,int,int,int,int);
             ((Open)g_profile->menu_message_open)(dialog,root,text,anchor.x,anchor.y,0,0);
-            Log_Write("[读档操作] 打开原删除确认，页=%lu 槽=%lu。",(unsigned long)Read32(root,0xD0),(unsigned long)Read32(root,0xD4));
-        } else Log_Write("[读档][拒绝] 原删除确认对象/文本/焦点未就绪。");
+            Log_Write(ControllerText_Menu_DeleteConfirmationOpenedLog,(unsigned long)Read32(root,0xD0),(unsigned long)Read32(root,0xD4));
+        } else Log_Write(ControllerText_Menu_DeleteConfirmationUnavailableLog);
         state.barrier=true;return;
     }
     if ((g_intent.pressed & KEY(PAD_A)) && rows && Read32(root,0xD4)<rows) {
         /* 原读取入口仍负责资格、文件有效性、阶段迁移及失败；空页不发请求。 */
-        Log_Write("[读档操作] 请求载入页起点=%lu 槽=%lu。",(unsigned long)Read32(root,0xD0),(unsigned long)Read32(root,0xD4));
+        Log_Write(ControllerText_Menu_LoadSlotRequestedLog,(unsigned long)Read32(root,0xD0),(unsigned long)Read32(root,0xD4));
         ((This1)g_profile->menu_load_submit)(root,-1);state.barrier=true;
     }
 }
@@ -862,7 +863,7 @@ void Menu_Update(void)
         if (restore) {state=resume_grid;memset(&resume_grid,0,sizeof resume_grid);}
         state.root=root;if (!restore) state.id=kind==5 ? 0xFFFFFFFFu:0;state.direction=0;
         state.owned=true;state.barrier=true;frame_captured=true;
-        Log_Write("[菜单路由] 页面=%02lX 类型=%d 来源=手柄；等待旧输入释放。",(unsigned long)Read32(root,0x28),kind);
+        Log_Write(ControllerText_Menu_RoutingChangedLog,(unsigned long)Read32(root,0x28),kind);
     }
     if (state.barrier) {
         /* 进入/离开页面和接管时先吸收旧操作；中立帧本身也不执行按钮。 */
@@ -913,19 +914,19 @@ void Menu_Update(void)
         bool left=(g_intent.pressed & KEY(PAD_LB))!=0,right=(g_intent.pressed & KEY(PAD_RB))!=0;
         if (left!=right) {
             ((This1)g_profile->menu_skill_switch)(root,left ? 0x7F:0x80);
-            Log_Write("[技能菜单] 切换到%s。",left ? "技能学习":"连招编辑");
+            Log_Write(ControllerText_Menu_SkillPageChangedLog,left ? ControllerText_Menu_SkillLearningLabel:ControllerText_Menu_ComboEditorLabel);
             state.skill_region=0;state.id=0;state.direction=0;state.barrier=true;return;
         }
         if (Read32(root,0xC0)==0x80) {
             if (g_intent.pressed & KEY(PAD_X)) {
                 /* X只切换焦点区域，绝不调用原辅助删除。必须松开后才允许下一次确认。 */
                 state.skill_region^=1;state.id=0;state.direction=0;state.barrier=true;
-                Log_Write("[技能菜单] 焦点区域=%s。",state.skill_region ? "上方连招清单":"下方可选技能");
+                Log_Write(ControllerText_Menu_SkillFocusRegionChangedLog,state.skill_region ? ControllerText_Menu_ComboListRegionLabel:ControllerText_Menu_AvailableSkillsRegionLabel);
                 return;
             }
             if ((g_intent.pressed & KEY(PAD_Y)) && Read32(root,0xC4)<4) {
                 ((This1)g_profile->menu_skill_slot)(root,(int)((Read32(root,0xC4)+1)%4));
-                Log_Write("[技能菜单] 当前编辑套组=%lu。",(unsigned long)Read32(root,0xC4)+1);
+                Log_Write(ControllerText_Menu_EditingComboGroupLog,(unsigned long)Read32(root,0xC4)+1);
                 /* 下方技能不因切套组改变，保留其业务ID；上方节点保留同一位置。
                  * 若新组更短，下面统一合法项校正会选末项，不清零回首项。 */
                 state.direction=0;state.barrier=true;project();return;
@@ -960,7 +961,7 @@ void Menu_Update(void)
         if (state.id!=list[selected].id) focus_sound(kind);
         state.id=list[selected].id;
         state.next_repeat=g_input.now+(dir==state.direction ? 110u:350u);
-        Log_Write("[菜单焦点] 页面=%02lX 控件=%02X。",(unsigned long)Read32(root,0x28),state.id);
+        Log_Write(ControllerText_Menu_ControlFocusedLog,(unsigned long)Read32(root,0x28),state.id);
         project();
     }
     state.direction=dir;
@@ -983,7 +984,7 @@ void Menu_Update(void)
         return;
     }
     if (!(g_intent.pressed & KEY(PAD_A))) return;
-    Log_Write("[菜单操作] 页面=%02lX 控件=%02X 确认。",(unsigned long)Read32(root,0x28),state.id);
+    Log_Write(ControllerText_Menu_ControlConfirmedLog,(unsigned long)Read32(root,0x28),state.id);
     if (kind==5) {
         /* 2C4是鼠标按下/释放配对标记，不是业务ready；手柄语义不能要求先伪造鼠标按下。
          * 真正保留的是原显示时间防穿透和外传输入冷却，随后提交独立选项。 */
@@ -992,7 +993,7 @@ void Menu_Update(void)
         bool recent=(int32_t)delta>=-10 && (int32_t)delta<=10;
         if (!recent && !delayed) {
             project();((This0)g_profile->menu_talk_select)(root);Menu_Suspend();
-        } else Log_Write("[对话] 原显示保护期或外传输入冷却内，本次不提交。");
+        } else Log_Write(ControllerText_Menu_DialogueCooldownRejectedLog);
     } else if (grid_kind(kind)) {
         void *container=grid_container();uint32_t before=Read32(container,0x2C4);
         bool cell=kind<=SHOP_KIND ? state.id>=GRID_CELL_BASE && state.id<GRID_CELL_BASE+50:
@@ -1288,7 +1289,7 @@ bool Menu_Initialize(void)
     if (!HookManager_Claim(SHARED_HOOK_CONTROLLER_MENU,RUNTIME_MODULE_CONTROLLER)) return false;
     for (unsigned i=0;i<MENU_KINDS;++i) for (unsigned j=0;j<3;++j) {
         if (!Memory_Patch((void *)(tables[i]+offsets[j]),&replacement[i][j],4)) {
-            Menu_Shutdown();Log_Write("[菜单][停止] 焦点入口安装失败，已撤回本批菜单槽。");return false;
+            Menu_Shutdown();Log_Write(ControllerText_Menu_FocusHooksInstallFailedLog);return false;
         }
     }
     if (!Memory_Readable((void *)g_profile->menu_talk_picker_call,5)) {Menu_Shutdown();return false;}
@@ -1322,6 +1323,6 @@ bool Menu_Initialize(void)
         if (!shop_positions_installed[i]) {Menu_Shutdown();return false;}
     }
     installed=true;state.barrier=true;
-    Log_Write("[菜单] 标题/读档/系统/对话/日志/技能/背包/储物箱已安装；A原操作，B分级取消，X切已显示格子页，Y切格子/按钮。");
+    Log_Write(ControllerText_Menu_HooksInstalledLog);
     return true;
 }

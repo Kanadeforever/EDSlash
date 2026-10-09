@@ -1,3 +1,4 @@
+#include "ControllerText.h"
 #include "Guard.h"
 #include "../../Runtime/Perf.h"
 #include "Combat.h"
@@ -82,7 +83,7 @@ int Guard_Hit(void *role,int index)
          * 后面的防御判定读取清理后的状态，归零后的受击由原版继续决定。 */
         ((RoleAction)(uintptr_t)Read32((void *)table,0x5C))(role,16,0,0,0,0,0);
     }
-    Log_Write("[防御受击] 扣减体力=%.2f，体力=%.2f；原版防御状态=%u。",
+    Log_Write(ControllerText_Guard_HitStaminaChargedLog,
               (double)cost,(double)stamina,(unsigned)*((BYTE *)role+0x219));
     return ((This1)g_profile->guard_get)(role,index);
 }
@@ -99,7 +100,7 @@ void Guard_RecoverHit(void *victim,void *attacker,float health_before,bool was_e
     float amount=stamina_per_hit(attacker,true);
     if (amount<=0) return;
     ((Adjust)g_profile->stamina_adjust)(attacker,amount);
-    Log_Write("[攻击命中] 敌人生命 %.2f→%.2f，恢复体力=%.2f。",
+    Log_Write(ControllerText_Guard_AttackHitStaminaRecoveredLog,
               (double)health_before,(double)health_after,(double)amount);
 }
 
@@ -136,7 +137,7 @@ static int __attribute__((fastcall)) receiver_hook(void *victim,void *unused,voi
             bits=Read32(victim,g_profile->stamina_offset);memcpy(&stamina_after,&bits,4);
             void *method=ReadPtr(runtime,0x8F);
             unsigned reaction=Memory_Readable(method,0x61) ? *((BYTE *)method+0x60):255;
-            Log_Write("[防御诊断] 生命=%.2f→%.2f 体力=%.2f→%.2f 防御=%u→%u 状态=%u→%u 朝向=%u 受击反应=%u 攻击位置=%d,%d 玩家位置=%d,%d。",
+            Log_Write(ControllerText_Guard_HitStateDiagnosticsLog,
                 (double)health_before,(double)after,(double)stamina_before,(double)stamina_after,
                 guard_before,(unsigned)*((BYTE *)victim+0x219),state_before,Read32(victim,0x73),facing_before,reaction,
                 (int)Read32(runtime,0x2C),(int)Read32(runtime,0x30),(int)Read32(victim,0x2C),(int)Read32(victim,0x30));
@@ -278,8 +279,8 @@ static void __attribute__((fastcall)) dodge_motion_hook(void *role,void *unused)
         dash.active=false;
         /* 位移结束发原版idle事件，不直接改状态编号；动画收尾和其它副作用仍由原版处理。 */
         ((This4)g_profile->install_state)(role,1,0,0,0);
-        Log_Write("[方向闪避] 结束，实际位置=%d,%d，%s。",(int)Read32(role,0x2C),
-                  (int)Read32(role,0x30),blocked ? "碰撞提前停止":"达到配置距离");
+        Log_Write(ControllerText_Dodge_FinishedLog,(int)Read32(role,0x2C),
+                  (int)Read32(role,0x30),blocked ? ControllerText_Dodge_StoppedByCollisionReason:ControllerText_Dodge_ConfiguredDistanceReachedReason);
     }
 }
 
@@ -327,7 +328,7 @@ void Guard_Update(void *role)
     dodge_request=false;dodge_actor=NULL;
     if (result) {
         dodge_retries=0;
-        Log_Write("[方向闪避] 原版启动成功，参考点=%d,%d，方向=%d；摇杆回中后重新触发。",
+        Log_Write(ControllerText_Dodge_NativeStartSucceededLog,
                   point.x,point.y,dodge_direction);
     }
 }
@@ -375,14 +376,14 @@ bool Guard_Initialize(void)
 {
     if (installed) return true;
     Guard_ApplySettings();
-    Log_Write("[战斗配置] 防御受击扣费=%u；0 时恢复原版周期空耗。",charge_guard_on_hit ? 1u:0u);
-    Log_Write("[战斗配置] 奔跑免扣费=%u；不再按战斗状态区分。",free_run ? 1u:0u);
-    Log_Write("[战斗配置] 全方位格挡=%u；只放宽已有防御角度，原5点体力门和特殊穿防保留。",omnidirectional_guard ? 1u:0u);
-    Log_Write("[战斗配置] 方向闪避=%u；距离=%d世界单位（64单位=1格）。",modern_dodge ? 1u:0u,dodge_distance);
-    if (guard_hit_cost>=0) Log_Write("[战斗配置] 防御受击扣减最大体力的%d.%02d%%。",guard_hit_cost/100,guard_hit_cost%100);
-    else Log_Write("[战斗配置] 防御受击使用角色原周期扣费。" );
-    if (attack_hit_recovery>=0) Log_Write("[战斗配置] 实伤恢复最大体力的%d.%02d%%。",attack_hit_recovery/100,attack_hit_recovery%100);
-    else Log_Write("[战斗配置] 实伤恢复跟随防御扣费幅度。" );
+    Log_Write(ControllerText_Guard_ChargeOnHitConfigLog,charge_guard_on_hit ? 1u:0u);
+    Log_Write(ControllerText_Guard_RunWithoutCostConfigLog,free_run ? 1u:0u);
+    Log_Write(ControllerText_Guard_OmnidirectionalConfigLog,omnidirectional_guard ? 1u:0u);
+    Log_Write(ControllerText_Dodge_DirectionAndDistanceConfigLog,modern_dodge ? 1u:0u,dodge_distance);
+    if (guard_hit_cost>=0) Log_Write(ControllerText_Guard_PercentCostConfigLog,guard_hit_cost/100,guard_hit_cost%100);
+    else Log_Write(ControllerText_Guard_OriginalCostConfigLog );
+    if (attack_hit_recovery>=0) Log_Write(ControllerText_Guard_PercentRecoveryConfigLog,attack_hit_recovery/100,attack_hit_recovery%100);
+    else Log_Write(ControllerText_Guard_RecoveryMatchesCostConfigLog );
     uintptr_t targets[9]={g_profile->guard_periodic_call,g_profile->guard_hit_call,
                          g_profile->guard_input_release_call,g_profile->guard_run_call,g_profile->dodge_gate,g_profile->hit_receiver,g_profile->dodge_init_call,g_profile->dodge_motion_call,g_profile->guard_angle_gate};
     uintptr_t replacements[9]={(uintptr_t)periodic_hook,(uintptr_t)hit_hook,
@@ -423,11 +424,11 @@ bool Guard_Initialize(void)
         if (!Memory_Patch((void *)targets[i],bytes,(i==4 || i==5 || i==8) ? 6:5)) {
             while (i) {--i;Memory_Patch((void *)targets[i],saved[i],(i==4 || i==5 || i==8) ? 6:5);}
             VirtualFree(receiver_gateway,0,MEM_RELEASE);receiver_gateway=NULL;original_receiver=NULL;
-            Log_Write("[防御][停止] 入口安装失败，撤回本模块修改。");return false;
+            Log_Write(ControllerText_Guard_HooksInstallFailedLog);return false;
         }
     }
     installed=true;
-    Log_Write("[防御] 原生 ON/OFF、可配置防御/奔跑扣费及方向闪避入口已安装；原版耗尽规则保留。");
+    Log_Write(ControllerText_Guard_HooksInstalledLog);
     return true;
 }
 

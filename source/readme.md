@@ -79,4 +79,10 @@ GCC16的SDL HID单元使用-fno-ipa-cp-clone，避免编译器丢失被函数表
 
 正式构建成功后默认清理根.build；--checks-only或失败保留诊断，--keep-build保留增量缓存。随机核心195611项脚本回归和新名称窗口适配纳入构建，原始证据/正式产物不放缓存。
 
-设置的第四页“关于”显示CMake项目版本、当前源码摘要和作者；版本由PROJECT_VERSION提供，作者在Runtime/BuildInfo.h维护。关于文案和只读滚动在SettingsWindow.c，不改变TOML配置格式。
+设置的第四页“关于”显示CMake项目版本、当前源码摘要和作者；版本由PROJECT_VERSION提供，作者在Runtime/RuntimeText.c维护，BuildInfo.h提供统一引用。关于文案在Runtime/RuntimeText.c，只读滚动在SettingsWindow.c，不改变TOML配置格式。
+
+## 开发阶段文本维护
+
+项目自有界面与日志文本编译进ASI，不读取外置语言文件。每个模块的文字集中在对应目录的RuntimeText.c、ControllerText.c、QOLText.c、DisplayFixText.c；配套Text.h只声明常量。开发时编辑.c中的字符串，保留变量名和格式占位符，随后运行build.bat重新编译。变量以模块、具体功能和文本用途命名，不使用流水编号。例如RuntimeText_Config_StickDeadzoneLabel是摇杆死区名称，RuntimeText_Config_StickDeadzoneDescription是其说明，ControllerText_Device_DisconnectedLog是手柄断开日志。新增文字必须用能说明用途的名字；仅修改措辞或翻译时保持变量名。相同用途、相同内容的文本共用定义。
+
+随机姓名词库RandomNameData.h属于功能数据，保持原样；原游戏技能／物品文字仍从游戏读取。配置键、文件路径、导出符号、签名掩码等程序标识不作为可翻译文案。四样本名称在ControllerText.c定义，地址表生成器只引用对应常量。版本号和构建摘要仍由构建系统提供，作者及未指定时的显示文字在RuntimeText.c维护。修改翻译不代表原游戏字体具备对应字形，仍需实机检查显示。

@@ -56,7 +56,9 @@ target_link_options(EDSlash PRIVATE -static -static-libgcc -static-libstdc++ -Wl
 target_compile_definitions(EDSlash PRIVATE SDL_STATIC_LIB EDSLASH_BUILD_ID="${EDSLASH_BUILD_ID}")
 enable_testing()
 function(edslash_test name)
-    add_executable(${name} ${ARGN})
+    add_executable(${name} ${ARGN} src/Runtime/RuntimeText.c
+        src/Modules/Controller/ControllerText.c src/Modules/QOL/QOLText.c
+        src/Modules/DisplayFix/DisplayFixText.c)
     target_include_directories(${name} PRIVATE src/Modules/Controller src)
     target_compile_options(${name} PRIVATE -O2 -Wall -Wextra -Werror -finput-charset=UTF-8 -fexec-charset=UTF-8)
     target_link_options(${name} PRIVATE -static -static-libgcc)
@@ -143,7 +145,7 @@ edslash_test(test_sdl tools/controller/test_sdl.c src/Modules/Controller/Input.c
 target_compile_definitions(test_sdl PRIVATE SDL_STATIC_LIB)
 target_link_libraries(test_sdl PRIVATE SDL3::SDL3-static user32 m)
 target_link_options(test_sdl PRIVATE -static-libstdc++)
-add_executable(config_template tools/config_template.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c)
+add_executable(config_template src/Runtime/RuntimeText.c tools/config_template.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c)
 target_compile_options(config_template PRIVATE -municode -Wall -Wextra -Werror -finput-charset=UTF-8 -fexec-charset=UTF-8)
 target_link_options(config_template PRIVATE -municode -static -static-libgcc)
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/EDSlash.toml"

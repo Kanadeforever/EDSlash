@@ -1,3 +1,4 @@
+#include "RuntimeText.h"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <string.h>
@@ -6,7 +7,7 @@
 static int64_t frequency,report_at,last_frame,interval_total,interval_max;
 static unsigned owner,frames,interval_count;
 static struct {int64_t total,maximum;unsigned count;} samples[PERF_COUNT];
-static const char *labels[PERF_COUNT]={"原版输入刷新","SDL采样","目标遍历","手柄业务","受击包装","原生受击","自动拾取","调查探测"};
+static const char *labels[PERF_COUNT]={RuntimeText_Perf_NativeInputStage,RuntimeText_Perf_SdlSamplingStage,RuntimeText_Perf_TargetTraversalStage,RuntimeText_Perf_ControllerStage,RuntimeText_Perf_HitWrapperStage,RuntimeText_Perf_NativeHitStage,RuntimeText_Perf_AutoPickupStage,RuntimeText_Perf_InteractionProbeStage};
 void RuntimePerf_Initialize(void)
 {
     if (frequency) return;
@@ -39,15 +40,15 @@ void RuntimePerf_FrameEnd(void)
     last_frame=now;
     if (now-report_at<frequency*5) return;
     double elapsed=(double)(now-report_at)/(double)frequency;
-    RuntimeLog_Write("[性能] 窗口=%.2f秒 输入次数=%u 输入间隔平均=%.3f毫秒 最大=%.3f毫秒",
+    RuntimeLog_Write(RuntimeText_Perf_InputIntervalSummaryLog,
         elapsed,frames,interval_count ? (double)interval_total*1000.0/(double)frequency/interval_count:0.0,
         (double)interval_max*1000.0/(double)frequency);
     for (unsigned i=0;i<PERF_COUNT;++i) if(samples[i].count)
-        RuntimeLog_Write("[性能][%s] 次数=%u 平均=%.3f毫秒 最大=%.3f毫秒 合计=%.3f毫秒",
+        RuntimeLog_Write(RuntimeText_Perf_StageTimingSummaryLog,
             labels[i],samples[i].count,(double)samples[i].total*1000.0/frequency/samples[i].count,
             (double)samples[i].maximum*1000.0/frequency,(double)samples[i].total*1000.0/frequency);
     RuntimeLogStats log;RuntimeLog_GetStats(&log);
-    RuntimeLog_Write("[性能][日志] 文件打开=%lu 写入次数=%lu 队列字节=%lu 丢失消息=%lu",
+    RuntimeLog_Write(RuntimeText_Perf_LogQueueSummaryLog,
         log.file_opens,log.file_writes,log.queued_bytes,log.dropped_messages);
     memset(samples,0,sizeof samples);frames=interval_count=0;interval_total=interval_max=0;report_at=now;
 }

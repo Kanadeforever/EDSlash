@@ -1,3 +1,4 @@
+#include "ControllerText.h"
 #include "Plugin.h"
 #include "Crash.h"
 #include "../../Runtime/Focus.h"
@@ -9,9 +10,9 @@
 static PVOID exception_hook;
 static WCHAR report_path[1024];
 static volatile LONG writing;
-static const char *current_stage="手柄普通运行";
+static const char *current_stage=ControllerText_Crash_NormalInputStage;
 static char report[2048];
-void Crash_Stage(const char *stage) {current_stage=stage ? stage:"未知阶段";}
+void Crash_Stage(const char *stage) {current_stage=stage ? stage:ControllerText_Crash_UnknownStage;}
 static LONG CALLBACK record_exception(EXCEPTION_POINTERS *details)
 {
     if (!RuntimeLog_Enabled())return EXCEPTION_CONTINUE_SEARCH;
@@ -31,10 +32,7 @@ static LONG CALLBACK record_exception(EXCEPTION_POINTERS *details)
     ULONG_PTR access=e->NumberParameters>0 ? e->ExceptionInformation[0]:0;
     ULONG_PTR address=e->NumberParameters>1 ? e->ExceptionInformation[1]:0;
     int length=snprintf(report,sizeof report,
-        "异常记录 %04u-%02u-%02u %02u:%02u:%02u\r\n最近手柄阶段=%s\r\n异常=%08lX 地址=%08lX 模块=%s 偏移=%08lX\r\n"
-        "访问类型=%lu 故障地址=%08lX 线程=%lu 输入层=%d 按键=%08lX\r\n"
-        "EIP=%08lX ESP=%08lX EBP=%08lX EAX=%08lX EBX=%08lX ECX=%08lX EDX=%08lX ESI=%08lX EDI=%08lX\r\n"
-        "这是首次异常记录，不吞异常；最终退出由游戏/系统原处理链决定。\r\n\r\n",
+        ControllerText_Crash_ReportFormat,
         time.wYear,time.wMonth,time.wDay,time.wHour,time.wMinute,time.wSecond,
         RuntimeFocus_Stage() ? RuntimeFocus_Stage():current_stage,
         code,(DWORD)(uintptr_t)e->ExceptionAddress,utf8,(DWORD)((uintptr_t)e->ExceptionAddress-(uintptr_t)module),
@@ -54,7 +52,7 @@ int Crash_Initialize(void)
     const RuntimeContext *runtime=Runtime_GetContext();
     /* 离线宿主没有真实ASI模块时不注册；正常游戏报告放在当前ASI旁。 */
     if(!runtime || !runtime->self_module)return 1;
-    if(!RuntimeFile_Sibling(runtime->self_module,L"EDSlash崩溃记录.txt",report_path,1024))return 0;
+    if(!RuntimeFile_Sibling(runtime->self_module,ControllerText_Crash_ReportFileName,report_path,1024))return 0;
     exception_hook=AddVectoredExceptionHandler(1,record_exception);
     return exception_hook!=NULL;
 }

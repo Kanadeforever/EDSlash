@@ -1,3 +1,4 @@
+#include "RuntimeText.h"
 #include "Focus.h"
 #include "Win32Bridge.h"
 #include "Log.h"
@@ -37,7 +38,7 @@ static void tile(void *frame,void *surface,int x,int y,int width,int height,int 
 {
     /* 即使上层尺寸有问题也拒绝越界，不把目标矩形直接当源图复制范围。 */
     if (width<=0 || height<=0 || sx<0 || sy<0 || sx+width>source_width || sy+height>source_height) return;
-    set_stage("焦点框：原源图矩形裁取");
+    set_stage(RuntimeText_Focus_SourceRectReadStage);
     ((RectDraw)backend.rect_draw)(frame,surface,x,y,width,height,sx,sy,mode,shade,NULL);
 }
 static bool border(void *frame,void *surface,const RuntimeFocusRect *r,int sw,int sh,int mode,int shade)
@@ -45,7 +46,7 @@ static bool border(void *frame,void *surface,const RuntimeFocusRect *r,int sw,in
     int width=r->right-r->left,height=r->bottom-r->top;
     if (width==sw && height==sh) {
         /* 快捷格通常和原框同尺寸：使用游戏原常规Draw，完全不走裁取入口。 */
-        set_stage("焦点框：原常规动态精灵");
+        set_stage(RuntimeText_Focus_SpriteReadStage);
         ((SpriteDraw)backend.sprite_draw)(frame,surface,r->left,r->top,mode,shade,0);return true;
     }
     /* 较大的候选框按九块拼接：四角不变，四边重复原边缘片段，中央透明不画。
@@ -109,7 +110,7 @@ static void focus_render(RuntimeEventId event,void *subject,unsigned long surfac
     void *data=focus_readptr(frame,0);
     /* 一帧记录22字节。先检查动画表和当前下标，再调用原Frame getter，不让空精灵进原函数。 */
     if (!frames || frames>4096 || index>=frames || !focus_readable(data,frames*22u)) return;
-    set_stage("焦点框：原动画帧读取");
+    set_stage(RuntimeText_Focus_AnimationFrameReadStage);
     void *description=(void *)(uintptr_t)((This0)backend.frame_get)(frame);
     if (!focus_readable(description,22)) return;
     /* 图像getter会解引用帧里的资源管理器和登记表，不能只验证帧表本身。
@@ -118,7 +119,7 @@ static void focus_render(RuntimeEventId event,void *subject,unsigned long surfac
     unsigned resource=focus_read32(description,4)&0xFFFFFu;
     if (!focus_readable(bank,8) || !focus_readable((BYTE *)entries+resource*4u,4) ||
         !focus_readable(focus_readptr(entries,resource*4u),0x28)) return;
-    set_stage("焦点框：原图像读取");
+    set_stage(RuntimeText_Focus_ImageReadStage);
     void *image=(void *)(uintptr_t)((This0)backend.image_get)(description);
     if (!focus_readable(image,0x14) || !focus_readable((void *)(uintptr_t)surface,0x14)) return;
     int sw=(int)focus_read32(image,0xC),sh=(int)focus_read32(image,0x10);
@@ -128,8 +129,8 @@ static void focus_render(RuntimeEventId event,void *subject,unsigned long surfac
     unsigned kind=1u<<(unsigned)owner;
     if(!(logged_kind&kind)) {
         logged_kind|=kind;
-        RuntimeLog_Write("[焦点绘制] %s 原图=%d,%d 目标=%ld,%ld；同尺寸原Draw，异尺寸原图边缘拼接，禁止越界裁取。",
-            "共享焦点",sw,sh,(long)(rectangle.right-rectangle.left),(long)(rectangle.bottom-rectangle.top));
+        RuntimeLog_Write(RuntimeText_Focus_DrawGeometryLog,
+            RuntimeText_Focus_SharedFrameLabel,sw,sh,(long)(rectangle.right-rectangle.left),(long)(rectangle.bottom-rectangle.top));
     }
     /* 原SpriteDraw和RectDraw都把帧的E/10位置减12/14原点后加到目标坐标。
      * 提供者传的是最终可见矩形，先减掉这个偏移，动画换帧也每帧重读。

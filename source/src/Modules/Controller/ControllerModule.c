@@ -1,3 +1,4 @@
+#include "ControllerText.h"
 #include "Plugin.h"
 #include "ControllerModule.h"
 #include "../../Runtime/Log.h"
@@ -49,7 +50,7 @@ static void use_physical_mouse(void)
     ActionMenu_Suspend();Menu_Suspend();Game_Release();Combat_Suspend();
     native_control=true;
     memset(&g_intent,0,sizeof g_intent);g_intent.layer=LAYER_NATIVE;
-    Log_Write("[输入来源] 物理鼠标接管；恢复原版鼠标解析、重试和动作历史。");
+    Log_Write(ControllerText_InputSource_MouseTakeoverLog);
 }
 
 static LRESULT CALLBACK window_hook(HWND window, UINT message, WPARAM wp, LPARAM lp)
@@ -114,7 +115,7 @@ void Write32(void *p, unsigned offset, uint32_t value)
 static bool patch(void *where, const void *data, size_t count)
 {
     int result=RuntimeWin32_WriteCode((unsigned long)(uintptr_t)where,data,(unsigned long)count);
-    if (result==2) Log_Write("[补丁][警告] 字节已写入，但缓存／保护处理失败，保留相关资源。");
+    if (result==2) Log_Write(ControllerText_Patch_WriteFinalizationFailedLog);
     return result!=0;
 }
 
@@ -144,7 +145,7 @@ static BOOL WINAPI keyboard_hook(PBYTE keys)
             SetLastError(0);
             WNDPROC old = (WNDPROC)SetWindowLongPtrW(foreground,GWLP_WNDPROC,(LONG_PTR)window_hook);
             if (old) { previous_window_proc = old; hooked_window = foreground; }
-            else Log_Write("[窗口] 未安装失焦清理入口，错误码=%lu。",GetLastError());
+            else Log_Write(ControllerText_Window_FocusLossHookFailedLog,GetLastError());
         }
     }
     g_input.menu = Game_Menu();
@@ -175,7 +176,7 @@ static BOOL WINAPI keyboard_hook(PBYTE keys)
     g_intent = Control_Step(&control, &g_input);
     if (native_control && fresh_pad && !control.mouse) {
         Combat_ImportHistory();native_control=false;
-        Log_Write("[输入来源] 新的手柄操作接管；恢复独立手柄动作解析。");
+        Log_Write(ControllerText_InputSource_ControllerTakeoverLog);
     }
     if (native_control && !control.mouse && !g_intent.mode_changed) {
         memset(&g_intent,0,sizeof g_intent);g_intent.layer=LAYER_NATIVE;
@@ -207,7 +208,7 @@ static BOOL WINAPI keyboard_hook(PBYTE keys)
     if (g_intent.mode_changed || !g_input.connected || !g_input.focused) Combat_Reset();
     if (g_intent.mode_changed) {
         Input_Rumble(g_intent.rumble_ms);
-        Log_Write("[模式] 已切换为%s，震动 %u 毫秒。", control.mouse ? "鼠标模式" : "手柄模式", g_intent.rumble_ms);
+        Log_Write(ControllerText_InputMode_ChangedLog, control.mouse ? ControllerText_InputMode_MouseLabel : ControllerText_InputMode_ControllerLabel, g_intent.rumble_ms);
     }
     Input_Mouse(g_intent.layer == LAYER_MOUSE && !g_intent.mode_changed);
     /* 菜单不能依赖世界/玩家就绪；在真实游戏键盘采样线程完成独立焦点与业务。 */
@@ -279,9 +280,9 @@ static void initialize_runtime(void)
     /* 此时已经离开 DllMain 的 Loader 锁，允许文件散列、配置与 SDL 初始化。
        先置失败状态；只有所有验证和安装成功才改成可运行，递归也不会重复初始化。 */
     runtime_state = -1;
-    Log_Write("[Controller] 统一模块启动，战斗复用原生动作协议，菜单使用独立焦点与原生入口。");
+    Log_Write(ControllerText_Startup_ModuleInitializingLog);
     if (!Profile_Select() || !Profile_Verify()) {
-        Log_Write("[停止] Controller基线或机器码不匹配，撤回采样入口，其他模块继续。");
+        Log_Write(ControllerText_Startup_ProfileMismatchLog);
         if (*(void **)g_profile->keyboard_iat==(void *)keyboard_hook)
             patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
         Input_Shutdown();return;
@@ -291,7 +292,7 @@ static void initialize_runtime(void)
     if (!Input_Initialize()) {
         if (*(void **)g_profile->keyboard_iat==(void *)keyboard_hook)
             patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
-        Log_Write("[停止] SDL初始化失败，撤回采样入口，其他模块继续。");
+        Log_Write(ControllerText_Startup_SdlInitializationFailedLog);
         Input_Shutdown();return;
     }
     original_async = *(void **)g_profile->async_iat;
@@ -306,7 +307,7 @@ static void initialize_runtime(void)
     /* 任一步失败都撤回前面已经写入的槽，不能留下半套输入桥。 */
     if (!patch((void *)g_profile->resolver_call, replacement, 5)) {
         patch((void *)g_profile->keyboard_iat, &original_keyboard, 4);
-        Log_Write("[停止] 无法安装动作阶段，已撤回采样入口。"); Input_Shutdown();return;
+        Log_Write(ControllerText_Startup_ActionStageInstallFailedLog); Input_Shutdown();return;
     }
     if (!patch((void *)g_profile->async_iat, &async, 4)) {
         patch((void *)g_profile->keyboard_iat, &original_keyboard, 4);
@@ -347,18 +348,18 @@ static void initialize_runtime(void)
         patch((void *)g_profile->async_iat,&original_async,4);
         patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
         patch((void *)g_profile->resolver_call,saved_call,5);
-        Log_Write("[停止] 防御/闪避/菜单入口未通过安装，已撤回手柄动作阶段。");Input_Shutdown();return;
+        Log_Write(ControllerText_Startup_GameplayHooksInstallFailedLog);Input_Shutdown();return;
     }
     installed = true;
     runtime_state = 1;
-    Log_Write("[启动] %s；SDL、输入采样和原版目标解析后阶段已就绪。", g_profile->name);
+    Log_Write(ControllerText_Startup_BusinessReadyLog, g_profile->name);
 }
 
 int ControllerModule_Initialize(const RuntimeContext *runtime)
 {
     if (!runtime || !runtime->profile) return 0;
     if (GetModuleHandleW(L"EDSlashController.asi")) {
-        Log_Write("[Controller][停止] 检测到旧独立ASI，请停用它后使用统一插件。");return 0;
+        Log_Write(ControllerText_Startup_LegacyAsiDetectedLog);return 0;
     }
     if (InterlockedCompareExchange(&initialized,1,0)) return installed;
     self_module=(HINSTANCE)runtime->self_module;
@@ -376,7 +377,7 @@ int ControllerModule_Initialize(const RuntimeContext *runtime)
     if (!patch((void *)g_profile->keyboard_iat,&hook,4)) {
         HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);return 0;
     }
-    Log_Write("[Controller] 采样桥已安装，完整初始化延后到游戏输入线程。");return 1;
+    Log_Write(ControllerText_Startup_SamplingBridgeInstalledLog);return 1;
 }
 void ControllerModule_Shutdown(void)
 {

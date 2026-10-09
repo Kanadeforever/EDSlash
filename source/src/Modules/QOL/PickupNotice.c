@@ -1,3 +1,4 @@
+#include "QOLText.h"
 #include "PickupNotice.h"
 #include "../../Runtime/Win32Bridge.h"
 
@@ -121,7 +122,7 @@ void PickupNotice_After(const PickupNoticeSnapshot *before)
     do {digits[used++]=(char)('0'+value%10ul);value/=10ul;} while(value && used<10ul);
     while(used) notices[index].text[n++]=digits[--used];
     notices[index].text[n]=0;
-    RuntimeWin32_LogNumber(g_self_module,"[QoL][拾取提示] 实际新增数量=",after-before->before);
+    RuntimeWin32_LogNumber(g_self_module,QOLText_PickupNotice_AddedQuantityLog,after-before->before);
 }
 
 static void draw_notices(RuntimeEventId event,void *subject,unsigned long context,unsigned long unused,void *user)
@@ -156,6 +157,6 @@ int PickupNotice_Initialize(const RuntimeContext *runtime)
     }
     if (!Runtime_Subscribe(RUNTIME_EVENT_UI_DRAW_END,draw_notices,(void *)0)) return 0;
     g_self_module=runtime->self_module;notice_count=0ul;g_enabled=1;
-    RuntimeWin32_Log(g_self_module,"[QoL] 成功拾取提示已接入原版字体和公共UI绘制事件。");return 1;
+    RuntimeWin32_Log(g_self_module,QOLText_PickupNotice_DrawingReadyLog);return 1;
 }
 void PickupNotice_Disable(void) { g_enabled=0;notice_count=0ul; }

@@ -1,3 +1,4 @@
+#include "ControllerText.h"
 #include "Plugin.h"
 #include <wincrypt.h>
 #include <stdio.h>
@@ -40,7 +41,7 @@ bool Profile_Select(void)
     if (!CryptGetHashParam(hash, HP_HASHVAL, digest, &size, 0)) goto done;
     char hex[65];
     for (unsigned i = 0; i < 32; ++i) snprintf(hex + i*2, 3, "%02x", digest[i]);
-    Log_Write("[基线] 当前 EXE SHA-256=%s", hex);
+    Log_Write(ControllerText_Profile_ExecutableHashLog, hex);
     /* 同一游戏的Steam/非Steam准确档案可按文件散列切换，不能跨本体/外传改身份。
      * 四样本的共用入口已逐项离线核对；切换后仍完整检查各自的内存签名。 */
     unsigned game=g_profile ? g_profile->game_id:0;
@@ -65,7 +66,7 @@ bool Profile_Verify(void)
         const Signature *sig = &signatures[selected][i];
         if (!Memory_Readable((void *)sig->address, sizeof sig->bytes) ||
             memcmp((void *)sig->address, sig->bytes, sizeof sig->bytes)) {
-            Log_Write("[签名失败] 地址=0x%08lx，保持原游戏输入。", (unsigned long)sig->address);
+            Log_Write(ControllerText_Profile_SignatureMismatchLog, (unsigned long)sig->address);
             return false;
         }
     }
@@ -77,7 +78,7 @@ bool Profile_Verify(void)
     if (!Memory_Readable(picker,6) || picker[0]!=0x8B || picker[1]!=0x15) return false;
     memcpy(&map_address,picker+2,4);
     if (map_address!=g_profile->inspect_map_global) {
-        Log_Write("[签名失败] 静态选择器地图地址=%08lx，档案地址=%08lx，保持原游戏输入。",
+        Log_Write(ControllerText_Profile_StaticSelectorMapMismatchLog,
             (unsigned long)map_address,(unsigned long)g_profile->inspect_map_global);
         return false;
     }

@@ -1,3 +1,4 @@
+#include "DisplayFixText.h"
 /*
  * DisplayFix.c
  *
@@ -578,7 +579,7 @@ static void log_text(const char* label, const char* text)
     str_append(g_log_buffer, (DWORD)sizeof(g_log_buffer), label);
     /* 系统A版路径按当前代码页返回；先转UTF-8再与中文标签拼接。 */
     if(!RuntimeLog_AppendAnsi(g_log_buffer,sizeof g_log_buffer,text ? text:"(null)"))
-        str_append(g_log_buffer,(DWORD)sizeof g_log_buffer,"[路径转换失败]");
+        str_append(g_log_buffer,(DWORD)sizeof g_log_buffer,DisplayFixText_WaiZhuan_PathConversionFailedValue);
     str_append(g_log_buffer, (DWORD)sizeof(g_log_buffer), "\r\n");
 }
 
@@ -1831,13 +1832,13 @@ static HANDLE __stdcall steam_create_file_a_shim(LPCSTR name,
         if (g_steam_resjm_runtime_log_count < 4u) {
             char line[1400];
             line[0] = '\0';
-            str_copy(line, (DWORD)sizeof(line), "[运行] Steam原始ResJM.Lib重定向 -> ");
-            if(!RuntimeLog_AppendAnsi(line,sizeof line,localized_path))str_append(line,(DWORD)sizeof line,"[路径转换失败]");
+            str_copy(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_SteamResJmRedirectLog);
+            if(!RuntimeLog_AppendAnsi(line,sizeof line,localized_path))str_append(line,(DWORD)sizeof line,DisplayFixText_WaiZhuan_PathConversionFailedValue);
             str_append(line,
                        (DWORD)sizeof(line),
                        (localized_file != INVALID_HANDLE_VALUE)
-                           ? " 结果=成功"
-                           : " 结果=失败；继续尝试原始文件");
+                           ? DisplayFixText_WaiZhuan_SteamResJmRedirectSucceededValue
+                           : DisplayFixText_WaiZhuan_SteamResJmRedirectFailedValue);
             append_runtime_line(line);
             ++g_steam_resjm_runtime_log_count;
         }
@@ -2017,21 +2018,21 @@ static void append_child_brief(char* line, DWORD line_size, LPVOID child)
     DWORD control_id;
 
     if (!child) {
-        str_append(line, line_size, "无");
+        str_append(line, line_size, DisplayFixText_WaiZhuan_MissingObjectValue);
         return;
     }
 
     control_id = *(DWORD*)((BYTE*)child + UI_OBJECT_CONTROL_ID);
 
-    str_append(line, line_size, "指针=");
+    str_append(line, line_size, DisplayFixText_WaiZhuan_PointerLabel);
     append_hex32(line, line_size, (DWORD)child);
-    str_append(line, line_size, " ID=");
+    str_append(line, line_size, DisplayFixText_WaiZhuan_ObjectIdLabel);
     append_hex32(line, line_size, control_id);
-    str_append(line, line_size, " 激活=");
+    str_append(line, line_size, DisplayFixText_WaiZhuan_ActiveLabel);
     append_int(line, line_size, child_active_for_diagnostic(child) ? 1 : 0);
 
     if (read_child_rect(child, &rect)) {
-        str_append(line, line_size, " 矩形=");
+        str_append(line, line_size, DisplayFixText_WaiZhuan_RectLabel);
         append_int(line, line_size, rect.left);
         str_append(line, line_size, ",");
         append_int(line, line_size, rect.top);
@@ -2040,7 +2041,7 @@ static void append_child_brief(char* line, DWORD line_size, LPVOID child)
         str_append(line, line_size, ",");
         append_int(line, line_size, rect.bottom);
     } else {
-        str_append(line, line_size, " 矩形=无效");
+        str_append(line, line_size, DisplayFixText_WaiZhuan_InvalidRectValue);
     }
 }
 
@@ -2064,7 +2065,7 @@ static void log_hud_candidate_children(LPVOID self)
         if (control_id >= 0x09u && control_id <= 0x10u) {
             char line[384];
             line[0] = '\0';
-            str_append(line, (DWORD)sizeof(line), "[运行] HUD候选 ");
+            str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_HudCandidateLog);
             append_child_brief(line, (DWORD)sizeof(line), child);
             append_runtime_line(line);
         }
@@ -2169,9 +2170,9 @@ static void __fastcall strategy_enter_hook(LPVOID self, LPVOID unused_edx)
      */
     if (!g_steam_class_atom_runtime_logged && g_steam_class_atom_bypass_count > 0u) {
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[运行] Steam CreateWindowExA 类Atom保护命中次数=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_SteamWindowClassAtomGuardHitCountLog);
         append_int(line, (DWORD)sizeof(line), (LONG)g_steam_class_atom_bypass_count);
-        str_append(line, (DWORD)sizeof(line), " 最后Atom=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_LastWindowClassAtomLabel);
         append_hex32(line, (DWORD)sizeof(line), (DWORD)g_steam_last_class_atom);
         append_runtime_line(line);
         g_steam_class_atom_runtime_logged = TRUE;
@@ -2180,13 +2181,13 @@ static void __fastcall strategy_enter_hook(LPVOID self, LPVOID unused_edx)
     if (g_strategy_enter_log_count < 4u) {
         ++g_strategy_enter_log_count;
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[运行] Strategy进入 状态=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_StrategyEnterStateLog);
         if (self) {
             append_int(line, (DWORD)sizeof(line), *(LONG*)((BYTE*)self + 0x0Cu));
         } else {
             append_int(line, (DWORD)sizeof(line), -1);
         }
-        str_append(line, (DWORD)sizeof(line), profile_ok ? " GAMEPLAY配置=就绪" : " GAMEPLAY配置=失败");
+        str_append(line, (DWORD)sizeof(line), profile_ok ? DisplayFixText_WaiZhuan_GameplayConfigReadyValue : DisplayFixText_WaiZhuan_GameplayConfigFailedValue);
         append_runtime_line(line);
     }
 
@@ -2216,7 +2217,7 @@ static void __fastcall strategy_enter_hook(LPVOID self, LPVOID unused_edx)
      * 这里立刻回退 FRONTEND profile，让游戏至少保持原生 4:3 可玩，而不是产生 test13 那种 GUI 大错位。
      */
     if (profile_ok && !force_patch_ok) {
-        append_runtime_line("[运行] Strategy进入：强制重应用补丁失败；回退到FRONTEND配置");
+        append_runtime_line(DisplayFixText_WaiZhuan_ForceReapplyPatchFailedLog);
         set_frontend_resolution_profile();
         profile_ok = FALSE;
     }
@@ -2236,7 +2237,7 @@ static void __fastcall strategy_enter_hook(LPVOID self, LPVOID unused_edx)
     if (force_patch_ok) {
         force_restore_ok = patch_bytes(g_strategy_enter_force_immediate, &g_strategy_enter_force_original, 1u);
         if (!force_restore_ok) {
-            append_runtime_line("[运行] Strategy进入：强制重应用恢复失败；Strategy进入流程仍保持强制=1");
+            append_runtime_line(DisplayFixText_WaiZhuan_ForceReapplyRestoreFailedLog);
         }
     }
 
@@ -2250,19 +2251,19 @@ static void __fastcall strategy_enter_hook(LPVOID self, LPVOID unused_edx)
         (*(LONG*)((BYTE*)self + DISPLAY_CURRENT_HEIGHT_OFFSET) == (LONG)g_target_height);
 
     line[0] = '\0';
-    str_append(line, (DWORD)sizeof(line), "[运行] Strategy进入 原版应用完成 实际=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_StrategyEnterActualResolutionLog);
     append_int(line, (DWORD)sizeof(line), self ? *(LONG*)((BYTE*)self + DISPLAY_CURRENT_WIDTH_OFFSET) : 0);
     str_append(line, (DWORD)sizeof(line), "x");
     append_int(line, (DWORD)sizeof(line), self ? *(LONG*)((BYTE*)self + DISPLAY_CURRENT_HEIGHT_OFFSET) : 0);
-    str_append(line, (DWORD)sizeof(line), " 目标=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_TargetLabel);
     append_int(line, (DWORD)sizeof(line), (LONG)g_target_width);
     str_append(line, (DWORD)sizeof(line), "x");
     append_int(line, (DWORD)sizeof(line), (LONG)g_target_height);
-    str_append(line, (DWORD)sizeof(line), force_patch_ok ? " 强制=1" : " 强制=0");
+    str_append(line, (DWORD)sizeof(line), force_patch_ok ? DisplayFixText_WaiZhuan_ForceReapplyEnabledValue : DisplayFixText_WaiZhuan_ForceReapplyDisabledValue);
     append_runtime_line(line);
 
     if (profile_ok && !live_matches_target) {
-        append_runtime_line("[运行] Strategy进入：实际分辨率与目标不符；禁用GAMEPLAY HUD/JMM并恢复FRONTEND代码配置");
+        append_runtime_line(DisplayFixText_WaiZhuan_GameplayResolutionMismatchLog);
         set_frontend_resolution_profile();
     }
 
@@ -2408,16 +2409,16 @@ static void __fastcall strategy_exit_hook(LPVOID self, LPVOID unused_edx)
     if (g_strategy_exit_log_count < 4u) {
         ++g_strategy_exit_log_count;
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[运行] Strategy退出 原状态=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_StrategyLeaveStateLog);
         append_int(line, (DWORD)sizeof(line), old_state);
-        str_append(line, (DWORD)sizeof(line), profile_ok ? " FRONTEND配置=已恢复" : " FRONTEND配置=失败");
-        str_append(line, (DWORD)sizeof(line), " 重置模式=4 结果=");
+        str_append(line, (DWORD)sizeof(line), profile_ok ? DisplayFixText_WaiZhuan_FrontendConfigRestoredValue : DisplayFixText_WaiZhuan_FrontendConfigFailedValue);
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_ResetModeResultLabel);
         append_int(line, (DWORD)sizeof(line), (LONG)reset_result);
-        str_append(line, (DWORD)sizeof(line), " 实际=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_ActualResolutionLabel);
         append_int(line, (DWORD)sizeof(line), live_width);
         str_append(line, (DWORD)sizeof(line), "x");
         append_int(line, (DWORD)sizeof(line), live_height);
-        str_append(line, (DWORD)sizeof(line), " 目标=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_TargetLabel);
         append_int(line, (DWORD)sizeof(line), expected_width);
         str_append(line, (DWORD)sizeof(line), "x");
         append_int(line, (DWORD)sizeof(line), expected_height);
@@ -2425,7 +2426,7 @@ static void __fastcall strategy_exit_hook(LPVOID self, LPVOID unused_edx)
     }
 
     if (!live_matches_frontend) {
-        append_runtime_line("[运行] Strategy退出：FRONTEND强制重置失败；标题界面可能仍停留在游戏内Surface");
+        append_runtime_line(DisplayFixText_WaiZhuan_FrontendResetFailedLog);
     }
 }
 
@@ -2479,7 +2480,7 @@ static int __fastcall main_hud_layout_hook(LPVOID self, LPVOID unused_edx, LONG 
     if (!g_gameplay_profile_active) {
         if (g_frontend_hud_skip_log_count < 2u) {
             ++g_frontend_hud_skip_log_count;
-            append_runtime_line("[运行] FRONTEND HUD自动布局：保持原版4:3布局；不执行居中/JMM同步");
+            append_runtime_line(DisplayFixText_WaiZhuan_FrontendOriginalHudLayoutLog);
         }
         return result;
     }
@@ -2512,13 +2513,13 @@ static int __fastcall main_hud_layout_hook(LPVOID self, LPVOID unused_edx, LONG 
         char line[320];
         ++g_hud_layout_log_count;
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[运行] HUD布局 对象=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_HudLayoutObjectLog);
         append_hex32(line, (DWORD)sizeof(line), (DWORD)self);
-        str_append(line, (DWORD)sizeof(line), " 根坐标=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_RootPositionLabel);
         append_int(line, (DWORD)sizeof(line), *(LONG*)((BYTE*)self + UI_OBJECT_X_OFFSET));
         str_append(line, (DWORD)sizeof(line), ",");
         append_int(line, (DWORD)sizeof(line), *(LONG*)((BYTE*)self + UI_OBJECT_Y_OFFSET));
-        str_append(line, (DWORD)sizeof(line), " 偏移=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_OffsetLabel);
         append_int(line, (DWORD)sizeof(line), center_delta);
         append_runtime_line(line);
     }
@@ -2534,10 +2535,10 @@ static void append_candidates_at_point(char* line, DWORD line_size, LPVOID self,
     LPVOID child;
     BOOL found = FALSE;
 
-    str_append(line, line_size, " 包含=");
+    str_append(line, line_size, DisplayFixText_WaiZhuan_IncludedObjectsLabel);
 
     if (!self) {
-        str_append(line, line_size, "无");
+        str_append(line, line_size, DisplayFixText_WaiZhuan_MissingObjectValue);
         return;
     }
 
@@ -2553,14 +2554,14 @@ static void append_candidates_at_point(char* line, DWORD line_size, LPVOID self,
             found = TRUE;
             str_append(line, line_size, "[");
             append_hex32(line, line_size, control_id);
-            str_append(line, line_size, child_active_for_diagnostic(child) ? " 激活]" : " 未激活]");
+            str_append(line, line_size, child_active_for_diagnostic(child) ? DisplayFixText_WaiZhuan_ActiveObjectSuffix : DisplayFixText_WaiZhuan_InactiveObjectSuffix);
         }
 
         child = *(LPVOID*)((BYTE*)child + UI_OBJECT_NEXT_OFFSET);
     }
 
     if (!found) {
-        str_append(line, line_size, "无");
+        str_append(line, line_size, DisplayFixText_WaiZhuan_MissingObjectValue);
     }
 }
 
@@ -2598,17 +2599,17 @@ static void append_ui_target_brief(char* line, DWORD line_size, LPVOID object)
     HudRect rect;
 
     if (!object) {
-        str_append(line, line_size, "无");
+        str_append(line, line_size, DisplayFixText_WaiZhuan_MissingObjectValue);
         return;
     }
 
-    str_append(line, line_size, "指针=");
+    str_append(line, line_size, DisplayFixText_WaiZhuan_PointerLabel);
     append_hex32(line, line_size, (DWORD)object);
-    str_append(line, line_size, " 激活=");
+    str_append(line, line_size, DisplayFixText_WaiZhuan_ActiveLabel);
     append_int(line, line_size, ui_object_active_for_diagnostic(object) ? 1 : 0);
 
     if (read_child_rect(object, &rect)) {
-        str_append(line, line_size, " 矩形=");
+        str_append(line, line_size, DisplayFixText_WaiZhuan_RectLabel);
         append_int(line, line_size, rect.left);
         str_append(line, line_size, ",");
         append_int(line, line_size, rect.top);
@@ -2617,7 +2618,7 @@ static void append_ui_target_brief(char* line, DWORD line_size, LPVOID object)
         str_append(line, line_size, ",");
         append_int(line, line_size, rect.bottom);
     } else {
-        str_append(line, line_size, " 矩形=无效");
+        str_append(line, line_size, DisplayFixText_WaiZhuan_InvalidRectValue);
     }
 }
 
@@ -2767,15 +2768,15 @@ static void __fastcall world_mouse_press_hook(LPVOID self, LPVOID unused_edx,
         char line[640];
         ++g_world_press_log_count;
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[运行] 世界鼠标按下 参数坐标=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_WorldMousePressCoordinatesLog);
         append_int(line, (DWORD)sizeof(line), mouse_x);
         str_append(line, (DWORD)sizeof(line), ",");
         append_int(line, (DWORD)sizeof(line), mouse_y);
-        str_append(line, (DWORD)sizeof(line), " 顶层ID=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_TopLevelIdLabel);
         append_hex32(line, (DWORD)sizeof(line), hit_id);
-        str_append(line, (DWORD)sizeof(line), " 子控件=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_ChildControlLabel);
         append_child_brief(line, (DWORD)sizeof(line), hit_child);
-        str_append(line, (DWORD)sizeof(line), " 阻止世界输入=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_WorldInputBlockedLabel);
         append_int(line, (DWORD)sizeof(line), block_world ? 1 : 0);
         append_runtime_line(line);
     }
@@ -2882,26 +2883,26 @@ static int __fastcall ui_manager_mouse_release_hook(LPVOID self, LPVOID unused_e
         char line[1024];
         ++g_global_release_log_count;
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[运行] 全局鼠标释放 参数坐标=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_GlobalMouseReleaseCoordinatesLog);
         append_int(line, (DWORD)sizeof(line), mouse_x);
         str_append(line, (DWORD)sizeof(line), ",");
         append_int(line, (DWORD)sizeof(line), mouse_y);
-        str_append(line, (DWORD)sizeof(line), " 测试坐标=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_HitTestCoordinatesLabel);
         append_int(line, (DWORD)sizeof(line), test_x);
         str_append(line, (DWORD)sizeof(line), ",");
         append_int(line, (DWORD)sizeof(line), test_y);
-        str_append(line, (DWORD)sizeof(line), have_cursor ? " 光标=可用" : " 光标=回退到参数");
-        str_append(line, (DWORD)sizeof(line), " 顶层ID=");
+        str_append(line, (DWORD)sizeof(line), have_cursor ? DisplayFixText_WaiZhuan_CursorAvailableValue : DisplayFixText_WaiZhuan_CursorArgumentFallbackValue);
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_TopLevelIdLabel);
         append_hex32(line, (DWORD)sizeof(line), hit_id);
-        str_append(line, (DWORD)sizeof(line), " 子控件=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_ChildControlLabel);
         append_child_brief(line, (DWORD)sizeof(line), hit_child);
-        str_append(line, (DWORD)sizeof(line), " 目标前=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_TargetBeforeLabel);
         append_ui_target_brief(line, (DWORD)sizeof(line), target_before);
-        str_append(line, (DWORD)sizeof(line), " 目标后=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_TargetAfterLabel);
         append_ui_target_brief(line, (DWORD)sizeof(line), target_after);
-        str_append(line, (DWORD)sizeof(line), " 原版结果=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_NativeResultLabel);
         append_int(line, (DWORD)sizeof(line), original_result);
-        str_append(line, (DWORD)sizeof(line), " 兜底=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_FallbackResultLabel);
         append_int(line, (DWORD)sizeof(line), fallback_used ? 1 : 0);
         append_runtime_line(line);
     }
@@ -3260,46 +3261,46 @@ static void __fastcall main_hud_event_hook(LPVOID self, LPVOID unused_edx,
     if (should_log) {
         char line[1536];
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[运行] HUD鼠标释放 参数坐标=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_HudMouseReleaseCoordinatesLog);
         append_int(line, (DWORD)sizeof(line), mouse_x);
         str_append(line, (DWORD)sizeof(line), ",");
         append_int(line, (DWORD)sizeof(line), mouse_y);
 
         if (have_point) {
-            str_append(line, (DWORD)sizeof(line), " 光标=");
+            str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_CursorCoordinatesLabel);
             append_int(line, (DWORD)sizeof(line), point.x);
             str_append(line, (DWORD)sizeof(line), ",");
             append_int(line, (DWORD)sizeof(line), point.y);
         } else {
-            str_append(line, (DWORD)sizeof(line), " 光标=不可用");
+            str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_CursorUnavailableValue);
         }
 
-        str_append(line, (DWORD)sizeof(line), " 命中=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_HitTargetLabel);
         append_child_brief(line, (DWORD)sizeof(line), hit_child);
 
         if (have_point) {
             append_candidates_at_point(line, (DWORD)sizeof(line), self, point.x, point.y);
         }
 
-        str_append(line, (DWORD)sizeof(line), " 目标0B前=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_AttributesTargetBeforeLabel);
         append_ui_target_brief(line, (DWORD)sizeof(line), target_0b_before);
-        str_append(line, (DWORD)sizeof(line), " 目标0B后=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_AttributesTargetAfterLabel);
         if (g_top_button_0b_target_slot) {
             append_ui_target_brief(line, (DWORD)sizeof(line), *g_top_button_0b_target_slot);
         } else {
-            str_append(line, (DWORD)sizeof(line), "槽不可用");
+            str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_SlotUnavailableValue);
         }
 
-        str_append(line, (DWORD)sizeof(line), " 目标0E前=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_InventoryTargetBeforeLabel);
         append_ui_target_brief(line, (DWORD)sizeof(line), target_0e_before);
-        str_append(line, (DWORD)sizeof(line), " 目标0E后=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_InventoryTargetAfterLabel);
         if (g_top_button_0e_target_slot) {
             append_ui_target_brief(line, (DWORD)sizeof(line), *g_top_button_0e_target_slot);
         } else {
-            str_append(line, (DWORD)sizeof(line), "槽不可用");
+            str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_SlotUnavailableValue);
         }
 
-        str_append(line, (DWORD)sizeof(line), " 兜底=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_FallbackResultLabel);
         append_int(line, (DWORD)sizeof(line), fallback_used ? 1 : 0);
         append_runtime_line(line);
     }
@@ -3754,13 +3755,13 @@ static int __fastcall jmm_load_hook(LPVOID self, LPVOID unused_edx, LONG mode, L
         char line[320];
         ++g_jmm_runtime_log_count;
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[运行] JMM应用 模式=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_JmmApplyModeLog);
         append_int(line, (DWORD)sizeof(line), mode);
-        str_append(line, (DWORD)sizeof(line), " 输入=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_InputResolutionLabel);
         append_int(line, (DWORD)sizeof(line), width);
         str_append(line, (DWORD)sizeof(line), "x");
         append_int(line, (DWORD)sizeof(line), height);
-        str_append(line, (DWORD)sizeof(line), " 最终=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_FinalResolutionLabel);
         append_int(line, (DWORD)sizeof(line), final_width);
         str_append(line, (DWORD)sizeof(line), "x");
         append_int(line, (DWORD)sizeof(line), final_height);
@@ -3933,16 +3934,16 @@ static void broadcast_initial_ui_resolution(void)
     char line[384];
 
     if (!g_jmm_manager || g_target_width == 0u || g_target_height == 0u) {
-        append_runtime_line("[运行] 启动期UI广播已跳过：前置条件不可用");
+        append_runtime_line(DisplayFixText_WaiZhuan_StartupUiBroadcastSkippedLog);
         return;
     }
 
     node = *(LPVOID*)((BYTE*)g_jmm_manager + 0x1Cu);
 
     line[0] = '\0';
-    str_append(line, (DWORD)sizeof(line), "[运行] 启动期UI广播开始 管理器=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_StartupUiBroadcastManagerLog);
     append_hex32(line, (DWORD)sizeof(line), (DWORD)g_jmm_manager);
-    str_append(line, (DWORD)sizeof(line), " 目标=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_TargetLabel);
     append_int(line, (DWORD)sizeof(line), (LONG)g_target_width);
     str_append(line, (DWORD)sizeof(line), "x");
     append_int(line, (DWORD)sizeof(line), (LONG)g_target_height);
@@ -3968,14 +3969,14 @@ static void broadcast_initial_ui_resolution(void)
     }
 
     line[0] = '\0';
-    str_append(line, (DWORD)sizeof(line), "[运行] 启动期UI广播结束 已遍历=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_StartupUiBroadcastVisitedLog);
     append_int(line, (DWORD)sizeof(line), (LONG)visited);
-    str_append(line, (DWORD)sizeof(line), " 已应用=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_AppliedCountLabel);
     append_int(line, (DWORD)sizeof(line), (LONG)applied);
     if (node) {
-        str_append(line, (DWORD)sizeof(line), " 保护=命中");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_ExceptionGuardTriggeredValue);
     } else {
-        str_append(line, (DWORD)sizeof(line), " 保护=正常");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_ExceptionGuardNormalValue);
     }
     append_runtime_line(line);
 }
@@ -4122,7 +4123,7 @@ static void try_steam_delayed_ui_sync(LPVOID hud)
     if (!g_steam_environment && GAME_GetModuleHandleA) {
         if (GAME_GetModuleHandleA("ComeOn.dll")) {
             g_steam_environment = TRUE;
-            append_runtime_line("[运行] 延迟检测到Steam环境：ComeOn.dll现已加载");
+            append_runtime_line(DisplayFixText_WaiZhuan_SteamDetectedLateLog);
         }
     }
 
@@ -4145,7 +4146,7 @@ static void try_steam_delayed_ui_sync(LPVOID hud)
     if (!steam_jmm_resource_root_ready()) {
         if (!g_steam_ui_sync_wait_root_logged) {
             g_steam_ui_sync_wait_root_logged = TRUE;
-            append_runtime_line("[运行] Steam延迟JMM应用等待中：游戏资源根节点尚未就绪");
+            append_runtime_line(DisplayFixText_WaiZhuan_SteamJmmWaitingForResourcesLog);
         }
         return;
     }
@@ -4159,19 +4160,19 @@ static void try_steam_delayed_ui_sync(LPVOID hud)
     have_0e_before = read_child_rect(child_0e, &rect_0e_before);
 
     line[0] = '\0';
-    str_append(line, (DWORD)sizeof(line), "[运行] Steam延迟JMM应用开始 尝试次数=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_SteamJmmApplyAttemptLog);
     append_int(line, (DWORD)sizeof(line), (LONG)g_steam_ui_sync_attempts);
-    str_append(line, (DWORD)sizeof(line), " 管理器=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_ManagerLabel);
     append_hex32(line, (DWORD)sizeof(line), (DWORD)g_jmm_manager);
-    str_append(line, (DWORD)sizeof(line), " 头节点=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_HeadNodeLabel);
     append_hex32(line, (DWORD)sizeof(line), (DWORD)list_head);
-    str_append(line, (DWORD)sizeof(line), " 目标=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_TargetLabel);
     append_int(line, (DWORD)sizeof(line), (LONG)g_target_width);
     str_append(line, (DWORD)sizeof(line), "x");
     append_int(line, (DWORD)sizeof(line), (LONG)g_target_height);
-    str_append(line, (DWORD)sizeof(line), " 资源根=就绪 ID0B前=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_SteamResourcesReadyAttributesBeforeLabel);
     append_child_brief(line, (DWORD)sizeof(line), child_0b);
-    str_append(line, (DWORD)sizeof(line), " ID0E前=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_InventoryLayoutBeforeLabel);
     append_child_brief(line, (DWORD)sizeof(line), child_0e);
     append_runtime_line(line);
 
@@ -4203,13 +4204,13 @@ static void try_steam_delayed_ui_sync(LPVOID hud)
     }
 
     line[0] = '\0';
-    str_append(line, (DWORD)sizeof(line), "[运行] Steam延迟JMM应用结束 结果=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_SteamJmmApplyResultLog);
     append_int(line, (DWORD)sizeof(line), result);
-    str_append(line, (DWORD)sizeof(line), g_steam_ui_sync_done ? " 完成=1" : " 完成=0");
-    str_append(line, (DWORD)sizeof(line), changed ? " 子布局已变化=1" : " 子布局已变化=0");
-    str_append(line, (DWORD)sizeof(line), " ID0B后=");
+    str_append(line, (DWORD)sizeof(line), g_steam_ui_sync_done ? DisplayFixText_WaiZhuan_ApplyCompletedValue : DisplayFixText_WaiZhuan_ApplyIncompleteValue);
+    str_append(line, (DWORD)sizeof(line), changed ? DisplayFixText_WaiZhuan_ChildLayoutChangedValue : DisplayFixText_WaiZhuan_ChildLayoutUnchangedValue);
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_AttributesLayoutAfterLabel);
     append_child_brief(line, (DWORD)sizeof(line), child_0b);
-    str_append(line, (DWORD)sizeof(line), " ID0E后=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_InventoryLayoutAfterLabel);
     append_child_brief(line, (DWORD)sizeof(line), child_0e);
     append_runtime_line(line);
 }
@@ -4562,11 +4563,11 @@ static void layer_disable_target_hook(LayerTargetHook* hook, const char* reason)
         char line[448];
         g_layer_hook_failure_logged_mask |= bit;
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[警告] 辅助GUI绘制层：ID=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_AuxiliaryDrawHookDisabledIdLog);
         append_hex32(line, (DWORD)sizeof(line), hook->control_id);
-        str_append(line, (DWORD)sizeof(line), " Draw Hook 已单独禁用；原因=");
-        str_append(line, (DWORD)sizeof(line), reason ? reason : "未知");
-        str_append(line, (DWORD)sizeof(line), "；该菜单保持原版绘制/输入");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_DrawHookDisableReasonLabel);
+        str_append(line, (DWORD)sizeof(line), reason ? reason : DisplayFixText_WaiZhuan_UnknownReasonValue);
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_OriginalMenuBehaviorSuffix);
         append_runtime_line(line);
     }
 }
@@ -4605,19 +4606,19 @@ static void layer_log_chain_relation_once(LPVOID manager, LPVOID hud, LayerTarge
 
     g_layer_chain_relation_logged_mask |= bit;
     line[0] = '\0';
-    str_append(line, (DWORD)sizeof(line), "[运行] 辅助GUI原始Draw链 ID=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_AuxiliaryOriginalDrawChainLog);
     append_hex32(line, (DWORD)sizeof(line), hook->control_id);
-    str_append(line, (DWORD)sizeof(line), " 菜单索引=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_MenuDrawIndexLabel);
     append_int(line, (DWORD)sizeof(line), target_index);
-    str_append(line, (DWORD)sizeof(line), " 主HUD索引=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_HudDrawIndexLabel);
     append_int(line, (DWORD)sizeof(line), hud_index);
 
     if (target_index < hud_index) {
-        str_append(line, (DWORD)sizeof(line), " 关系=菜单在HUD之前；会在HUD之后延迟绘制该菜单");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_MenuBeforeHudValue);
     } else if (target_index > hud_index) {
-        str_append(line, (DWORD)sizeof(line), " 关系=菜单已在HUD之后；不需要调整该菜单");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_MenuAlreadyAfterHudValue);
     } else {
-        str_append(line, (DWORD)sizeof(line), " 关系=异常同索引；本帧不会据此修改任何输入状态");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_MenuAndHudSameIndexValue);
     }
 
     append_runtime_line(line);
@@ -4884,7 +4885,7 @@ static void layer_track_auxiliary_object(LPVOID object)
 
     if (!g_layer_tracking_capacity_logged) {
         g_layer_tracking_capacity_logged = TRUE;
-        append_runtime_line("[警告] 辅助GUI短生命周期跟踪表已满；额外独立面板保持未跟踪时的原有行为");
+        append_runtime_line(DisplayFixText_WaiZhuan_AuxiliaryPanelTrackingFullLog);
     }
 }
 
@@ -4998,9 +4999,9 @@ static void layer_log_detached_tracked_auxiliary_once(LPVOID object)
 
     item->detached_keep_logged = TRUE;
     line[0] = '\0';
-    str_append(line, (DWORD)sizeof(line), "[运行] 辅助GUI独立面板主窗口关闭后继续置于HUD上方 对象=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_AuxiliaryPanelRetainedAboveHudLog);
     append_hex32(line, (DWORD)sizeof(line), (DWORD)object);
-    str_append(line, (DWORD)sizeof(line), " vtable=");
+    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_VtableLabel);
     append_hex32(line, (DWORD)sizeof(line), (DWORD)item->vtable);
     append_runtime_line(line);
 }
@@ -5206,7 +5207,7 @@ static BOOL ensure_dynamic_layer_hook_for_object(LPVOID object)
     if (g_layer_dynamic_hook_count >= LAYER_DYNAMIC_HOOK_MAX) {
         if (!g_layer_dynamic_hook_capacity_logged) {
             g_layer_dynamic_hook_capacity_logged = TRUE;
-            append_runtime_line("[警告] 辅助GUI动态Draw Hook数量已达16类；后续未知辅助面板保持原版绘制");
+            append_runtime_line(DisplayFixText_WaiZhuan_AuxiliaryDrawHookCapacityLog);
         }
         return FALSE;
     }
@@ -5427,17 +5428,17 @@ static LPVOID __fastcall ui_top_level_pick_layer_hook(LPVOID self, LPVOID unused
                 char line[512];
                 ++g_hud_button_root_correction_log_count;
                 line[0] = '\0';
-                str_append(line, (DWORD)sizeof(line), "[运行] 主HUD按钮按压root校正 ID=");
+                str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_HudButtonPressRootCorrectedLog);
                 append_hex32(line, (DWORD)sizeof(line), hit_id);
-                str_append(line, (DWORD)sizeof(line), " 原root=");
+                str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_OriginalRootLabel);
                 append_hex32(line, (DWORD)sizeof(line), (DWORD)original_result);
-                str_append(line, (DWORD)sizeof(line), " -> HUD=");
+                str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_HudRootRelationLabel);
                 append_hex32(line, (DWORD)sizeof(line), (DWORD)hud);
-                str_append(line, (DWORD)sizeof(line), " 鼠标=");
+                str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_MouseCoordinatesLabel);
                 append_int(line, (DWORD)sizeof(line), point->x);
                 str_append(line, (DWORD)sizeof(line), ",");
                 append_int(line, (DWORD)sizeof(line), point->y);
-                str_append(line, (DWORD)sizeof(line), " child=");
+                str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_ChildObjectLabel);
                 append_hex32(line, (DWORD)sizeof(line), (DWORD)hit_child);
                 append_runtime_line(line);
             }
@@ -5468,14 +5469,14 @@ static LPVOID __fastcall ui_top_level_pick_layer_hook(LPVOID self, LPVOID unused
         HudRect rect;
         ++g_layer_input_override_log_count;
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[运行] 辅助GUI输入root覆盖 HUD->");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_AuxiliaryInputRootOverrideLog);
         append_hex32(line, (DWORD)sizeof(line), (DWORD)replacement);
-        str_append(line, (DWORD)sizeof(line), " 鼠标=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_MouseCoordinatesLabel);
         append_int(line, (DWORD)sizeof(line), point->x);
         str_append(line, (DWORD)sizeof(line), ",");
         append_int(line, (DWORD)sizeof(line), point->y);
         if (layer_read_top_level_hit_rect(replacement, &rect)) {
-            str_append(line, (DWORD)sizeof(line), " root矩形=");
+            str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_RootRectLabel);
             append_int(line, (DWORD)sizeof(line), rect.left);
             str_append(line, (DWORD)sizeof(line), ",");
             append_int(line, (DWORD)sizeof(line), rect.top);
@@ -5547,9 +5548,9 @@ static BOOL layer_defer_target_draw(LPVOID object, FnUIDraw original_draw,
         char line[256];
         g_layer_runtime_logged_mask |= bit;
         line[0] = '\0';
-        str_append(line, (DWORD)sizeof(line), "[运行] 辅助GUI绘制层调整 ID=");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_AuxiliaryDrawOrderChangedLog);
         append_hex32(line, (DWORD)sizeof(line), control_id);
-        str_append(line, (DWORD)sizeof(line), " 原顺序位于主HUD之前；本帧改为HUD之后绘制");
+        str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_MenuDeferredAfterHudSuffix);
         append_runtime_line(line);
     }
 
@@ -5650,12 +5651,12 @@ static int __fastcall layer_dynamic_auxiliary_draw_hook(LPVOID self, LPVOID unus
                 HudRect rect;
                 ++g_layer_dynamic_defer_log_count;
                 line[0] = '\0';
-                str_append(line, (DWORD)sizeof(line), "[运行] 辅助GUI独立面板延后绘制 对象=");
+                str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_AuxiliaryPanelDeferredLog);
                 append_hex32(line, (DWORD)sizeof(line), (DWORD)self);
-                str_append(line, (DWORD)sizeof(line), " vtable=");
+                str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_VtableLabel);
                 append_hex32(line, (DWORD)sizeof(line), (DWORD)(*(LPVOID*)self));
                 if (layer_read_top_level_hit_rect(self, &rect)) {
-                    str_append(line, (DWORD)sizeof(line), " 矩形=");
+                    str_append(line, (DWORD)sizeof(line), DisplayFixText_WaiZhuan_RectLabel);
                     append_int(line, (DWORD)sizeof(line), rect.left);
                     str_append(line, (DWORD)sizeof(line), ",");
                     append_int(line, (DWORD)sizeof(line), rect.top);
@@ -5763,14 +5764,14 @@ static BOOL ensure_layer_target_draw_hook(LayerTargetHook* hook)
 
     vtable = *(BYTE**)object;
     if (!vtable || (DWORD)vtable < 0x00400000u || (DWORD)vtable >= 0x00600000u) {
-        layer_disable_target_hook(hook, "对象 vtable 不在 ComeOn.exe 已确认地址范围");
+        layer_disable_target_hook(hook, DisplayFixText_WaiZhuan_VtableOutsideConfirmedRangeReason);
         return FALSE;
     }
 
     draw_slot = vtable + 0x08u;
     wrapper = layer_wrapper_for_target(hook->control_id);
     if (!wrapper) {
-        layer_disable_target_hook(hook, "没有对应的延迟绘制 wrapper");
+        layer_disable_target_hook(hook, DisplayFixText_WaiZhuan_DeferredDrawWrapperMissingReason);
         return FALSE;
     }
 
@@ -5782,19 +5783,19 @@ static BOOL ensure_layer_target_draw_hook(LayerTargetHook* hook)
         if (hook->draw_slot == draw_slot && read_u32(draw_slot) == (DWORD)wrapper) {
             return TRUE;
         }
-        layer_disable_target_hook(hook, "已安装后 target 改用了不同 vtable/Draw 槽");
+        layer_disable_target_hook(hook, DisplayFixText_WaiZhuan_InstalledDrawSlotChangedReason);
         return FALSE;
     }
 
     original_address = read_u32(draw_slot);
     if (!layer_address_is_game_text(original_address)) {
-        layer_disable_target_hook(hook, "vtable+0x08 原版 Draw 不在主 EXE .text");
+        layer_disable_target_hook(hook, DisplayFixText_WaiZhuan_NativeDrawOutsideExecutableReason);
         return FALSE;
     }
 
     /* 三个目标都继承同一基础布局类；+0x58 必须仍然是已解析的原版通用布局函数。 */
     if (!g_original_main_hud_layout || read_u32(vtable + MAIN_HUD_LAYOUT_SLOT) != (DWORD)g_original_main_hud_layout) {
-        layer_disable_target_hook(hook, "vtable+0x58 不再指向已确认通用布局函数");
+        layer_disable_target_hook(hook, DisplayFixText_WaiZhuan_LayoutFunctionMismatchReason);
         return FALSE;
     }
 
@@ -5804,7 +5805,7 @@ static BOOL ensure_layer_target_draw_hook(LayerTargetHook* hook)
     if (!patch_u32(draw_slot, (DWORD)wrapper)) {
         hook->draw_slot = (BYTE*)0;
         hook->original_draw = (FnUIDraw)0;
-        layer_disable_target_hook(hook, "VirtualProtect/写回 vtable+0x08 失败");
+        layer_disable_target_hook(hook, DisplayFixText_WaiZhuan_VtableWriteFailedReason);
         return FALSE;
     }
 
@@ -5970,7 +5971,7 @@ static void __fastcall ui_manager_draw_layer_scope_hook(LPVOID self, LPVOID unus
 
         if (!g_layer_unexpected_flush_logged) {
             g_layer_unexpected_flush_logged = TRUE;
-            append_runtime_line("[警告] 辅助GUI图层：本帧预扫描找到主HUD，但HUD Draw未经过Hook；已在帧末安全补画延迟GUI");
+            append_runtime_line(DisplayFixText_WaiZhuan_HudDrawHookMissedFallbackLog);
         }
     }
 
@@ -6496,18 +6497,18 @@ static void initialize_display_fix(void)
     make_sibling_path(module_path, "EDSlash.toml", g_ini_path, (DWORD)sizeof(g_ini_path));
     make_sibling_path(module_path, "EDSlash.log", g_log_path, (DWORD)sizeof(g_log_path));
 
-    log_line("[DisplayFix] EDSlash统一显示后端");
-    log_line("[Runtime] 游戏Profile=刀剑封魔录外传：上古传说 / DisplayFix后端已加载");
-    log_line("架构：Win32/x86 ASI，基于内容签名的运行时补丁");
+    log_line(DisplayFixText_WaiZhuan_BackendInitializingLog);
+    log_line(DisplayFixText_WaiZhuan_GameProfileLoadedLog);
+    log_line(DisplayFixText_WaiZhuan_ArchitectureDescription);
 
     if (!resolve_required_apis()) {
-        log_line("[失败] 无法解析 VirtualProtect");
+        log_line(DisplayFixText_WaiZhuan_VirtualProtectUnavailableLog);
         flush_log_file();
         return;
     }
 
     if (!get_main_text_region(&text_region)) {
-        log_line("[失败] 无法定位主 EXE 的 .text 代码段");
+        log_line(DisplayFixText_WaiZhuan_ExecutableTextSectionUnavailableLog);
         flush_log_file();
         return;
     }
@@ -6517,7 +6518,7 @@ static void initialize_display_fix(void)
      * DisplayFix从Runtime统一配置取得参数，日志路径对应ASI旁的EDSlash.toml；
      * 如果日志显示 BaseHeight 回退成 480，用户可以直接核对自己编辑的是否就是这里这份文件。
      */
-    log_text("[信息] 配置文件路径=", g_ini_path);
+    log_text(DisplayFixText_WaiZhuan_ConfigPathLog, g_ini_path);
 
     load_config(&config);
 
@@ -6542,44 +6543,44 @@ static void initialize_display_fix(void)
     if (config.fix_font_dpi) {
         font_result = apply_font_dpi_fix(&text_region);
         if (font_result == 1) {
-            log_line("[成功] 字体 DPI 路径已修正为 96 DPI");
+            log_line(DisplayFixText_WaiZhuan_FontDpiPatchAppliedLog);
         } else if (font_result == 2) {
-            log_line("[成功] 字体 DPI 路径已经是 96 DPI 修正状态");
+            log_line(DisplayFixText_WaiZhuan_FontDpiPatchAlreadyAppliedLog);
         } else {
-            log_line("[失败] 字体 DPI 特征缺失或不唯一；已跳过字体修复");
+            log_line(DisplayFixText_WaiZhuan_FontDpiSignatureMismatchLog);
         }
     } else {
-        log_line("[信息] Font.FixDPI=0；INI 已关闭字体修复");
+        log_line(DisplayFixText_WaiZhuan_FontDpiFixDisabledLog);
     }
 
     if (!config.enable) {
-        log_line("[信息] Display.Enable=0；已关闭宽屏/HUD/输入补丁；Font.FixDPI 仍独立生效");
+        log_line(DisplayFixText_WaiZhuan_DisplayFixDisabledLog);
         flush_log_file();
         return;
     }
 
-    log_uint("[信息] 基础高度(BaseHeight)=", config.base_height);
-    log_uint("[信息] 比例宽度(AspectWidth)=", config.aspect_width);
-    log_uint("[信息] 比例高度(AspectHeight)=", config.aspect_height);
+    log_uint(DisplayFixText_WaiZhuan_BaseHeightLog, config.base_height);
+    log_uint(DisplayFixText_WaiZhuan_AspectWidthLog, config.aspect_width);
+    log_uint(DisplayFixText_WaiZhuan_AspectHeightLog, config.aspect_height);
 
     target_width = calculate_target_width(config.base_height, config.aspect_width, config.aspect_height);
-    log_uint("[信息] 目标宽度(TargetWidth)=", target_width);
+    log_uint(DisplayFixText_WaiZhuan_TargetWidthLog, target_width);
 
     /*
      * AspectRatio 当前的统一宽度规则要求最终 TargetWidth 做 8 像素对齐。
      * 这里把余数直接写进日志，用户不需要自己再拿计算器判断本轮是不是实际用了 8 像素边界。
      * 正常情况下这个值必须始终是 0；如果不是 0，就说明宽度计算逻辑出现了新的回归。
      */
-    log_uint("[信息] AspectRatio目标宽度8像素对齐余数=", target_width & 7u);
-    log_uint("[信息] 目标高度(TargetHeight)=", config.base_height);
+    log_uint(DisplayFixText_WaiZhuan_TargetWidthAlignmentLog, target_width & 7u);
+    log_uint(DisplayFixText_WaiZhuan_TargetHeightLog, config.base_height);
 
     /*
      * BaseHeight 是内部逻辑高度，不是最终输出清晰度。高于 600 会扩大实际世界 surface / 可见范围，
      * 老游戏会明显增加绘制和对象处理成本。保留任意值是高级实验能力，但 4K 输出通常仍建议 480/600。
      */
     if (config.base_height > 600u) {
-        log_line("[警告] BaseHeight>600 属于高级世界/FOV缩放，可能显著降低帧率");
-        log_line("[信息] 4K 输出通常建议使用 BaseHeight=480 或 600，再交给 cnc-ddraw 放大");
+        log_line(DisplayFixText_WaiZhuan_HighBaseHeightPerformanceWarningLog);
+        log_line(DisplayFixText_WaiZhuan_RecommendedBaseHeightForFourKLog);
     }
 
     /*
@@ -6594,20 +6595,20 @@ static void initialize_display_fix(void)
     g_auxiliary_ui_above_hud = config.auxiliary_ui_above_hud;
 
     hud_delta = ((LONG)g_target_width - (LONG)g_native_base_width) / 2;
-    log_uint("[信息] 原生基准宽度(NativeBaseWidth)=", g_native_base_width);
-    log_int("[信息] 主HUD水平居中偏移(MainHUDCenterDelta)=", hud_delta);
+    log_uint(DisplayFixText_WaiZhuan_NativeBaseWidthLog, g_native_base_width);
+    log_int(DisplayFixText_WaiZhuan_MainHudCenterDeltaLog, hud_delta);
 
     if (target_width != 0) {
         resolution_result = apply_dynamic_resolution(&text_region, target_width, config.base_height);
     }
 
     if (resolution_result) {
-        log_line("[成功] 动态分辨率代码点已解析；启动/前端代码保持原样");
-        log_line("[信息] 主菜单与固定分辨率动画继续使用游戏原生 4:3 显示生命周期");
-        log_line("[信息] 游戏内 TargetWidth/TargetHeight 仅由 Strategy 状态切换激活");
-        log_line("[信息] 不需要隐藏的1024x768分支选择；游戏内会重映射所有已确认的显示模式分支");
+        log_line(DisplayFixText_WaiZhuan_ResolutionCodeResolvedLog);
+        log_line(DisplayFixText_WaiZhuan_FrontendOriginalResolutionPolicyLog);
+        log_line(DisplayFixText_WaiZhuan_GameplayStrategyResolutionPolicyLog);
+        log_line(DisplayFixText_WaiZhuan_GameplayResolutionBranchRemapPolicyLog);
     } else {
-        log_line("[失败] 动态分辨率特征缺失或不唯一；已禁用运行时配置切换");
+        log_line(DisplayFixText_WaiZhuan_ResolutionSignatureMismatchLog);
     }
 
     /*
@@ -6621,19 +6622,19 @@ static void initialize_display_fix(void)
     if (layout_result && resolution_result) {
         /* 明确把当前进程保持在 FRONTEND profile；理论上此时还是原字节，这一步也是一次完整自检。 */
         if (set_frontend_resolution_profile()) {
-            log_line("[成功] 前端/动画分辨率配置已就绪：保留原版显示/JMM规则");
+            log_line(DisplayFixText_WaiZhuan_FrontendConfigReadyLog);
             if (config.base_height >= 600u) {
-                log_line("[信息] Strategy 状态 3 开始时，游戏内配置会把 TargetWidth 映射到 JMMDL800.txt");
+                log_line(DisplayFixText_WaiZhuan_GameplayLayoutEightHundredPolicyLog);
             } else {
-                log_line("[信息] Strategy 状态 3 开始时，游戏内配置会把 TargetWidth 映射到 JMMDL.txt");
+                log_line(DisplayFixText_WaiZhuan_GameplayLayoutNativePolicyLog);
             }
         } else {
             resolution_result = FALSE;
             layout_result = FALSE;
-            log_line("[失败] 前端配置自检失败；已禁用动态分辨率生命周期");
+            log_line(DisplayFixText_WaiZhuan_FrontendConfigSelfTestFailedLog);
         }
     } else {
-        log_line("[失败] JMM布局选择器特征缺失或不唯一；已禁用运行时布局配置");
+        log_line(DisplayFixText_WaiZhuan_JmmSelectorSignatureMismatchLog);
     }
 
     /*
@@ -6645,10 +6646,10 @@ static void initialize_display_fix(void)
     }
 
     if (strategy_state_result) {
-        log_line("[成功] Strategy状态生命周期Hook已安装：进入状态3=GAMEPLAY（强制重应用），退出状态3=FRONTEND（强制模式4）");
-        log_line("[信息] 进入时：原版Strategy进入流程会被强制重应用一次；退出时：Strategy清理后强制应用原版显示模式4");
+        log_line(DisplayFixText_WaiZhuan_StrategyLifecycleHooksInstalledLog);
+        log_line(DisplayFixText_WaiZhuan_ForceReapplyLifecyclePolicyLog);
     } else if (resolution_result && layout_result) {
-        log_line("[失败] Strategy状态切换特征/调用缺失或不唯一；已禁用游戏内分辨率切换");
+        log_line(DisplayFixText_WaiZhuan_StrategyLifecycleSignatureMismatchLog);
     }
 
     /*
@@ -6674,27 +6675,27 @@ static void initialize_display_fix(void)
          *   - Steam/OpenGL 只保留已实机闭环的 MAKEINTATOM(lpClassName) 安全修复。
          */
         if (install_steam_resjm_language_shim(&text_region)) {
-            log_line("[成功] Steam多语言 ResJM.Lib CreateFileA 兜底已安装");
+            log_line(DisplayFixText_WaiZhuan_SteamResJmFileOpenFallbackReadyLog);
         } else {
-            log_line("[警告] Steam ResJM.Lib兜底特征尚未就绪或未匹配");
+            log_line(DisplayFixText_WaiZhuan_SteamResJmFallbackSignatureUnavailableLog);
         }
 
         steam_class_atom_guard_installed = install_steam_createwindow_class_atom_guard(steam_module);
         if (steam_class_atom_guard_installed) {
-            log_line("[成功] Steam ComeOn.dll CreateWindowExA 类Atom兼容修复已安装；官方EDIT处理保持完整");
-            log_line("[信息] Steam OpenGL兼容修复仅绕过ComeOn.dll对NULL/MAKEINTATOM类名的不安全字符串解析");
+            log_line(DisplayFixText_WaiZhuan_SteamWindowClassAtomFixReadyLog);
+            log_line(DisplayFixText_WaiZhuan_SteamOpenGlClassNameGuardPolicyLog);
         } else {
-            log_line("[失败] Steam CreateWindowExA callback的Atom保护特征未匹配；ComeOn.dll callback保持原样");
+            log_line(DisplayFixText_WaiZhuan_SteamWindowClassAtomFixSignatureMismatchLog);
         }
 
         g_steam_environment = FALSE;
-        log_line("[信息] 已检测到外传Steam/ComeOn.dll；稳定的显示/HUD时序保持不变");
-        log_line("[信息] Steam启动器控制的开场动画不属于DisplayFix职责");
+        log_line(DisplayFixText_WaiZhuan_SteamEnvironmentDetectedLog);
+        log_line(DisplayFixText_WaiZhuan_SteamIntroAnimationOwnershipPolicyLog);
     } else {
         g_steam_environment = FALSE;
-        log_line("[信息] 已检测到外传非Steam环境");
+        log_line(DisplayFixText_WaiZhuan_NonSteamEnvironmentDetectedLog);
         if (!jmm_context_result) {
-            log_line("[信息] 可选JMM上下文未解析；非Steam核心宽屏路径仍可继续");
+            log_line(DisplayFixText_WaiZhuan_OptionalJmmContextUnavailableLog);
         }
     }
 
@@ -6713,15 +6714,15 @@ static void initialize_display_fix(void)
 
     if (hud_result) {
         if (config.center_main_hud) {
-            log_line("[成功] 底部主HUD视觉居中Hook已安装");
+            log_line(DisplayFixText_WaiZhuan_MainHudCenterHookInstalledLog);
         } else {
-            log_line("[信息] GUI.CenterMainHUD=0；已关闭视觉居中，但HUD诊断仍会安装");
+            log_line(DisplayFixText_WaiZhuan_MainHudCenterDisabledDiagnosticsLog);
         }
-        log_line("[成功] 主HUD Hook已安装：FRONTEND保持原布局；仅通过Strategy GAMEPLAY门控后在+0x58执行居中/同步");
-        log_line("[成功] 已解析主HUD +0x24结构并确认顶部按钮ID 0x0B/0x0E；+0x24本身不做Hook");
-        log_line("[信息] 边缘锚定的顶层UI按设计保持不变");
+        log_line(DisplayFixText_WaiZhuan_MainHudLayoutHookInstalledLog);
+        log_line(DisplayFixText_WaiZhuan_MainHudButtonsResolvedLog);
+        log_line(DisplayFixText_WaiZhuan_EdgeAnchoredUiPolicyLog);
     } else {
-        log_line("[失败] 主HUD根对象/事件/布局特征验证失败；已跳过HUD Hook");
+        log_line(DisplayFixText_WaiZhuan_MainHudValidationFailedLog);
     }
 
     /*
@@ -6744,24 +6745,24 @@ static void initialize_display_fix(void)
     }
 
     if (layer_result) {
-        log_line("[成功] HUD/UI共享输入与绘制基础Hook已安装；0x0B/0x0E按压动画使用原版root路径恢复");
+        log_line(DisplayFixText_WaiZhuan_HudSharedHooksInstalledLog);
 
         if (config.auxiliary_ui_above_hud) {
-            log_line("[成功] 辅助GUI绘制与输入优先级Hook已安装");
-            log_line("[信息] 辅助GUI不改顶层链和对象前后链，只调整当前绘制与输入root选择");
-            log_line("[信息] 输入只在原版picker已经选中主HUD、且鼠标命中已延后绘制的活动菜单root时覆盖这一次返回值；manager+0x40仍由原版0x4B44D0更新");
-            log_line("[信息] 当前菜单体系里与HUD相交的独立顶层辅助面板会动态安装Draw wrapper，并按原Draw链顺序在HUD后绘制");
-            log_line("[信息] 独立辅助面板一旦在合法菜单上下文中确认，会做短生命周期跟踪；主窗口先关闭时，只要面板自身仍active且仍与HUD相交，就继续保持HUD上方");
-            log_line("[信息] UI manager 的原版HUD特殊绘制pass保持原样，只执行一次；不Hook、不重放该pass");
-            log_line("[信息] 辅助GUI不改X/Y、child、active、GetCursorPos、self+0xA8、键盘快捷键或按钮业务");
+            log_line(DisplayFixText_WaiZhuan_AuxiliaryUiHooksInstalledLog);
+            log_line(DisplayFixText_WaiZhuan_AuxiliaryDrawChainPolicyLog);
+            log_line(DisplayFixText_WaiZhuan_AuxiliaryInputRootPolicyLog);
+            log_line(DisplayFixText_WaiZhuan_AuxiliaryPanelWrapperPolicyLog);
+            log_line(DisplayFixText_WaiZhuan_AuxiliaryPanelLifetimePolicyLog);
+            log_line(DisplayFixText_WaiZhuan_NativeHudSpecialPassPolicyLog);
+            log_line(DisplayFixText_WaiZhuan_AuxiliaryUiStatePreservationLog);
         } else {
-            log_line("[信息] GUI.AuxiliaryUIAboveHUD=0；辅助GUI保持原版绘制层/菜单root优先级");
-            log_line("[信息] 0x0B/0x0E HUD按压root校正仍保留，因为它属于CenterMainHUD输入反馈兼容，不属于辅助GUI图层开关");
+            log_line(DisplayFixText_WaiZhuan_AuxiliaryUiAboveHudDisabledLog);
+            log_line(DisplayFixText_WaiZhuan_HudPressRootCorrectionPolicyLog);
         }
     } else if (!config.center_main_hud) {
-        log_line("[信息] GUI.CenterMainHUD=0；主HUD未居中，因此不安装HUD/UI共享root与绘制Hook");
+        log_line(DisplayFixText_WaiZhuan_HudSharedHooksDisabledLog);
     } else if (hud_result) {
-        log_line("[警告] HUD/UI共享root与绘制Hook结构验证失败；按压动画校正和辅助GUI保持原版行为");
+        log_line(DisplayFixText_WaiZhuan_HudSharedHooksValidationFailedLog);
     }
 
 
@@ -6776,17 +6777,17 @@ static void initialize_display_fix(void)
     }
 
     if (world_press_result) {
-        log_line("[成功] 世界鼠标按下保护已安装，仅用于防止0x0B/0x0E点击穿透");
-        log_line("[信息] 原版0x4B44F0 UI按下分发保持完全不变");
+        log_line(DisplayFixText_WaiZhuan_WorldMousePressGuardInstalledLog);
+        log_line(DisplayFixText_WaiZhuan_NativeMousePressDispatchPolicyLog);
     } else {
-        log_line("[失败] 世界鼠标按下调用点验证失败；已跳过防点击穿透保护");
+        log_line(DisplayFixText_WaiZhuan_WorldMousePressCallsiteMismatchLog);
     }
 
     if (global_release_result) {
-        log_line("[成功] 全局鼠标释放保护已安装，在HUD路由前处理顶部按钮0x0B/0x0E");
-        log_line("[信息] 鼠标释放：始终先执行原版UI分发；只有目标激活状态未变化时才执行兜底切换");
+        log_line(DisplayFixText_WaiZhuan_GlobalMouseReleaseGuardInstalledLog);
+        log_line(DisplayFixText_WaiZhuan_MouseReleaseFallbackPolicyLog);
     } else {
-        log_line("[失败] 全局鼠标释放调用点验证失败；已跳过顶部按钮路由前兜底");
+        log_line(DisplayFixText_WaiZhuan_GlobalMouseReleaseCallsiteMismatchLog);
     }
 
     /*

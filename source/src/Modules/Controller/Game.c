@@ -1,3 +1,4 @@
+#include "ControllerText.h"
 #include "Plugin.h"
 #include "Combat.h"
 #include "Guard.h"
@@ -141,7 +142,7 @@ void Game_Diagnose(void)
         if (!waiting_world) {waiting_world=true;waiting_since=g_input.now;}
     } else if (waiting_world) {
         /* 只记录实际观察到的世界/角色未就绪时间，不解除原加载门，也不凭时间推测脚本完成。 */
-        Log_Write("[控制就绪] 世界与玩家恢复有效；观察到世界/角色未就绪=%lu毫秒（可能含前端停留，不等同读档耗时），当前界面门=%u。",
+        Log_Write(ControllerText_Game_WorldAndPlayerReadyLog,
             (unsigned long)(g_input.now-waiting_since),reason);
         waiting_world=false;
     }
@@ -149,7 +150,7 @@ void Game_Diagnose(void)
     if (reason==previous_reason && context_id==previous_id &&
         (!requested || g_input.now-previous_time<1000)) return;
     previous_reason=reason;previous_id=context_id;previous_time=g_input.now;
-    Log_Write("[输入链] 层=%d 门=%u 界面=%02X 对象=%08lx 玩家=%08lx 鼠标玩家=%08lx 句柄=%08lx 世界58=%08lx 原生帧=%u 按键=%04lx 有效持键=%04lx 新按=%04lx 摇杆=%.2f,%.2f 状态=%lu 活动动作=%08lx。",
+    Log_Write(ControllerText_Game_InputChainStateLog,
         g_intent.layer,reason,context_id,(unsigned long)context_object,(unsigned long)(uintptr_t)player(),
         (unsigned long)Read32(mouse(),0x38),(unsigned long)Read32(manager(),0x0C),
         (unsigned long)Read32(world(),0x58),native_frames,(unsigned long)g_input.buttons,(unsigned long)g_intent.held,(unsigned long)g_intent.pressed,g_input.lx,g_input.ly,
@@ -266,22 +267,22 @@ static void shortcuts(void)
     if (g_intent.layer == LAYER_MEDICINE) {
         for (int i=0;i<6;++i) if (g_intent.pressed & KEY(six[i])) {
             ((This1)g_profile->quick_use)(hud,i);
-            Log_Write("[药品快捷] 原版槽位 %d。",i+1);
+            Log_Write(ControllerText_Game_RecoveryItemShortcutLog,i+1);
         }
     } else if (g_intent.layer == LAYER_ITEM) {
         for (int i=0;i<6;++i) if (g_intent.pressed & KEY(six[i])) {
             int slot=(int)Read32(hud,0x208+(unsigned)(i+6)*0xE4);
-            if (slot<0 || slot>135) {Log_Write("[投掷快捷] 槽 %d 没有有效物品。",i+1);continue;}
+            if (slot<0 || slot>135) {Log_Write(ControllerText_Game_ThrowSlotInvalidLog,i+1);continue;}
             void *inventory=(void *)(uintptr_t)((This0)g_profile->inventory_get)((void *)g_profile->inventory_root);
             void *item=inventory ? (void *)(uintptr_t)((This1)g_profile->item_at)(inventory,slot):NULL;
             if (!Memory_Readable(item,0x24) || (int)Read32(item,0x1C)<=0) {
-                Log_Write("[投掷快捷] 槽 %d 已空或物品用尽。",i+1);continue;
+                Log_Write(ControllerText_Game_ThrowSlotEmptyLog,i+1);continue;
             }
             /* 按原版右手 getter 生成同一个具体物品选择码，但不切换右手、不调用 Y。
                扣数量、弹道和动作资格由原版执行器决定，不能自己提前删掉物品。 */
             int selection=(int)Read32(item,0x20)+10000;
             Combat_Request(selection,ACTION_THROW,false);
-            Log_Write("[投掷快捷] 槽 %d 直接请求选择=%d。",i+1,selection);
+            Log_Write(ControllerText_Game_ThrowActionRequestedLog,i+1,selection);
         }
     } else if (g_intent.layer==LAYER_GUARD || g_intent.layer==LAYER_DUAL) {
         static const int faces[]={PAD_A,PAD_B,PAD_X,PAD_Y};
@@ -303,8 +304,8 @@ static void shortcuts(void)
         int selection;bool left_style;
         if(skill_choice(i,true,&selection,&left_style)) {
             Combat_Request(selection,ACTION_SKILL,left_style);
-            Log_Write("[技能] 槽%u请求选择=%d。",i+1,selection);
-        } else Log_Write("[技能] 槽%u尚无有效绑定。",i+1);
+            Log_Write(ControllerText_Game_SkillSlotRequestedLog,i+1,selection);
+        } else Log_Write(ControllerText_Game_SkillSlotUnboundLog,i+1);
     }
     /* 单LT按配置用面键或十字切套，RT快捷及右杆不改变长期连招选择。 */
 
@@ -317,24 +318,24 @@ static bool jump_update(void *role)
     if(g_intent.layer!=LAYER_GAME){jump_cancel();return false;}
     if(jump.active && (jump.world!=world() || jump.actor!=Read32(role,0x14)))jump_cancel();
     if(!jump.active && (g_intent.pressed&KEY(PAD_B))) {
-        if(Read32(role,g_profile->active_offset)) {Log_Write("[技能预览拒绝] 当前有原活动动作，等待新的B输入。");return true;}
+        if(Read32(role,g_profile->active_offset)) {Log_Write(ControllerText_Aim_ActiveActionRejectedLog);return true;}
         int selector;bool left_style;
         if(!skill_choice(0,false,&selector,&left_style)) {
-            Log_Write("[技能预览拒绝] 原第一技能快捷绑定未就绪。");return true;
+            Log_Write(ControllerText_Aim_FirstNativeSkillUnavailableLog);return true;
         }
         WorldPoint origin={(int)Read32(role,0x2C),(int)Read32(role,0x30)};
         ResolvedSkill resolved;
         /* B只提供落点预览，动作选择仍交给已经用于RT快捷施放的同一解析及资格链。 */
         if(selector==0xFFFF || !Combat_PreviewSkill(role,selector,&origin,&resolved)) {
-            Log_Write("[技能预览拒绝] 原基础选择=%d，不存在或快捷技能解析/资格拒绝。",selector);return true;
+            Log_Write(ControllerText_Aim_BaseSkillIneligibleLog,selector);return true;
         }
         int method=resolved.method;
         void *record=(void *)(uintptr_t)((This1)g_profile->lookup)((void *)g_profile->methods,method);
-        if(!Memory_Readable(record,0x32)) {Log_Write("[技能预览拒绝] 实际Method=%d记录不可读。",method);return true;}
+        if(!Memory_Readable(record,0x32)) {Log_Write(ControllerText_Aim_MethodUnreadableLog,method);return true;}
         /* 原坐标Runtime使用距离档×64，裸距离0也可能对应有效的缓存档。
          * getter已在四原EXE核对，不以随意固定距离绕过原游戏的上限。 */
         int tier=((This1)g_profile->method_range)(role,method);
-        if(tier<=0 || tier>1024) {Log_Write("[跳跃拒绝] 技能组=%d Method=%d 原距离档=%d无效。",selector,method,tier);return true;}
+        if(tier<=0 || tier>1024) {Log_Write(ControllerText_Aim_InvalidJumpDistanceLog,selector,method,tier);return true;}
         int maximum=tier*64;
         /* 清理此前本插件的走路请求后才建立预览，不能边走边改变起点。 */
         Game_Release();Combat_Suspend();
@@ -352,7 +353,7 @@ static bool jump_update(void *role)
             }
         }
         Feedback_HoldSkill(selector);
-        Log_Write("[跳跃] 开始预览技能组=%d Method=%d 原距离档=%d 最大距离=%d 扩散耗时=%lu毫秒；不改左右手槽位。",selector,method,tier,maximum,(unsigned long)jump.expand_ms);
+        Log_Write(ControllerText_Aim_JumpPreviewStartedLog,selector,method,tier,maximum,(unsigned long)jump.expand_ms);
     }
     if(!jump.active)return false;
     /* 受击/原活动动作接管时取消预览，不能在硬直结束后自动补一个旧跳跃。 */
@@ -362,7 +363,7 @@ static bool jump_update(void *role)
         int selector=jump.selector;bool left_style=jump.left_style;WorldPoint point=jump.point;
         unsigned elapsed=jump.preview_elapsed;jump_cancel();
         Combat_RequestSkillPoint(selector,left_style,&point);Combat_Update(role,0);
-        Log_Write("[技能落点] 松B请求选择=%d 落点=%d,%d 按住=%u毫秒；复用快捷技能路径。",selector,point.x,point.y,elapsed);
+        Log_Write(ControllerText_Aim_LandingRequestedLog,selector,point.x,point.y,elapsed);
         return true;
     }
     if(g_intent.lx || g_intent.ly)Control_WorldDirection(g_intent.lx,g_intent.ly,&jump.dx,&jump.dy);
@@ -444,7 +445,7 @@ void Game_Update(void)
         int x,y;
         if (move_lead!=RuntimeConfig_GetInt(CONFIG_MOVE_LEAD)) {
             move_lead=RuntimeConfig_GetInt(CONFIG_MOVE_LEAD);
-            Log_Write("[移动配置] 左摇杆圆形死区，走跑共用前探=%d 格。",move_lead);
+            Log_Write(ControllerText_Movement_DeadzoneAndLeadLog,move_lead);
         }
         Control_MoveGoal((int)Read32(me,0x2C),(int)Read32(me,0x30),g_intent.lx,g_intent.ly,move_lead,&x,&y);
         int requested_x=x,requested_y=y;
@@ -452,7 +453,7 @@ void Game_Update(void)
         if (!available) {
             if (movement_owner || move_goal_valid) Game_Release();
             if (g_input.now-last_move_log>=1000) {
-                Log_Write("[移动受阻] 世界=%ld,%ld 请求=%d,%d；前方原地形不通行，本次不提交绕路目标。",
+                Log_Write(ControllerText_Movement_TerrainBlockedLog,
                     (long)(int)Read32(me,0x2C),(long)(int)Read32(me,0x30),requested_x,requested_y);
                 last_move_log=g_input.now;
             }
@@ -471,7 +472,7 @@ void Game_Update(void)
             movement_owner=Read32(me,0x73)==0x0B ? Read32(me,0x14) : 0;
         }
         if (g_input.now-last_move_log>=1000) {
-            Log_Write("[移动] 世界=%ld,%ld 请求=%d,%d 地图目标=%d,%d 走跑=%d 提交后状态=%lu。",
+            Log_Write(ControllerText_Movement_TargetSubmittedLog,
                 (long)(int)Read32(me,0x2C),(long)(int)Read32(me,0x30),requested_x,requested_y,x,y,g_intent.run,
                 (unsigned long)Read32(me,0x73));
             last_move_log=g_input.now;

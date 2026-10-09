@@ -1,3 +1,4 @@
+#include "RuntimeText.h"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "GameProfile.h"
@@ -17,7 +18,7 @@
  */
 static const GameProfile PROFILE_DAOJIAN = {
     GAME_ID_DAOJIAN,
-    "刀剑封魔录",
+    RuntimeText_Game_DaoJianTitle,
     0x00173000ul,
     0x0010F0EFul,
     {
@@ -41,7 +42,7 @@ static const GameProfile PROFILE_DAOJIAN = {
 
 static const GameProfile PROFILE_WAIZHUAN = {
     GAME_ID_WAIZHUAN,
-    "刀剑封魔录外传：上古传说",
+    RuntimeText_Game_WaiZhuanTitle,
     0x001A5000ul,
     0x00127BCFul,
     {
