@@ -310,22 +310,32 @@ static void scaled_icon(unsigned long context,void *icons,void *animation,int ic
 /* FAQ集中在这一段追加。正文按实际字高排版，长度不受固定卡片或临时窄字符缓冲限制。 */
 static const char *about_faq=
     "这玩意收费？\n"
-    "   MIT协议开源，被偷已经是预料之中的事情了。\n   不懂自己问豆包这啥意思，还不懂自己想办法，没人天生该伺候你；\n   如果你是买的资源里看到这个消息，那容我嘲笑一下你。\n   如果看到这个不高兴了可以删了换别人做的或者你自己上。\n   厚脸皮那我也没法了\n\n"
+    "   本模组使用MIT协议开源，被偷已经是预料之中的事情了。不懂自己问豆包这啥意思。\n   还不懂自己想办法，没人天生该伺候你；\n   如果你是买的资源里看到这个消息，那容我嘲笑一下你。\n   如果看到这个不高兴了可以删了换别人做的或者你自己上。\n   厚脸皮那我也没法了。\n\n"
     "既然知道会被偷那还放这个？\n"
     "   放点信息当最后的挣扎了，还能让看到的人一起嘲笑\n   被人骗钱或者主动送钱给“不劳而获的狗”的傻子了。\n\n"
     "话说的太难听了，不适合放进来\n"
     "   我做的东西我怎么处理都行，我都开源了你让我diss下\n   某种懒狗和偷东西的畜生不行啊？还受不了自己想办法\n\n"
     "如果要整合这个MOD或者要用这个MOD的代码？\n"
-    "   在我能看得到的地方打个招呼，外带发布的时候声明一下，\n   都MIT协议了，署名是应该的好吧，就算代码是AI写的插件那也全部是我设计的。\n\n"
-    "========== 下面是正式的Q&A ==========\n\n"
+    "   在我能看得到的地方打个招呼，外带发布的时候声明一下，\n   都MIT协议了，署名是应该的好吧，就算代码是AI写的插件那也全部是我设计的。\n\n\n"
+    "========== 下面是正式的Q&A ==========\n\n\n"
     "怎样操作设置菜单？\n"
-    "   LB/RB切页，方向键浏览。默认A确认、B取消；可在按键设置中交换确认和取消。\n\n"
+    "   LB/RB切页，方向键浏览。\n默认A确认、B取消；\n可在按键设置中交换确认和取消。\n\n"
     "修改设置后怎样生效？\n"
-    "   按START保存修改。标有重启提示的项目，要退出并重新启动游戏才会生效。\n\n"
+    "   按START保存修改。\n标有重启提示的项目，要退出并重新启动游戏才会生效。\n\n"
     "技能快捷是每个存档单独保存的吗？\n"
-    "   本体与外传分别保存，每个职业共用一组14个快捷位置。同职业的不同存档共用这一组。\n\n"
+    "   本体与外传分别保存。\n每个职业共用一组14个快捷位置，\n同职业的不同存档共用这一组。\n\n"
     "遇到问题怎样反馈？\n"
-    "   先开启插件日志，再提供EDSlash.log和本页的构建编号，便于确认正在使用的版本。";
+    "   1、先开启插件日志；\n2、重新进游戏触发BUG；\n3、把触发BUG后的EDSlash.log和本页的构建编号提交到Github的issues板块。\n4、等我修，或者你自己修；\n5、修复期间别嚎，嚎破嗓子没用，再叫老子不干了！\n\n"
+    "Github以外不接受任何BUG反馈！！！！！！\n\n"
+    "Github以外不接受任何BUG反馈！！！！！！\n\n"
+    "Github以外不接受任何BUG反馈！！！！！！\n\n"
+    "Github以外不接受任何BUG反馈！！！！！！\n\n"
+    "上面的信息非常重要，说四遍。\n\n\n"
+    "========== 下面是必要信息 ==========\n\n\n"
+    "项目地址：\n\n"
+    "   https://github.com/Kanadeforever/EDSlash\n\n"
+    "个人主页地址：\n\n"
+    "   https://space.bilibili.com/419051\n\n";
 enum {ABOUT_SECTION_COUNT=5,ABOUT_VIEW_HEIGHT=288,TAB_STEP=144,TAB_WIDTH=136};
 static const char *about_titles[ABOUT_SECTION_COUNT]={"插件说明","版本与构建","作者","常见问题解答","第三方组件"};
 static WCHAR *about_wide[ABOUT_SECTION_COUNT];
@@ -333,11 +343,11 @@ static unsigned about_heights[ABOUT_SECTION_COUNT],about_total,about_step=16;
 static const char *about_text(unsigned section,char *output,size_t capacity)
 {
     switch(section) {
-    case 0:return "为《刀剑封魔录》及外传提供手柄操作、画面适配和便利功能。";
+    case 0:return "为《刀剑封魔录》、《刀剑封魔录外传：上古传说》提供手柄操作、现代化画面适配和便利功能。";
     case 1:snprintf(output,capacity,"版本：%s\n构建：%s",EDSLASH_VERSION,EDSLASH_BUILD_ID);return output;
     case 2:return EDSLASH_AUTHOR;
     case 3:return about_faq;
-    case 4:return "使用官方SDL 3.4.16。随发行提供第三方许可说明；插件不包含游戏文件。";
+    case 4:return "使用 SDL 3.4.16 官方库。随发行提供第三方许可说明；本插件不包含游戏文件与ASI加载器。";
     default:return "";
     }
 }
@@ -678,7 +688,7 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         if(model.page==2) {
             static const char *names[]={"A","B","X","Y","↑","↓","←","→","LB","RB","Back","Start","L3","R3"};
             snprintf(label,sizeof label,"RT + %s",names[i]);ConfigBinding b=model.draft_bindings[i];
-            strcpy(value_text_buffer,model.role ? "未设置":"载入角色后设置");ConfigBinding shown=effective_binding(i);
+            strcpy(value_text_buffer,model.role ? "未设置":"当前不可用");ConfigBinding shown=effective_binding(i);
             if(shown.custom)for(unsigned n=0;n<skill_count;++n)if(skills[n].selector==shown.selector)snprintf(value_text_buffer,sizeof value_text_buffer,"%s",skills[n].name);
             dirty=memcmp(&b,&model.saved_bindings[i],sizeof b)!=0;
         } else {

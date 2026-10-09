@@ -8,5 +8,5 @@
 #ifndef EDSLASH_BUILD_ID
 #define EDSLASH_BUILD_ID "未指定源码摘要"
 #endif
-#define EDSLASH_AUTHOR "Luminous/のの不想想名字"
+#define EDSLASH_AUTHOR "Luminous / のの不想想名字"
 #endif
