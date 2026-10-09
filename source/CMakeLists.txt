@@ -116,6 +116,18 @@ edslash_test(audit_runtime_contracts tools/audit_runtime_contracts.c src/Runtime
 edslash_test(test_input_frame tools/test_input_frame.c)
 edslash_test(test_log tools/test_log.c src/Runtime/Log.c src/Runtime/FileIO.c)
 target_compile_definitions(test_log PRIVATE EDSLASH_BUILD_ID="${EDSLASH_BUILD_ID}")
+# 独立回放英文ANSI、简体中文和UTF-8系统代码页，不要求CI修改系统区域。
+# 每个可执行文件有独立目录，避免并行CTest写入同一个EDSlash.log。
+foreach(codepage 1252 936 65001)
+    edslash_test(test_log_acp${codepage} tools/test_log.c tools/test_log_codepage.c
+        src/Runtime/Log.c src/Runtime/FileIO.c)
+    target_compile_options(test_log_acp${codepage} PRIVATE
+        -include "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_log_codepage.h")
+    target_compile_definitions(test_log_acp${codepage} PRIVATE
+        EDSLASH_TEST_ACP=${codepage} EDSLASH_BUILD_ID="${EDSLASH_BUILD_ID}")
+    set_target_properties(test_log_acp${codepage} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/log-codepage-${codepage}")
+endforeach()
 edslash_test(test_config tools/test_config.c src/Runtime/SettingsModel.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c)
 target_compile_options(test_config PRIVATE -municode)
 target_link_options(test_config PRIVATE -municode)

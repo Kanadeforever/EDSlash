@@ -28,11 +28,18 @@ int main(void)
     CHECK(RuntimeLog_Initialize(GetModuleHandleW(NULL)));
     CHECK(RuntimeLog_Flush(0));
     RuntimeLogStats before;RuntimeLog_GetStats(&before);CHECK(before.file_opens==1);
-    /* 构造系统代码页中文路径，追加到UTF-8标签；整体必须严格可解码。 */
+    /* 模拟A版接口返回的路径：系统代码页可能无法表示汉字，原始字节会先变成替代字符。
+     * 日志转换只能保留接口实际返回的内容，不能从替代字符恢复已经丢失的汉字。 */
     char native[256],mixed[512]="[路径] ";
     CHECK(WideCharToMultiByte(CP_ACP,0,L"C:\\游戏目录\\EDSlash.toml",-1,native,sizeof native,NULL,NULL)>0);
+    /* 用Windows真实API读取ANSI片段的含义，建立当前系统下应得到的UTF-8结果。
+     * 1252检查替代字符被如实保留，936和UTF-8仍严格检查中文路径完整转换。 */
+    wchar_t decoded[256];char expected[256];
+    CHECK(MultiByteToWideChar(CP_ACP,0,native,-1,decoded,256)>0);
+    CHECK(WideCharToMultiByte(CP_UTF8,0,decoded,-1,expected,sizeof expected,NULL,NULL)>0);
     CHECK(RuntimeLog_AppendAnsi(mixed,sizeof mixed,native));
-    CHECK(strstr(mixed,"游戏目录")!=NULL);
+    CHECK(!memcmp(mixed,"[路径] ",strlen("[路径] ")));
+    CHECK(!strcmp(mixed+strlen("[路径] "),expected));
     CHECK(MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,mixed,-1,NULL,0)>0);
     char tiny[8]="保留";CHECK(!RuntimeLog_AppendAnsi(tiny,sizeof tiny,native) && !strcmp(tiny,"保留"));
     RuntimeLog_Line(mixed);

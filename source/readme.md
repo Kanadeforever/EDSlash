@@ -25,7 +25,7 @@ python source/tools/build.py --checks-only
 python source/tools/build.py --upx
 ~~~
 
-默认一次带-g的优化编译，保留完整链接件，副本strip --strip-unneeded后默认执行upx --best --lzma，作为正式发行件。先做配置同步、四样本字体安全输出及档案反例回归，再运行26组CTest、四官方EXE复核、两件PE／入口／重定位／依赖、TOML解析、运行段一致及实际加载检查，通过后同步配置并发布。checks-only不更新发布目录。UPX使用PATH或UPX_BIN中的本机工具，正式发行默认压缩，--upx仅保留为兼容参数。执行upx -t、非游戏加载／重定位及解压运行段一致性检查；未找到UPX时停止发布，不自动安装。CI环境也须显式安装UPX并加入PATH。
+默认一次带-g的优化编译，保留完整链接件，副本strip --strip-unneeded后默认执行upx --best --lzma，作为正式发行件。先做配置同步、四样本字体安全输出及档案反例回归，再运行29组CTest、四官方EXE复核、两件PE／入口／重定位／依赖、TOML解析、运行段一致及实际加载检查，通过后同步配置并发布。checks-only不更新发布目录。UPX使用PATH或UPX_BIN中的本机工具，正式发行默认压缩，--upx仅保留为兼容参数。执行upx -t、非游戏加载／重定位及解压运行段一致性检查；未找到UPX时停止发布，不自动安装。CI环境也须显式安装UPX并加入PATH。
 
 两件运行代码和优化级别相同；Debug不等于-O0，完整信息仅留在_debug。运行时配置／日志仍叫EDSlash.toml／EDSlash.log，不能同时安装两件。
 
@@ -46,7 +46,7 @@ python source/tools/build.py --upx
 
 构建另外自动运行配置同步和Controller档案回归。后者只读四份本体/外传Steam/非Steam准确EXE，核对静态地图/句柄表/资格来源并确认故意写错地址会被拒绝；源码包没有完整游戏样本时明确跳过真实样本检查，不下载游戏。
 
-26组（包含共享契约、延后初始化、焦点、跳跃和自有设置窗口回归）：输入规则、连续方向、两作宿主战斗／调用约定、原生菜单/删除确认/软件光标、调查扇区与静态原事件、拾取提示、Runtime写入／回滚、公共输入阶段、真实后台日志、TOML与原子保存、生产Input＋静态SDL虚拟设备、未知宿主ASI加载。UPX另外验证压缩完整性和加载。
+29组（包含共享契约、延后初始化、焦点、跳跃和自有设置窗口回归）：输入规则、连续方向、两作宿主战斗／调用约定、原生菜单/删除确认/软件光标、调查扇区与静态原事件、拾取提示、Runtime写入／回滚、公共输入阶段、真实后台日志及1252／936／UTF-8代码页回放、TOML与原子保存、生产Input＋静态SDL虚拟设备、未知宿主ASI加载。UPX另外验证压缩完整性和加载。
 
 产物必须PE32/i386、DLL、非零入口、唯一InitializeASI导出、重定位可用，不依赖SDL3.dll或外置libgcc／libstdc++／libwinpthread；标准Windows系统DLL允许导入，主目标零导入已不再作为最终契约。
 
