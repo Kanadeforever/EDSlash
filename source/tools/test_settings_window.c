@@ -93,6 +93,20 @@ static int snapshot(const BITMAPINFOHEADER *header,const void *pixels)
     int result=fwrite(&head,sizeof head,1,file)==1 && fwrite(header,sizeof *header,1,file)==1 && fwrite(pixels,size,1,file)==1;
     return fclose(file)==0 && result;
 }
+/* 鼠标滚轮应滚动列表，而不是从右列缺项跳进底部按钮；两种开窗入口共用回放。 */
+static int wheel_last_row_regression(void)
+{
+    SettingsModel before=model;int old_footer=footer;
+    model.page=1;model.scroll[1]=0;model.focus[1]=11;footer=editing=picker=0;
+    CHECK(SettingsModel_Field(1,11)==CONFIG_WORLD_MAP && SettingsModel_Field(1,12)==CONFIG_WORLD_SYSTEM);
+    CHECK(SettingsWindow_Wheel(-60) && !model.scroll[1] && !footer);
+    CHECK(SettingsWindow_Wheel(-60) && model.scroll[1]==1 && !footer);
+    mouse_click(24,342);CHECK(model.focus[1]==12 && editing && edit_id==CONFIG_WORLD_SYSTEM);
+    cancel();CHECK(SettingsWindow_Wheel(120) && !model.scroll[1]);
+    CHECK(SettingsWindow_Wheel(-1200) && model.scroll[1]==1);
+    CHECK(SettingsWindow_Wheel(1200) && !model.scroll[1]);
+    model=before;footer=old_footer;return 0;
+}
 int wmain(void)
 {
     /* 每次回放保留系统分配的独立文件名，写入默认配置后再读取。
@@ -149,7 +163,7 @@ int wmain(void)
     info.bmiHeader.biHeight=-600;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
     void *pixels=NULL;HBITMAP bitmap=CreateDIBSection(fixture_dc,&info,DIB_RGB_COLORS,&pixels,NULL,0);
     CHECK(bitmap && pixels);HGDIOBJ previous_bitmap=SelectObject(fixture_dc,bitmap);
-    CHECK(open_window());wr(surface,0xC,640);wr(surface,0x10,480);
+    CHECK(open_window());CHECK(!wheel_last_row_regression());wr(surface,0xC,640);wr(surface,0x10,480);
     PatBlt(fixture_dc,0,0,960,600,WHITENESS);SetBkMode(fixture_dc,OPAQUE);
     paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
     CHECK(releases==1 && origin_x==16 && origin_y==16);
@@ -174,6 +188,9 @@ int wmain(void)
     char about_body[1024];const char *about_info=about_text(1,about_body,sizeof about_body);CHECK(strstr(about_info,EDSLASH_VERSION) && strstr(about_info,EDSLASH_BUILD_ID));
     about_info=about_text(2,about_body,sizeof about_body);CHECK(strstr(about_info,EDSLASH_AUTHOR));
     /* 验证超过2048宽字符的长FAQ完整转换且末尾可滚到，检查后恢复正式文案。 */
+    char build_info[1024];const char *build_text=about_text(1,build_info,sizeof build_info);
+    CHECK(strlen(EDSLASH_BUILD_DATE)==19 && EDSLASH_BUILD_DATE[4]=='-' && EDSLASH_BUILD_DATE[10]==' ' && EDSLASH_BUILD_DATE[16]==':');
+    CHECK(strstr(build_text,EDSLASH_BUILD_DATE) && strstr(build_text,"构建日期") && strstr(build_text,"北京时间"));
     const char *saved_faq=about_faq;static char long_faq[32768];
     for(unsigned n=0;n<100;++n)strcat(long_faq,"问：追加的问题。\n答：追加说明应完整显示，不能被固定缓存和高度裁掉。\n\n");
     strcat(long_faq,"末尾验收标记");about_clear_layout();about_faq=long_faq;about_layout();
@@ -191,7 +208,7 @@ int wmain(void)
     ConfigSnapshot about_before=model.draft;ConfigBinding about_bindings[14];memcpy(about_bindings,model.draft_bindings,sizeof about_bindings);
     activate();SettingsWindow_Pad(1u<<4,1u<<4,0,0,0,0,0,0,130);CHECK(!editing && !picker && !confirm_reset);
     CHECK(!memcmp(&about_before,&model.draft,sizeof about_before) && !memcmp(about_bindings,model.draft_bindings,sizeof about_bindings));
-    SettingsWindow_Wheel(-1);CHECK(model.scroll[SETTINGS_PAGE_ABOUT]>0);
+    SettingsWindow_Wheel(-120);CHECK(model.scroll[SETTINGS_PAGE_ABOUT]>0);
     scroll_at(370);CHECK(model.scroll[SETTINGS_PAGE_ABOUT]==about_max_scroll());
     FillRect(fixture_dc,&about_canvas,(HBRUSH)GetStockObject(WHITE_BRUSH));
     paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
@@ -205,11 +222,23 @@ int wmain(void)
     FillRect(fixture_dc,&about_canvas,(HBRUSH)GetStockObject(WHITE_BRUSH));
     paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
     snapshot_path="settings_keymap_fixture.bmp";CHECK(snapshot(&info.bmiHeader,pixels));
-    for(unsigned state=0;state<4;++state){keymap_state=state;
+    for(unsigned state=0;state<KEYMAP_STATE_COUNT;++state){keymap_state=state;
         for(unsigned key=0;key<18;++key){keymap_effect(key,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(keymap_description[0]);}
         FillRect(fixture_dc,&about_canvas,(HBRUSH)GetStockObject(WHITE_BRUSH));paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
-        const char *paths[]={"keymap_normal.bmp","keymap_lt.bmp","keymap_rt.bmp","keymap_dual.bmp"};snapshot_path=paths[state];CHECK(snapshot(&info.bmiHeader,pixels));
+        const char *paths[]={"keymap_normal.bmp","keymap_lt.bmp","keymap_rt.bmp","keymap_dual.bmp","keymap_rescue.bmp"};snapshot_path=paths[state];CHECK(snapshot(&info.bmiHeader,pixels));
     }
+    /* 第五页逐键对应真实救援映射；普通改绑、无角色、技能草稿不能污染鼠标说明。 */
+    SettingsModel rescue_before=model;keymap_state=4;unsigned saved_role=model.role;model.role=0;
+    for(unsigned key=0;key<KEYMAP_KEY_COUNT;++key){
+        keymap_effect(key,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);
+        const char *expected=key==0 ? RuntimeText_KeymapRescueRightClick:key==6 ? RuntimeText_KeymapRescueLeftClick:
+            key==2 ? RuntimeText_KeymapRescueMove:key==8 ? RuntimeText_KeymapRescueFineMove:
+            key==4 ? RuntimeText_KeymapRescueBack:key==10 ? RuntimeText_KeymapRescueStart:RuntimeText_KeymapNoEffect;
+        CHECK(!strcmp(keymap_description,expected) && keymap_selection==-1 && keymap_icon==-1);
+    }
+    model.role=saved_role;CHECK(!memcmp(&model,&rescue_before,sizeof model));
+    move(4);CHECK(keymap_state==0);move(3);CHECK(keymap_state==4);
+    mouse_click(410,100);CHECK(keymap_state==0);mouse_click(195,100);CHECK(keymap_state==4);
     /* 键位图即时反映草稿的导航模式；非负责摇杆明确显示无效果。 */
     keymap_state=3;
     for(int mode=0;mode<3;++mode){
@@ -350,6 +379,7 @@ int wmain(void)
     paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);CHECK(native_captions==2 && rd(native_settings_root,0x78)==0);
     SettingsWindow_NativeEntryFocus(NULL,0);expected_caption_color=0;
     unsigned pause_before=pauses;CHECK(SettingsWindow_OpenNative(native_settings_root) && !model.role && pauses==pause_before);
+    CHECK(!wheel_last_row_regression());
     /* 验证无角色时拒绝编辑并给出提示，不将提示的具体措辞当成业务协议。 */
     model.page=2;ConfigSnapshot disabled_draft=model.draft;ConfigBinding disabled_bindings[14];
     memcpy(disabled_bindings,model.draft_bindings,sizeof disabled_bindings);

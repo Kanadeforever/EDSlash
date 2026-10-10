@@ -38,6 +38,7 @@ static int draw_subscribed,input_subscribed,menu_swap,error_modal,picker_footer,
 static ConfigId edit_id;static int edit_before;static char edit_text_before[40];
 static void *root;static uintptr_t old_primary,old_draw,host_table,host_show;
 static int native_host;
+static int wheel_remainder;
 static void paint(RuntimeEventId,void *,unsigned long,unsigned long,void *);
 static void clear_icon_cache(void);
 static void about_clear_layout(void);
@@ -219,7 +220,7 @@ static int open_on(void *native_page)
     menu_swap=RuntimeConfig_GetInt(CONFIG_MENU_SWAP_AB);
     active=1;barrier=1;editing=footer=picker=confirm_discard=confirm_reset=error_modal=picker_footer=scroll_drag=0;previous_direction=0;message[0]=0;
     clear_icon_cache();
-    keymap_state=0;
+    keymap_state=0;wheel_remainder=0;
     if(!native_host)((This2)host_show)(root, NULL,1,0);
     skill_count=skill_view_count=0;if(selector)build_skills();
     keymap_collect_specials();
@@ -324,7 +325,7 @@ static const char *about_text(unsigned section,char *output,size_t capacity)
 {
     switch(section) {
     case 0:return RuntimeText_Settings_AboutIntroductionBody;
-    case 1:snprintf(output,capacity,RuntimeText_Settings_AboutVersionBuildFormat,EDSLASH_VERSION,EDSLASH_BUILD_ID);return output;
+    case 1:snprintf(output,capacity,RuntimeText_Settings_AboutVersionBuildFormat,EDSLASH_VERSION,EDSLASH_BUILD_ID,EDSLASH_BUILD_DATE);return output;
     case 2:return EDSLASH_AUTHOR;
     case 3:return about_faq;
     case 4:return RuntimeText_Settings_AboutDependenciesBody;
@@ -366,13 +367,13 @@ static void about_scroll(int delta)
     if(value>maximum)value=maximum;
     model.scroll[SETTINGS_PAGE_ABOUT]=(unsigned)value;
 }
-enum {KEYMAP_STATE_COUNT=4,KEYMAP_KEY_COUNT=18};
+enum {KEYMAP_STATE_COUNT=5,KEYMAP_KEY_COUNT=18};
 static struct {int selector,icon;char name[128];} keymap_finishers[4];
 static char keymap_jump_name[128];
 static const int keymap_world_buttons[18]={-1,-1,-1,6,4,-1,-1,-1,-1,7,5,-1,-1,-1,0,1,2,3};
 static const int keymap_skill_slots[18]={-1,8,-1,12,10,4,-1,9,-1,13,11,5,6,7,0,1,2,3};
 static COLORREF keymap_color(void)
-{static const COLORREF colors[4]={RGB(231,206,154),RGB(132,186,255),RGB(212,154,255),RGB(255,143,150)};return colors[keymap_state];}
+{static const COLORREF colors[KEYMAP_STATE_COUNT]={RGB(231,206,154),RGB(132,186,255),RGB(212,154,255),RGB(255,143,150),RGB(104,218,202)};return colors[keymap_state];}
 static RECT keymap_cell(unsigned i)
 {
     int x,y,w=144;
@@ -406,6 +407,13 @@ static void keymap_effect(unsigned key,char *output,size_t capacity,int *selecto
 {
     *selector=*icon=-1;snprintf(output,capacity,"%s",RuntimeText_KeymapNoEffect);
     if(key>=KEYMAP_KEY_COUNT)return;
+    if(keymap_state==4){
+        /* 救援说明取真实鼠标模式固定映射，不受世界改键、技能绑定或角色加载影响。 */
+        const char *effect=key==0 ? RuntimeText_KeymapRescueRightClick:key==6 ? RuntimeText_KeymapRescueLeftClick:
+            key==2 ? RuntimeText_KeymapRescueMove:key==8 ? RuntimeText_KeymapRescueFineMove:
+            key==4 ? RuntimeText_KeymapRescueBack:key==10 ? RuntimeText_KeymapRescueStart:RuntimeText_KeymapNoEffect;
+        snprintf(output,capacity,"%s",effect);return;
+    }
     if(keymap_state==2){
         int slot=keymap_skill_slots[key];
         if(slot>=0){if(!model.role){snprintf(output,capacity,"%s",RuntimeText_Settings_UnavailableValue);return;}
@@ -547,7 +555,7 @@ static void move(int dir)
         if(dir==2){if(*top<about_max_scroll())about_scroll((int)about_step);else footer=1;}
         return;
     }
-    if(model.page==SETTINGS_PAGE_KEYMAP){if(dir==3)keymap_state=(keymap_state+3)%4;else if(dir==4)keymap_state=(keymap_state+1)%4;else if(dir==2)footer=1;return;}
+    if(model.page==SETTINGS_PAGE_KEYMAP){if(dir==3)keymap_state=(keymap_state+KEYMAP_STATE_COUNT-1)%KEYMAP_STATE_COUNT;else if(dir==4)keymap_state=(keymap_state+1)%KEYMAP_STATE_COUNT;else if(dir==2)footer=1;return;}
     unsigned before=model.focus[model.page];SettingsModel_Move(&model,dir,6);
     if(dir==2 && before==model.focus[model.page])footer=1;
 }
@@ -830,8 +838,12 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         action_button(dc,x+304,y+378,136,30,editing ? RuntimeText_ResetCurrent:RuntimeText_ResetPage,RuntimeText_Key_BackUppercase,footer==3);
         if(!picker)action_button(dc,x+448,y+378,144,30,model.help ? RuntimeText_Settings_HideHelpButton:RuntimeText_Settings_ShowHelpButton,RuntimeText_Key_Y,0);
     }
-    const char *hint=model.page==SETTINGS_PAGE_KEYMAP ? RuntimeText_KeymapStateHint:model.page==SETTINGS_PAGE_ABOUT ? RuntimeText_Settings_AboutNavigationHint:editing ? RuntimeText_Settings_ValueEditorNavigationHint:RuntimeText_Settings_SettingsNavigationHint;
+    const char *hint=model.page==SETTINGS_PAGE_KEYMAP ? (keymap_state==4 ? RuntimeText_KeymapRescueHint:RuntimeText_KeymapStateHint):model.page==SETTINGS_PAGE_ABOUT ? RuntimeText_Settings_AboutNavigationHint:editing ? RuntimeText_Settings_ValueEditorNavigationHint:RuntimeText_Settings_SettingsNavigationHint;
+    /* 救援页的两行使用说明用同页小字号，保持完整显示且不挤占保存/关闭按钮。 */
+    HGDIOBJ hint_font=NULL;
+    if(model.page==SETTINGS_PAGE_KEYMAP && keymap_state==4 && keymap_font)hint_font=SelectObject(dc,keymap_font);
     text(dc,x+16,y+416,576,26,message[0] ? message:hint,RGB(207,188,154));
+    if(hint_font)SelectObject(dc,hint_font);
     if(model.page!=SETTINGS_PAGE_KEYMAP)paint_scrollbar(dc,x,y);
     if(picker) {
         box(dc,x+16,y+82,576,322,RGB(24,22,18),RGB(194,146,65));
@@ -914,9 +926,28 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
     }
 }
 int SettingsWindow_Wheel(int delta)
-{if(!active)return 0;pointer_mode=1;
-    if(model.page==SETTINGS_PAGE_ABOUT && !confirm_discard && !confirm_reset && !error_modal){about_layout();about_scroll((delta>0 ? -3:3)*(int)about_step);footer=0;}
-    else move(delta>0 ? 1:2);
+{
+    if(!active)return 0;pointer_mode=1;
+    if(confirm_discard || confirm_reset || error_modal)return 1;
+    /* 高精度滚轮不足一格的量先累积；不能把每条消息当成一次焦点移动。 */
+    int64_t amount=(int64_t)wheel_remainder+delta;int steps=(int)(amount/120);wheel_remainder=(int)(amount%120);
+    if(!steps)return 1;
+    if(model.page==SETTINGS_PAGE_ABOUT){about_layout();about_scroll(-steps*3*(int)about_step);footer=0;return 1;}
+    if(!editing && !picker && model.page<=2){
+        unsigned count=SettingsModel_Count(model.page),rows=(count+1)/2,maximum=rows>6 ? rows-6:0;
+        int64_t top=(int64_t)model.scroll[model.page]-steps;
+        if(top<0)top=0;if(top>maximum)top=maximum;
+        model.scroll[model.page]=(unsigned)top;footer=0;
+        /* 滚轮直接移动视口；焦点仅在离开可见区时校正，奇数末行不能落在空格。 */
+        unsigned index=model.focus[model.page],row=index/2;
+        if(row<(unsigned)top)index=(unsigned)top*2+(index&1);
+        else if(row>=(unsigned)top+6)index=((unsigned)top+5)*2+(index&1);
+        if(index>=count)index=count ? count-1:0;
+        model.focus[model.page]=index;return 1;
+    }
+    if(editing || picker){int repeats=steps<0 ? -steps:steps;if(repeats>32)repeats=32;
+        for(int i=0;i<repeats;++i)move(steps>0 ? 1:2);
+    }
     return 1;
 }
 static void mouse_click(int x,int y)

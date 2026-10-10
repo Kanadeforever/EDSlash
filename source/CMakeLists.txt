@@ -9,6 +9,14 @@ if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 4 OR NOT CMAKE_C_COMPILER_ID STREQ
 endif()
 # 入口提供内容摘要；直接CMake构建明确显示未指定身份。
 set(EDSLASH_BUILD_ID "未指定源码摘要" CACHE STRING "当前构建输入内容身份")
+# 统一入口传入同次构建的北京时间；独立CMake配置也显式按UTC+8计算，不读宿主时区。
+if(NOT DEFINED EDSLASH_BUILD_DATE)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    execute_process(COMMAND "${Python3_EXECUTABLE}" -c "from datetime import datetime,timedelta,timezone; print(datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S'))"
+        OUTPUT_VARIABLE EDSLASH_BUILD_DATE OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+endif()
+add_compile_definitions(EDSLASH_BUILD_DATE=\"${EDSLASH_BUILD_DATE}\")
+
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 # 一次编译保留完整源码调试信息，优化级别和NDEBUG保持Release原设置。

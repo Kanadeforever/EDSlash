@@ -99,3 +99,7 @@ Guard设置应用测试使用真实TOML与双版本运动回放；test_menu链�
 技能菜单选择模式位于按键设置页，对应controller.menu.skill_menu_navigation。left、right、independent分别为左摇杆导航全部、右摇杆导航全部、各自独立导航；默认independent。L3/R3展开侧别不随导航模式变化，手柄键位图即时反映草稿；保存后安全空闲时生效。
 
 技能存储由Runtime/Config.c协调独立主文档和技能文档，Runtime初始化传入已识别GameProfile.game_id。技能文件仅含version和按创建角色selector分组的稀疏技能；缺省槽未设置。普通设置保存不会触碰技能文档。混合保存先完整验证两份候选，每个文件原子替换；主设置失败会回滚已写技能文件并拒绝覆盖外部新改动，不宣称操作系统提供跨文件事务。公开包固定清单排除个人技能文件和备份，构建只更新默认主模板。
+
+关于页的版本与构建信息包含本次北京时间构建日期，格式YYYY-MM-DD HH:MM:SS。build.py按UTC+8生成一次时间，CMake将其编译进同次发行/debug；不使用玩家打开窗口时的时间。直接CMake配置时也通过Python显式计算UTC+8，报告记录同值。
+
+手柄键位包含第五个内部状态“鼠标救援模式”，使用固定鼠标控制说明并显示BACK+START切换与中立条件，不跟随世界改绑和角色技能变化。

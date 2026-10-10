@@ -1,6 +1,7 @@
 """一次构建同时验证发行件与完整调试件，静态SDL不需要外置运行库。"""
 from pathlib import Path
 import argparse
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -92,6 +93,8 @@ def main():
         digest.update(path.relative_to(SOURCE).as_posix().encode("utf-8") + b"\0")
         digest.update(path.read_bytes())
     build_id = digest.hexdigest()
+    # UTC+8显式计算北京时间，不依赖本机或GitHub runner的时区。
+    build_date = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     cc, environment = compiler()
     cmake = program("cmake", environment)
     ninja = program("ninja", environment)
@@ -110,7 +113,7 @@ def main():
     samples = verify_baselines(metadata)
     run([cmake, "--log-level=WARNING", "-S", SOURCE, "-B", BUILD, "-G", "Ninja",
          f"-DCMAKE_MAKE_PROGRAM={ninja}", f"-DCMAKE_C_COMPILER={cc}",
-         f"-DCMAKE_CXX_COMPILER={cxx}", "-DCMAKE_BUILD_TYPE=Release", f"-DEDSLASH_BUILD_ID={build_id}"], environment)
+         f"-DCMAKE_CXX_COMPILER={cxx}", "-DCMAKE_BUILD_TYPE=Release", f"-DEDSLASH_BUILD_ID={build_id}", f"-DEDSLASH_BUILD_DATE={build_date}"], environment)
     run([cmake, "--build", BUILD, "--parallel", str(args.jobs), "--", "--quiet"], environment)
     ctest = str(Path(cmake).with_name("ctest.exe"))
     if not Path(ctest).is_file():
@@ -126,6 +129,8 @@ def main():
     shutil.copyfile(linked, debug_asi)
     shutil.copyfile(linked, release_asi)
     pdb = BUILD / "EDSlash.pdb"
+    if build_date.encode("ascii") not in debug_asi.read_bytes():
+        raise RuntimeError("ASI未嵌入本次北京时间构建日期")
     debug_evidence = verify(debug_asi, config)
     evidence = verify(release_asi, config)
     evidence["压缩前发行与调试运行段一致"] = verify_variants(debug_asi, release_asi)
@@ -139,6 +144,7 @@ def main():
                           "字节数": debug_evidence["ASI字节数"],
                           "源码调试信息": True, "优化": "与发行件相同"}
     evidence["完整版"]["PDB"] = {"文件": "debug/EDSlash.pdb", "SHA256": hashlib.sha256(pdb.read_bytes()).hexdigest()}
+    evidence["构建日期（北京时间）"] = build_date
     evidence["编译器"] = "原生MSVC，Win32/x86，静态运行库/MT"
     evidence["四官方EXE静态复核"] = samples
     evidence["构建身份"] = {"源码与构建输入SHA256": build_id, "架构": "单ASI、统一TOML及日志、官方静态SDL3.4.16"}

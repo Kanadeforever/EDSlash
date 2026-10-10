@@ -653,17 +653,18 @@ static void menu_regression(bool expansion)
     /* 几何导航覆盖外传额外按钮，普通本体不能选到隐藏A7。 */
     for (unsigned i=0;i<6;++i) { neutral_menu();menu_step(KEY(PAD_DOWN),0,0); }
     CHECK(focus_id(0)==(expansion ? 0xA7u:0x23u));
-    /* 开页时旧A/左摇杆输入不执行，松开后才能操作；系统默认继续而非鼠标指向的离开按钮。 */
+    /* 开页时旧A/左摇杆不执行；系统按视觉最上方选第一项，不能按ID误选底部取消。 */
+    Write32(menu_children[1][0],0x18,200);Write32(menu_children[1][1],0x18,50);Write32(menu_children[1][2],0x18,100);Write32(menu_children[1][3],0x18,150);
     world_ptr=old_world;activate_page(1);menu_step(KEY(PAD_A),1,0);CHECK(system_actions==0);
-    neutral_menu();CHECK(focus_id(1)==0x2E);CHECK(Read32(menu_children[1][0],0x58)==0);
-    menu_step(0,0,1);CHECK(focus_id(1)==0x30);
-    CHECK(Read32(menu_children[1][0],0x58)==77 && Read32(menu_children[1][1],0x58)==0);
-    neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(system_actions==1 && selected_action==0x30);
+    neutral_menu();CHECK(focus_id(1)==0x30);CHECK(Read32(menu_children[1][1],0x58)==0);
+    menu_step(0,0,1);CHECK(focus_id(1)==0x31);
+    CHECK(Read32(menu_children[1][1],0x58)==77 && Read32(menu_children[1][2],0x58)==0);
+    neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(system_actions==1 && selected_action==0x31);
     /* 物理来源完整回到原hover；新的手柄接管不拿物理悬停当默认选择。 */
     Menu_Suspend();g_intent.layer=LAYER_NATIVE;
     CHECK(((This3)menu_tables[1][0x30/4])(menu_roots[1], NULL,12,34,(void *)56)==9);
     CHECK(native_hovers==1);menu_step(KEY(PAD_A),0,0);CHECK(system_actions==1);
-    neutral_menu();CHECK(focus_id(1)==0x2E);
+    neutral_menu();CHECK(focus_id(1)==0x30);
     /* capture子对象归一化到确认框，优先于下面仍显示的系统页。 */
     ((This2)menu_tables[2][0x1C/4])(menu_roots[2], NULL,1,0);
     ptr(ui_data,0x3C,menu_children[2][2]);ptr(ui_data,0x40,menu_roots[1]);

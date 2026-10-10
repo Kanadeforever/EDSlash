@@ -185,7 +185,7 @@ const char RuntimeText_AboutAuthor[] = "作者";
 const char RuntimeText_AboutFaqTitle[] = "常见问题解答";
 const char RuntimeText_AboutDependencies[] = "第三方组件";
 const char RuntimeText_Settings_AboutIntroductionBody[] = "为《刀剑封魔录》、《刀剑封魔录外传：上古传说》提供手柄操作、现代化画面适配和便利功能。";
-const char RuntimeText_Settings_AboutVersionBuildFormat[] = "版本：%s\n构建：%s";
+const char RuntimeText_Settings_AboutVersionBuildFormat[] = "版本：%s\n构建：%s\n构建日期：%s（北京时间）";
 const char RuntimeText_Settings_AboutDependenciesBody[] = "使用 SDL 3.4.16 官方库。随发行提供第三方许可说明；本插件不包含游戏文件与ASI加载器。\n\n手柄图标作者：Jishenaz（CC0 1.0）。";
 const wchar_t RuntimeText_Settings_FontFace[] = L"宋体";
 const char RuntimeText_Settings_SavedRestartRequiredMessage[] = "设置已保存。待重启的项目在下次启动时生效。";
@@ -316,7 +316,7 @@ const char RuntimeText_KeymapComboFormat[]="LT连招：%s";
 const char RuntimeText_KeymapDpadLabel[]="方向键";
 
 /* 状态页统一用无效果表示该键没有当前动作，未加载角色则沿技能快捷页禁用提示。 */
-const char *const RuntimeText_KeymapStates[4]={"一般状态","按住LT时","按住RT时","按住LT＋RT时"};
+const char *const RuntimeText_KeymapStates[5]={"一般状态","按住LT时","按住RT时","按住LT＋RT时","鼠标救援模式"};
 const char *const RuntimeText_KeymapKeys[18]={"LT","LB","左摇杆","L3","BACK","↑","RT","RB","右摇杆","R3","START","↓","←","→","A","B","X","Y"};
 const char RuntimeText_KeymapNoEffect[]="无效果";
 const char RuntimeText_KeymapStateHint[]="左右或图上箭头翻状态；LB/RB切主页面；START保存";
@@ -351,3 +351,12 @@ const char RuntimeText_Skills_SaveFailed[]="无法保存EDSlash.SkillContols.tom
 const char RuntimeText_Skills_RollbackFailed[]="主设置保存失败且技能文件回滚失败，请重新载入配置后检查两份文件";
 const char RuntimeText_Skills_MigrationFailed[]="无法迁移旧技能设置，原EDSlash.toml与迁移备份保留";
 const char RuntimeText_Skills_Header[]="# EDSlash技能快捷配置；不随发行覆盖；缺省位置均为未设置。\r\n[version]\r\ngame_version = \"%s\"\r\nschema = 1\r\n";
+
+/* 固定救援鼠标映射来自Input_Mouse；这里显示用途，不切换实际输入模式。 */
+const char RuntimeText_KeymapRescueRightClick[]="鼠标右键";
+const char RuntimeText_KeymapRescueLeftClick[]="鼠标左键";
+const char RuntimeText_KeymapRescueMove[]="鼠标移动";
+const char RuntimeText_KeymapRescueFineMove[]="微调（1/3速）";
+const char RuntimeText_KeymapRescueBack[]="与START切换";
+const char RuntimeText_KeymapRescueStart[]="与BACK切换";
+const char RuntimeText_KeymapRescueHint[]="游戏中松开LT/RT、关闭技能菜单，再用BACK＋START切换。\n切换后松键、松扳机、摇杆回中；左右翻页，LB/RB切主页面。";
