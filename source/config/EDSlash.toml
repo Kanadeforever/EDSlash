@@ -114,8 +114,3 @@ run = "l3"
 minimap = "r3"
 # 系统菜单键：按下打开或关闭游戏原本的系统菜单，用于存档、读档和返回等操作。插件设置仍用LT加RT加Back打开。这是没有按住LT、RT等组合键时的按钮。菜单确认取消不随它改变。七项不能用同一个按钮；交换两键时，先把两项改好再保存。
 system_menu = "start"
-
-[controller.bindings]
-# 未设置是所有RT快捷位置的默认状态；明确设置的技能按游戏、角色、槽位分别保存。
-default = "none"
-# character_编号来自Player+0x348的创建角色selector；技能选择码须来自该角色实际技能。

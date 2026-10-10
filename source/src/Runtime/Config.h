@@ -37,6 +37,9 @@ typedef struct {unsigned game,role,slot;ConfigBinding value;} ConfigBindingEdit;
 
 int RuntimeConfig_Initialize(void *module);
 int RuntimeConfig_OpenPath(const wchar_t *path);
+/* 生产初始化使用已识别的游戏编号；离线调用OpenPath默认本体。 */
+int RuntimeConfig_OpenPathForGame(const wchar_t *path,unsigned game);
+int RuntimeConfig_InitializeForGame(void *module,unsigned game);
 const ConfigSnapshot *RuntimeConfig_Current(void);
 /* 已保存值可与实际生效值不同（待空闲／待重启），窗口不能只显示active。 */
 const ConfigSnapshot *RuntimeConfig_Saved(void);

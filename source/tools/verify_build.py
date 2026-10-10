@@ -36,8 +36,8 @@ def verify(asi, config):
     if raw.startswith(b"\xef\xbb\xbf") or b"\n" in raw.replace(b"\r\n", b""):
         raise RuntimeError("TOML模板必须UTF-8无BOM＋CRLF。")
     parsed = tomllib.loads(raw.decode("utf-8"))
-    if parsed.get("meta", {}).get("schema") != 1 or parsed["controller"]["bindings"]["default"] not in {"none", "game"}:
-        raise RuntimeError("模板未声明最终schema或支持的未设置默认状态。")
+    if parsed.get("meta", {}).get("schema") != 1 or "bindings" in parsed.get("controller", {}):
+        raise RuntimeError("模板schema错误或仍内置个人技能绑定；技能默认由缺省独立文件表示。")
     print("统一PE32、唯一导出、重定位、静态SDL依赖与TOML标准解析检查通过。")
     return {"版本": "0.2.0", "SDL源码版本": "3.4.16", "ASI_SHA256": hashlib.sha256(pe.data).hexdigest(),
             "ASI字节数": len(pe.data), "导入库": imports, "导出": exports, "重定位": True,

@@ -84,7 +84,6 @@ const char RuntimeText_Config_LoggingEnabledDescription[] = "记录插件运行�
 const char RuntimeText_Config_WorldButtonsHelp[] = "这是没有按住LT、RT等组合键时的按钮。菜单确认取消不随它改变。七项不能用同一个按钮；交换两键时，先把两项改好再保存。";
 const char RuntimeText_Config_LoggingSectionTemplate[] = "[logging]\r\n# 插件日志总开关；保存后生效。\r\n%s = %s\r\n\r\n";
 const char RuntimeText_Config_DefaultHeaderTemplate[] = "# EDSlash统一配置；UTF-8无BOM，CRLF。\r\n# 本版本只读取此TOML，不读取旧INI。\r\n[logging]\r\n# 插件日志：关闭后不记录运行、性能和插件崩溃信息；已有文件保留。\r\nenabled = true\r\n\r\n[meta]\r\nschema = 1\r\n";
-const char RuntimeText_Config_DefaultBindingsTemplate[] = "\r\n[controller.bindings]\r\n# 未设置是所有RT快捷位置的默认状态；明确设置的技能按游戏、角色、槽位分别保存。\r\ndefault = \"none\"\r\n" "# character_编号来自Player+0x348的创建角色selector；技能选择码须来自该角色实际技能。\r\n";
 const char RuntimeText_Config_TypeOrRangeError[] = "第%u行：%s的类型或范围错误";
 const char RuntimeText_Config_DuplicateWorldButtonError[] = "%s 和 %s 的按钮重复。请选不同按钮；交换两键要一起改好再保存。";
 const char RuntimeText_Config_UnsupportedSchemaError[] = "只支持最终配置schema=1";
@@ -167,7 +166,7 @@ const char RuntimeText_AboutFaq[] =
     "修改设置后怎样生效？\n"
     "   按START保存修改。\n   标有重启提示的项目，要退出并重新启动游戏才会生效。\n\n"
     "技能快捷是每个存档单独保存的吗？\n"
-    "   本体与外传分别保存。\n   每个职业共用一组14个快捷位置，\n   同职业的不同存档共用这一组。\n\n"
+    "   本体与外传分别保存。\n   每个职业共用一组14个快捷位置，\n   同职业的不同存档共用这一组。\n   自定义技能单独保存在EDSlash.SkillContols.toml，更新主设置不影响它；默认状态不创建文件。\n\n"
     "遇到问题怎样反馈？\n"
     "   1、先开启插件日志；\n   2、重新进游戏触发BUG；\n   3、把触发BUG后的EDSlash.log和本页的构建编号提交到Github的issues板块。\n   4、等我修，或者你自己修；\n   5、修复期间别催，嚎破嗓子没用，再叫老子不干了。\n\n"
     "      Github以外不接受任何BUG反馈！！！！！！\n\n"
@@ -343,3 +342,12 @@ const char RuntimeText_Config_SkillMenuNavigationDescription[]="同时按住LT�
 const char *const RuntimeText_SkillMenuNavigationValues[]={"左摇杆导航全部","右摇杆导航全部","各自独立导航"};
 const char RuntimeText_KeymapLeftMenuBrowse[]="左菜单导航";
 const char RuntimeText_KeymapRightMenuBrowse[]="右菜单导航";
+
+/* 外置技能配置只在用户保存自定义技能时出现，错误不能覆盖另一作的文件。 */
+const char RuntimeText_Skills_InvalidFile[]="EDSlash.SkillContols.toml格式、角色或技能字段无效";
+const char RuntimeText_Skills_GameMismatch[]="技能文件的game_version与当前游戏不符，未读取或覆盖；请将两作配置放在各自插件目录";
+const char RuntimeText_Skills_Changed[]="技能配置已被外部修改，未覆盖；请重新载入设置";
+const char RuntimeText_Skills_SaveFailed[]="无法保存EDSlash.SkillContols.toml，原技能设置保留";
+const char RuntimeText_Skills_RollbackFailed[]="主设置保存失败且技能文件回滚失败，请重新载入配置后检查两份文件";
+const char RuntimeText_Skills_MigrationFailed[]="无法迁移旧技能设置，原EDSlash.toml与迁移备份保留";
+const char RuntimeText_Skills_Header[]="# EDSlash技能快捷配置；不随发行覆盖；缺省位置均为未设置。\r\n[version]\r\ngame_version = \"%s\"\r\nschema = 1\r\n";

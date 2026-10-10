@@ -37,6 +37,9 @@ class PackageTests(unittest.TestCase):
             "release/第三方许可.txt": b"notices",
             # 这些文件实际存在，正式包仍不能包含任何一个。
             "release/debug/EDSlash_debug.asi": b"debug-build",
+            "release/EDSlash.SkillContols.toml": b"private skill bindings",
+            "release/EDSlash.SkillContols.toml.DaoJian.bak": b"private game backup",
+            "release/EDSlash.toml.skills-migration.bak": b"private migration backup",
             "release/upx/EDSlash.asi": b"duplicate",
             "参考资料/ComeOn.exe": b"game-original",
             ".build/cache.obj": b"compiler-cache",

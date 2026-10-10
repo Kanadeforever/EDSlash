@@ -23,7 +23,8 @@ static void settings_regression(bool expansion)
     wchar_t *slash=wcsrchr(path,L'\\');CHECK(slash!=NULL);
     swprintf(slash+1,MAX_PATH-(size_t)(slash+1-path),L"guard_settings_%lu_%u.toml",GetCurrentProcessId(),expansion);
     /* 测试文件只在本测试程序旁的.build内，绝不读取或覆盖玩家TOML。 */
-    DeleteFileW(path);CHECK(RuntimeConfig_OpenPath(path));
+    wchar_t skill_path[MAX_PATH];swprintf(skill_path,MAX_PATH,L"%.*lsEDSlash.SkillContols.toml",(int)(slash+1-path),path);
+    DeleteFileW(path);DeleteFileW(skill_path);CHECK(RuntimeConfig_OpenPathForGame(path,expansion ? 2:1));
     Profile profile;configure(&profile,expansion);
     profile.stamina_offset=expansion?0x3B6:0x3AA;
     profile.health_offset=expansion?0x3AE:0x3A2;
@@ -137,7 +138,7 @@ static void settings_regression(bool expansion)
     CHECK(RuntimeConfig_SaveBatch(NULL,0,edits,2));RuntimeConfig_ApplyFrame(0);
     g_intent.held=g_intent.pressed=KEY(PAD_A);Game_Update();CHECK(releases==2);
     g_intent.held=g_intent.pressed=KEY(PAD_X);Game_Update();CHECK(releases==2);
-    Combat_Reset();Game_Release();record_actions=false;CHECK(DeleteFileW(path));
+    Combat_Reset();Game_Release();record_actions=false;CHECK(DeleteFileW(path));if(GetFileAttributesW(skill_path)!=INVALID_FILE_ATTRIBUTES)CHECK(DeleteFileW(skill_path));
     printf("%s真实TOML保存、动作安全点、Guard确认及中断/切换集成回归通过\n",expansion?"外传":"本体");
 }
 int main(void)

@@ -97,11 +97,13 @@ int wmain(void)
 {
     /* 每次回放保留系统分配的独立文件名，写入默认配置后再读取。
      * 即使检查失败留下文件、Windows复用进程编号，也不会读到其它回放的草稿。 */
-    wchar_t path[1024];CHECK(GetTempFileNameW(L".",L"ESW",0,path));
+    wchar_t path[1100],directory[1024],skill_file[1100];CHECK(GetTempFileNameW(L".",L"ESW",0,directory));
+    CHECK(DeleteFileW(directory) && CreateDirectoryW(directory,NULL));
+    swprintf(path,1100,L"%ls\\EDSlash.toml",directory);swprintf(skill_file,1100,L"%ls\\EDSlash.SkillContols.toml",directory);
     static char defaults[65536];size_t defaults_size;
     CHECK(RuntimeConfig_DefaultText(defaults,sizeof defaults,&defaults_size));
-    CHECK(RuntimeFile_WriteAtomic(path,defaults,defaults_size,0));
-    CHECK(RuntimeConfig_OpenPath(path));ready=1;game=2;
+    CHECK(RuntimeFile_WriteAtomic(path,defaults,defaults_size,1));
+    CHECK(RuntimeConfig_OpenPathForGame(path,2));ready=1;game=2;
     backend=(SettingsBackend){.world_global=(uintptr_t)&world_ptr,.ui=(uintptr_t)fake_ui,.skill_global=(uintptr_t)&hud_ptr,
         .inventory_root=(uintptr_t)fake_player,.inventory_get=(uintptr_t)get_player,.get_jm=(uintptr_t)get_root,
         .menu_system_vtable=(uintptr_t)table,.menu_system_show=(uintptr_t)show_root,.menu_system_primary=(uintptr_t)native_action,
@@ -364,5 +366,5 @@ int wmain(void)
     if(help_font){DeleteObject(help_font);help_font=NULL;}
     if(keymap_font){DeleteObject(keymap_font);keymap_font=NULL;}
     for(unsigned i=0;i<brush_count;++i)DeleteObject(brushes[i].brush);
-    CHECK(DeleteFileW(path));printf("原生设置暂停/捕获/关闭链与模型入口回放通过：%u项\n",checks);return 0;
+    CHECK(DeleteFileW(path));if(GetFileAttributesW(skill_file)!=INVALID_FILE_ATTRIBUTES)CHECK(DeleteFileW(skill_file));CHECK(RemoveDirectoryW(directory));printf("原生设置暂停/捕获/关闭链与模型入口回放通过：%u项\n",checks);return 0;
 }

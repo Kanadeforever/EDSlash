@@ -41,7 +41,7 @@ int Runtime_Initialize(void* self_module)
      * 桥初始化失败不会阻止不依赖它的模块继续启动；需要系统 API 的模块会自行检查是否可用。
      */
     (void)RuntimeWin32_Initialize(profile);
-    if (!RuntimeConfig_Initialize(self_module)) {
+    if (!RuntimeConfig_InitializeForGame(self_module,(unsigned)profile->game_id)) {
         (void)RuntimeLog_Initialize(self_module);
         RuntimeLog_Line(RuntimeConfig_Error());
         (void)RuntimeLog_Flush(0);

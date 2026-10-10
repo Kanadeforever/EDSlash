@@ -1,6 +1,6 @@
 # 源码构建说明
 
-当前统一目标为EDSlash.asi＋EDSlash.toml，静态链接仓库内完整SDL 3.4.16。旧独立Controller、两份INI与外置SDL3.dll构建路径已移除。MOD设置窗口已接通LT＋RT＋Back及物理反引号键，原系统菜单暂停，待实机验收。构建输入摘要标识当前产物；离线回归与非游戏加载单独记录，新产物实机待用户验证，历史反馈见docs/文档/版本与更新记录.md。
+当前统一目标为EDSlash.asi＋EDSlash.toml；用户自定义技能另存同目录EDSlash.SkillContols.toml，默认状态不创建该文件，静态链接仓库内完整SDL 3.4.16。旧独立Controller、两份INI与外置SDL3.dll构建路径已移除。MOD设置窗口已接通LT＋RT＋Back及物理反引号键，原系统菜单暂停，待实机验收。构建输入摘要标识当前产物；离线回归与非游戏加载单独记录，新产物实机待用户验证，历史反馈见docs/文档/版本与更新记录.md。
 
 ## 环境
 
@@ -97,3 +97,5 @@ Guard设置应用测试使用真实TOML与双版本运动回放；test_menu链�
 手柄键位图为默认首页，用户提供并声明CC0授权的SVG副本在source/assets，已生成像素嵌入ASI。普通构建不需要Qt或Pillow；重新生成图时用generate_controller_art.py，需PySide6与Pillow。图示读取草稿，所以世界改键、菜单AB和连招切换可在保存前查看。
 
 技能菜单选择模式位于按键设置页，对应controller.menu.skill_menu_navigation。left、right、independent分别为左摇杆导航全部、右摇杆导航全部、各自独立导航；默认independent。L3/R3展开侧别不随导航模式变化，手柄键位图即时反映草稿；保存后安全空闲时生效。
+
+技能存储由Runtime/Config.c协调独立主文档和技能文档，Runtime初始化传入已识别GameProfile.game_id。技能文件仅含version和按创建角色selector分组的稀疏技能；缺省槽未设置。普通设置保存不会触碰技能文档。混合保存先完整验证两份候选，每个文件原子替换；主设置失败会回滚已写技能文件并拒绝覆盖外部新改动，不宣称操作系统提供跨文件事务。公开包固定清单排除个人技能文件和备份，构建只更新默认主模板。

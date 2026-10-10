@@ -151,10 +151,7 @@ int RuntimeConfig_DefaultText(char *output,size_t capacity,size_t *size)
         if (n<0 || (size_t)n>=capacity-position) return 0;
         position+=(size_t)n;
     }
-    n=snprintf(output+position,capacity-position,
-        RuntimeText_Config_DefaultBindingsTemplate);
-    if (n<0 || (size_t)n>=capacity-position) return 0;
-    *size=position+(size_t)n;return 1;
+    *size=position;return 1;
 }
 static int valid_ratio(const char *text)
 {
@@ -255,10 +252,168 @@ invalid:
     }
     return 1;
 }
-int RuntimeConfig_OpenPath(const wchar_t *path)
+/* 独立文档只存当前游戏，采用角色编号分组和物理RT组合键名；缺省即未设置。 */
+static TomlDocument skill_document,skill_candidate;
+static wchar_t skill_path[1100];
+static unsigned skill_game=1;
+static int skill_exists;
+static char skill_bytes[TOML_CAPACITY],skill_read[TOML_CAPACITY];
+static const char *const skill_keys[14]={"rt_a","rt_b","rt_x","rt_y","rt_up","rt_down","rt_left","rt_right","rt_lb","rt_rb","rt_back","rt_start","rt_l3","rt_r3"};
+static int skill_path_from_main(const wchar_t *path)
 {
-    if (!path || wcslen(path)>=sizeof config_path/sizeof config_path[0]) return error(RuntimeText_Config_PathTooLongError);
-    wcscpy(config_path,path);size_t size;
+    const wchar_t *last=wcsrchr(path,L'\\'),*slash=wcsrchr(path,L'/');
+    if(slash && (!last || slash>last))last=slash;
+    size_t prefix=last ? (size_t)(last-path)+1:0;
+    const wchar_t *name=L"EDSlash.SkillContols.toml";
+    if(prefix+wcslen(name)>=1100)return 0;
+    wmemcpy(skill_path,path,prefix);wcscpy(skill_path+prefix,name);return 1;
+}
+static int skills_decode(TomlDocument *doc,BindingRecord *records,unsigned *count)
+{
+    char version[40];int schema;*count=0;memset(records,0,128*sizeof *records);
+    if(!Toml_String(doc,Toml_Find(doc,"version","game_version"),version,sizeof version) ||
+       !Toml_Integer(doc,Toml_Find(doc,"version","schema"),&schema) || schema!=1)
+        return error(RuntimeText_Skills_InvalidFile);
+    if(strcmp(version,skill_game==1 ? "DaoJian":"WaiZhuan"))return error(RuntimeText_Skills_GameMismatch);
+    for(unsigned i=0;i<doc->count;++i){
+        const TomlEntry *entry=&doc->entries[i];
+        if(!strcmp(entry->table,"version") && (!strcmp(entry->key,"schema") || !strcmp(entry->key,"game_version")))continue;
+        unsigned role=0;int consumed=0;
+        if(sscanf(entry->table,"character_%u%n",&role,&consumed)!=1 || !role || role>65535)return error(RuntimeText_Skills_InvalidFile);
+        const char *suffix=entry->table+consumed;
+        if(!*suffix){int identity;
+            if(strcmp(entry->key,"selector") || !Toml_Integer(doc,entry,&identity) || identity!=(int)role)return error(RuntimeText_Skills_InvalidFile);
+            continue;
+        }
+        int hand=!strcmp(suffix,".hands");
+        if(strcmp(suffix,".skills") && !hand)return error(RuntimeText_Skills_InvalidFile);
+        char group[64];snprintf(group,sizeof group,"character_%u",role);int identity;
+        if(!Toml_Integer(doc,Toml_Find(doc,group,"selector"),&identity) || identity!=(int)role)return error(RuntimeText_Skills_InvalidFile);
+        unsigned slot=0;while(slot<14 && strcmp(entry->key,skill_keys[slot]))++slot;
+        if(slot==14)return error(RuntimeText_Skills_InvalidFile);
+        unsigned at=0;while(at<*count && (records[at].role!=role || records[at].slot!=slot+1))++at;
+        if(at==*count){if(*count>=128)return error(RuntimeText_Config_BindingCapacityError);
+            records[at]=(BindingRecord){skill_game,role,slot+1,{0,0,1}};++*count;}
+        if(hand){char side[16];
+            if(!Toml_String(doc,entry,side,sizeof side) || (strcmp(side,"left") && strcmp(side,"right")))return error(RuntimeText_Skills_InvalidFile);
+            records[at].binding.right=!strcmp(side,"right");
+        }else{int selector;
+            if(!Toml_Integer(doc,entry,&selector) || selector<0 || selector>65535)return error(RuntimeText_Skills_InvalidFile);
+            records[at].binding.custom=1;records[at].binding.selector=selector;}
+    }
+    for(unsigned i=0;i<*count;++i)if(!records[i].binding.custom)return error(RuntimeText_Skills_InvalidFile);
+    return 1;
+}
+static int skills_render(const BindingRecord *records,unsigned count,size_t *size)
+{
+    size_t position=0;int n=snprintf(skill_bytes,sizeof skill_bytes,RuntimeText_Skills_Header,skill_game==1 ? "DaoJian":"WaiZhuan");
+    if(n<0 || (size_t)n>=sizeof skill_bytes)return 0;position=(size_t)n;
+    /* 按真实角色编号排序；同角色所有快捷位置共用skills表，不为每个槽创建三级表。 */
+    unsigned previous=0;
+    for(unsigned group=0;group<count;++group){unsigned role=65536;
+        for(unsigned i=0;i<count;++i)if(records[i].binding.custom && records[i].game==skill_game && records[i].role>previous && records[i].role<role)role=records[i].role;
+        if(role==65536)break;
+        n=snprintf(skill_bytes+position,sizeof skill_bytes-position,"\r\n[character_%u]\r\nselector = %u\r\n\r\n[character_%u.skills]\r\n",role,role,role);
+        if(n<0 || (size_t)n>=sizeof skill_bytes-position)return 0;position+=(size_t)n;
+        int has_left=0;
+        for(unsigned slot=1;slot<=14;++slot)for(unsigned i=0;i<count;++i)if(records[i].game==skill_game && records[i].role==role && records[i].slot==slot && records[i].binding.custom){
+            n=snprintf(skill_bytes+position,sizeof skill_bytes-position,"%s = %d\r\n",skill_keys[slot-1],records[i].binding.selector);
+            if(n<0 || (size_t)n>=sizeof skill_bytes-position)return 0;position+=(size_t)n;
+            if(!records[i].binding.right)has_left=1;
+        }
+        /* 正常选择固定右侧；仅为保留旧配置的左侧语义才写可选hands表。 */
+        if(has_left){n=snprintf(skill_bytes+position,sizeof skill_bytes-position,"\r\n[character_%u.hands]\r\n",role);
+            if(n<0 || (size_t)n>=sizeof skill_bytes-position)return 0;position+=(size_t)n;
+            for(unsigned slot=1;slot<=14;++slot)for(unsigned i=0;i<count;++i)if(records[i].role==role && records[i].slot==slot && records[i].binding.custom && !records[i].binding.right){
+                n=snprintf(skill_bytes+position,sizeof skill_bytes-position,"%s = \"left\"\r\n",skill_keys[slot-1]);
+                if(n<0 || (size_t)n>=sizeof skill_bytes-position)return 0;position+=(size_t)n;
+            }
+        }
+        previous=role;
+    }
+    *size=position;return Toml_Parse(&skill_candidate,skill_bytes,position);
+}
+static int skills_unchanged(void)
+{
+    size_t size;
+    if(!RuntimeFile_Read(skill_path,skill_read,sizeof skill_read,&size))
+        return !skill_exists && GetLastError()==ERROR_FILE_NOT_FOUND;
+    return skill_exists && size==skill_document.size && !memcmp(skill_read,skill_document.bytes,size);
+}
+/* 删除旧绑定节时保留其余节的原字节；整份迁移前文件另外备份，异游戏旧数据也不丢失。 */
+static int main_without_legacy(const TomlDocument *doc,size_t *size)
+{
+    size_t at=0,position=0;int skipping=0,found=0;
+    while(at<doc->size){size_t end=at;while(end<doc->size && doc->bytes[end]!='\n')++end;if(end<doc->size)++end;
+        size_t begin=at;while(begin<end && (doc->bytes[begin]==' ' || doc->bytes[begin]=='\t'))++begin;
+        if(begin<end && doc->bytes[begin]=='['){
+            skipping=end-begin>=20 && !memcmp(doc->bytes+begin,"[controller.bindings",20);if(skipping)found=1;
+        }
+        if(!skipping){memcpy(work+position,doc->bytes+at,end-at);position+=end-at;}
+        at=end;
+    }
+    work[position]=0;*size=position;return found;
+}
+/* 已识别的另一作文件改名保存，不覆盖已有备份；当前默认配置仍保持不存在。 */
+static int skills_backup_foreign(const char *version)
+{
+    const wchar_t *tag=!strcmp(version,"DaoJian") ? L"DaoJian":L"WaiZhuan";
+    wchar_t backup[1200];
+    for(unsigned index=0;index<128;++index){
+        int length=index ? swprintf(backup,1200,L"%ls.%ls.%u.bak",skill_path,tag,index):swprintf(backup,1200,L"%ls.%ls.bak",skill_path,tag);
+        if(length<0 || length>=1200)return error(RuntimeText_Config_PathTooLongError);
+        if(MoveFileExW(skill_path,backup,MOVEFILE_WRITE_THROUGH))return 1;
+        DWORD reason=GetLastError();if(reason!=ERROR_ALREADY_EXISTS && reason!=ERROR_FILE_EXISTS)return error(RuntimeText_Skills_MigrationFailed);
+    }
+    return error(RuntimeText_Skills_MigrationFailed);
+}
+static int skills_load(const wchar_t *path,BindingRecord *records,unsigned *count,TomlDocument *main_doc)
+{
+    if(!skill_path_from_main(path))return error(RuntimeText_Config_PathTooLongError);
+    size_t size;skill_exists=0;memset(&skill_document,0,sizeof skill_document);
+    if(RuntimeFile_Read(skill_path,skill_read,sizeof skill_read,&size)){
+        char version[40];
+        if(!Toml_Parse(&skill_document,skill_read,size) || !Toml_String(&skill_document,Toml_Find(&skill_document,"version","game_version"),version,sizeof version) ||
+           (strcmp(version,"DaoJian") && strcmp(version,"WaiZhuan")))return error(RuntimeText_Skills_InvalidFile);
+        if(strcmp(version,skill_game==1 ? "DaoJian":"WaiZhuan")){
+            if(!skills_backup_foreign(version))return 0;
+            memset(&skill_document,0,sizeof skill_document);
+        }else{
+            if(!skills_decode(&skill_document,records,count))return 0;
+            skill_exists=1;
+        }
+    }else if(GetLastError()!=ERROR_FILE_NOT_FOUND)return error(RuntimeText_Config_ReadFileError);
+    if(!skill_exists){unsigned retained=0;
+        for(unsigned i=0;i<*count;++i)if(records[i].game==skill_game && records[i].binding.custom)records[retained++]=records[i];
+        *count=retained;
+    }
+    size_t clean_size;
+    if(!main_without_legacy(main_doc,&clean_size))return 1;
+    /* 未修改技能的旧默认节只清理主文件，绝不创建技能配置。已有自定义才迁移。 */
+    wchar_t backup[1200];int length=swprintf(backup,1200,L"%ls.skills-migration.bak",path);
+    if(length<0 || length>=1200)return error(RuntimeText_Config_PathTooLongError);
+    if(GetFileAttributesW(backup)==INVALID_FILE_ATTRIBUTES && !RuntimeFile_WriteAtomic(backup,main_doc->bytes,main_doc->size,1))return error(RuntimeText_Skills_MigrationFailed);
+    int created=0;
+    if(!skill_exists && *count){size_t skill_size;
+        if(!skills_render(records,*count,&skill_size) || !RuntimeFile_WriteAtomic(skill_path,skill_bytes,skill_size,1))return error(RuntimeText_Skills_MigrationFailed);
+        created=1;skill_document=skill_candidate;
+    }
+    size_t current_size;
+    if(!RuntimeFile_Read(path,raw,sizeof raw,&current_size) || current_size!=main_doc->size || memcmp(raw,main_doc->bytes,current_size) || !RuntimeFile_WriteAtomic(path,work,clean_size,0)){
+        if(created){size_t written_size;
+            if(!RuntimeFile_Read(skill_path,skill_read,sizeof skill_read,&written_size) || written_size!=skill_document.size || memcmp(skill_read,skill_document.bytes,written_size) || !DeleteFileW(skill_path))return error(RuntimeText_Skills_RollbackFailed);
+        }
+        return error(RuntimeText_Skills_MigrationFailed);
+    }
+    if(created)skill_exists=1;
+    if(!Toml_Parse(main_doc,work,clean_size))return error(RuntimeText_Skills_MigrationFailed);
+    return 1;
+}
+
+int RuntimeConfig_OpenPathForGame(const wchar_t *path,unsigned host_game)
+{
+    if ((host_game!=1 && host_game!=2) || !path || wcslen(path)>=sizeof config_path/sizeof config_path[0]) return error(RuntimeText_Config_PathTooLongError);
+    skill_game=host_game;wcscpy(config_path,path);size_t size;
     if (!RuntimeFile_Read(path,raw,sizeof raw,&size)) {
         /* 只有文件确实不存在才生成默认值，权限错误或超长文件都不能覆盖。 */
         unsigned long code=GetLastError();
@@ -271,25 +426,28 @@ int RuntimeConfig_OpenPath(const wchar_t *path)
         snprintf(error_text,sizeof error_text,RuntimeText_Config_ParseLineError,candidate.error_line,candidate.error);return 0;
     }
     ConfigSnapshot decoded;BindingRecord records[128];unsigned count;
-    if (!decode(&candidate,&decoded,records,&count)) return 0;
+    if (!decode(&candidate,&decoded,records,&count) || !skills_load(path,records,&count,&candidate)) return 0;
     document=candidate;active=decoded;memcpy(active_bindings,records,sizeof records);active_count=count;
     pending=active;memcpy(pending_bindings,active_bindings,sizeof active_bindings);pending_count=active_count;
     active.generation=pending.generation=1;needs_restart=pending_idle=0;saved_serial=applied_serial=0;ready=1;error_text[0]=0;return 1;
 }
-int RuntimeConfig_Initialize(void *module)
+int RuntimeConfig_OpenPath(const wchar_t *path) {return RuntimeConfig_OpenPathForGame(path,1);}
+int RuntimeConfig_InitializeForGame(void *module,unsigned host_game)
 {
     wchar_t path[1100];
     if (!RuntimeFile_Sibling(module,L"EDSlash.toml",path,1100)) return error(RuntimeText_Config_LocateSiblingFileError);
-    return RuntimeConfig_OpenPath(path);
+    return RuntimeConfig_OpenPathForGame(path,host_game);
 }
-static int commit_text(const char *bytes,size_t size)
+int RuntimeConfig_Initialize(void *module) {return RuntimeConfig_InitializeForGame(module,1);}
+static int commit_changes(const char *bytes,size_t size,const BindingRecord *new_records,unsigned new_count,int check_main)
 {
     if (!ready) return error(RuntimeText_Config_NotInitializedError);
+    int main_changed=size!=document.size || memcmp(bytes,document.bytes,size);
+    int bindings_changed=new_count!=pending_count || memcmp(new_records,pending_bindings,new_count*sizeof *new_records);
     size_t current_size;
-    /* 乐观并发检查：加载后被外部编辑过的文件不得由旧候选值覆盖。 */
-    if (!RuntimeFile_Read(config_path,raw,sizeof raw,&current_size) ||
-        current_size!=document.size || memcmp(raw,document.bytes,current_size))
+    if((main_changed || check_main) && (!RuntimeFile_Read(config_path,raw,sizeof raw,&current_size) || current_size!=document.size || memcmp(raw,document.bytes,current_size)))
         return error(RuntimeText_Config_ExternallyModifiedError);
+    if(bindings_changed && !skills_unchanged())return error(RuntimeText_Skills_Changed);
     size_t n=0;
     for (size_t i=0;i<size;++i) {
         char ch=bytes[i];
@@ -301,9 +459,22 @@ static int commit_text(const char *bytes,size_t size)
     if (!Toml_Parse(&candidate,normalized,n)) return error(candidate.error);
     ConfigSnapshot decoded;BindingRecord records[128];unsigned count;
     if (!decode(&candidate,&decoded,records,&count)) return 0;
-    if (!RuntimeFile_WriteAtomic(config_path,normalized,n,0)) return error(RuntimeText_Config_SaveFileError);
-    document=candidate;pending=decoded;pending.generation=active.generation+1;
-    memcpy(pending_bindings,records,sizeof records);pending_count=count;++saved_serial;error_text[0]=0;return 1;
+    size_t skill_size=0;int save_skills=bindings_changed && (skill_exists || new_count);
+    if(save_skills && !skills_render(new_records,new_count,&skill_size))return error(RuntimeText_Config_BindingGenerationError);
+    /* 两个文件各自原子替换；主文件失败时回滚已经保存的技能文件，不留下半份候选。 */
+    if(save_skills && !RuntimeFile_WriteAtomic(skill_path,skill_bytes,skill_size,!skill_exists))return error(RuntimeText_Skills_SaveFailed);
+    if(main_changed && !RuntimeFile_WriteAtomic(config_path,normalized,n,0)){
+        if(save_skills){size_t written_size;
+            /* 回滚也核对本次写入内容，外部程序若刚修改文件，不能以旧副本覆盖它。 */
+            if(!RuntimeFile_Read(skill_path,skill_read,sizeof skill_read,&written_size) || written_size!=skill_size || memcmp(skill_read,skill_bytes,skill_size))return error(RuntimeText_Skills_RollbackFailed);
+            int rollback=skill_exists ? RuntimeFile_WriteAtomic(skill_path,skill_document.bytes,skill_document.size,0):DeleteFileW(skill_path)!=0;
+            if(!rollback)return error(RuntimeText_Skills_RollbackFailed);}
+        return error(RuntimeText_Config_SaveFileError);
+    }
+    if(save_skills){skill_exists=1;skill_document=skill_candidate;}
+    if(main_changed)document=candidate;pending=decoded;pending.generation=active.generation+1;
+    memcpy(pending_bindings,new_records,new_count*sizeof *new_records);pending_count=new_count;
+    ++saved_serial;error_text[0]=0;return 1;
 }
 int RuntimeConfig_SetInt(ConfigId id,int value)
 {
@@ -311,7 +482,7 @@ int RuntimeConfig_SetInt(ConfigId id,int value)
     if (!f || f->type==CONFIG_TEXT || value<f->minimum || value>f->maximum ||
         !literal(f,value,NULL,value_text,sizeof value_text)) return error(RuntimeText_Config_ValueOutOfRangeError);
     if (!config_update(&document,f->table,f->key,value_text,work,sizeof work,&size)) return error(RuntimeText_Config_CandidateGenerationError);
-    return commit_text(work,size);
+    return commit_changes(work,size,pending_bindings,pending_count,1);
 }
 int RuntimeConfig_SetText(ConfigId id,const char *value)
 {
@@ -332,7 +503,7 @@ int RuntimeConfig_SetText(ConfigId id,const char *value)
         strlen(value)>=sizeof active.aspect_ratio || !literal(f,0,value,value_text,sizeof value_text))
         return error(RuntimeText_Config_InvalidAspectRatioError);
     if (!config_update(&document,f->table,f->key,value_text,work,sizeof work,&size)) return error(RuntimeText_Config_CandidateGenerationError);
-    return commit_text(work,size);
+    return commit_changes(work,size,pending_bindings,pending_count,1);
 }
 ConfigBinding RuntimeConfig_GetBinding(unsigned game,unsigned role,unsigned slot)
 {
@@ -346,18 +517,8 @@ int RuntimeConfig_SetBinding(unsigned game,unsigned role,unsigned slot,ConfigBin
     if ((game!=1 && game!=2) || role<1 || role>65535 || slot<1 || slot>14 ||
         binding.selector<0 || binding.selector>65535 || (binding.custom!=0 && binding.custom!=1) ||
         (binding.right!=0 && binding.right!=1)) return error(RuntimeText_Config_InvalidBindingArgumentsError);
-    char table[96],selector[32];size_t size;
-    snprintf(table,sizeof table,"controller.bindings.%s.character_%u.slot_%u",game==1 ? "daojian":"waizhuan",role,slot);
-    snprintf(selector,sizeof selector,"%d",binding.selector);
-    /* 三个字段在内存里一起编辑，只进行一次原子保存，不留下半份技能绑定。 */
-    candidate=document;
-    const char *keys[]={"mode","selector","hand"};
-    const char *values[]={binding.custom ? "\"skill\"":"\"none\"",selector,binding.right ? "\"right\"":"\"left\""};
-    for (unsigned i=0;i<3;++i) {
-        if (!config_update(&candidate,table,keys[i],values[i],work,sizeof work,&size) ||
-            !Toml_Parse(&candidate,work,size)) return error(RuntimeText_Config_BindingGenerationError);
-    }
-    return commit_text(work,size);
+    ConfigBindingEdit edit={game,role,slot,binding};
+    return RuntimeConfig_SaveBatch(NULL,0,&edit,1);
 }
 const ConfigSnapshot *RuntimeConfig_Saved(void) {return ready ? &pending:NULL;}
 ConfigBinding RuntimeConfig_GetSavedBinding(unsigned game,unsigned role,unsigned slot)
@@ -389,24 +550,20 @@ int RuntimeConfig_SaveBatch(const ConfigEdit *edits,size_t count,
         if(!config_update(&candidate,f->table,f->key,value,work,sizeof work,&size) || !Toml_Parse(&candidate,work,size))
             return error(RuntimeText_Config_BatchCandidateGenerationError);
     }
-    for(size_t i=0;i<binding_count;++i) {
-        const ConfigBindingEdit *edit=&bindings[i];ConfigBinding b=edit->value;
-        if((edit->game!=1 && edit->game!=2) || edit->role<1 || edit->role>65535 || edit->slot<1 || edit->slot>14 ||
-            b.selector<0 || b.selector>65535 || (b.custom!=0 && b.custom!=1) || (b.right!=0 && b.right!=1))
-            return error(RuntimeText_Config_InvalidBatchBindingArgumentsError);
-        for(size_t j=0;j<i;++j)if(bindings[j].game==edit->game && bindings[j].role==edit->role && bindings[j].slot==edit->slot)
-            return error(RuntimeText_Config_DuplicateBatchBindingSlotError);
-        char table[96],selector[32];
-        snprintf(table,sizeof table,"controller.bindings.%s.character_%u.slot_%u",edit->game==1 ? "daojian":"waizhuan",edit->role,edit->slot);
-        snprintf(selector,sizeof selector,"%d",b.selector);
-        const char *keys[]={"mode","selector","hand"};
-        const char *values[]={b.custom ? "\"skill\"":"\"none\"",selector,b.right ? "\"right\"":"\"left\""};
-        for(unsigned j=0;j<3;++j)
-            if(!config_update(&candidate,table,keys[j],values[j],work,sizeof work,&size) || !Toml_Parse(&candidate,work,size))
-                return error(RuntimeText_Config_BatchBindingGenerationError);
+    BindingRecord records[128];unsigned record_count=pending_count;
+    memcpy(records,pending_bindings,sizeof records);
+    for(size_t i=0;i<binding_count;++i){
+        const ConfigBindingEdit *edit=&bindings[i];ConfigBinding value=edit->value;
+        if(edit->game!=skill_game || edit->role<1 || edit->role>65535 || edit->slot<1 || edit->slot>14 ||
+           value.selector<0 || value.selector>65535 || (value.custom!=0 && value.custom!=1) || (value.right!=0 && value.right!=1))
+            return error(edit->game!=skill_game ? RuntimeText_Skills_GameMismatch:RuntimeText_Config_InvalidBatchBindingArgumentsError);
+        for(size_t j=0;j<i;++j)if(bindings[j].role==edit->role && bindings[j].slot==edit->slot)return error(RuntimeText_Config_DuplicateBatchBindingSlotError);
+        unsigned at=0;while(at<record_count && (records[at].role!=edit->role || records[at].slot!=edit->slot))++at;
+        if(!value.custom){if(at<record_count){memmove(records+at,records+at+1,(record_count-at-1)*sizeof records[0]);--record_count;}continue;}
+        if(at==record_count){if(record_count>=128)return error(RuntimeText_Config_BindingCapacityError);++record_count;}
+        records[at]=(BindingRecord){skill_game,edit->role,edit->slot,value};
     }
-    /* commit_text复用外部改动检测、完整decode、CRLF规范化与一次替换；生效仍在原安全边界。 */
-    return commit_text(candidate.bytes,candidate.size);
+    return commit_changes(candidate.bytes,candidate.size,records,record_count,count!=0);
 }
 int RuntimeConfig_HasPending(void) {return ready && (saved_serial!=applied_serial || pending_idle);}
 int RuntimeConfig_ApplyFrame(int action_idle)
