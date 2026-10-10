@@ -336,3 +336,10 @@ const char RuntimeText_KeymapGuardDirection[]="防御方向";
 const char RuntimeText_KeymapLeftMenu[]="左手选单";
 const char RuntimeText_KeymapRightMenu[]="右手选单";
 const char RuntimeText_KeymapBrowse[]="选单浏览";
+
+/* 菜单选择模式同时用于TOML注释、设置项与当前键位图，三处保持相同含义。 */
+const char RuntimeText_Config_SkillMenuNavigationLabel[]="技能菜单选择模式";
+const char RuntimeText_Config_SkillMenuNavigationDescription[]="同时按住LT和RT，按L3展开左侧菜单，按R3展开右侧菜单；两个菜单只能展开一个。选择左摇杆导航全部、右摇杆导航全部，或各自独立导航。独立时左摇杆只选择左侧菜单，右摇杆只选择右侧菜单。松开任一扳机确认当前选择；保存后在操作空闲时生效。";
+const char *const RuntimeText_SkillMenuNavigationValues[]={"左摇杆导航全部","右摇杆导航全部","各自独立导航"};
+const char RuntimeText_KeymapLeftMenuBrowse[]="左菜单导航";
+const char RuntimeText_KeymapRightMenuBrowse[]="右菜单导航";

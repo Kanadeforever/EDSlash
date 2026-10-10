@@ -4,7 +4,7 @@
 static int controls(ConfigId id)
 {
     return id==CONFIG_DEADZONE || id==CONFIG_MOVE_LEAD || id==CONFIG_MOUSE_SPEED || id==CONFIG_RUMBLE ||
-        id==CONFIG_MENU_SWAP_AB || (id>=CONFIG_WORLD_INTERACT && id<=CONFIG_WORLD_SYSTEM);
+        id==CONFIG_MENU_SWAP_AB || id==CONFIG_ACTION_MENU_NAV || (id>=CONFIG_WORLD_INTERACT && id<=CONFIG_WORLD_SYSTEM);
 }
 ConfigId SettingsModel_Field(unsigned page,unsigned index)
 {

@@ -64,6 +64,8 @@ static const ConfigDescriptor fields[CONFIG_COUNT]={
     {CONFIG_MENU_SWAP_AB,"controller.menu","swap_confirm_cancel",RuntimeText_Config_SwapMenuConfirmCancelLabel,
      RuntimeText_Config_SwapMenuConfirmCancelDescription,
      CONFIG_BOOL,0,0,1,1,NULL,NULL,CONFIG_APPLY_IDLE},
+    {CONFIG_ACTION_MENU_NAV,"controller.menu","skill_menu_navigation",RuntimeText_Config_SkillMenuNavigationLabel,
+     RuntimeText_Config_SkillMenuNavigationDescription,CONFIG_CHOICE,2,0,2,1,NULL,"left|right|independent",CONFIG_APPLY_IDLE},
     K(CONFIG_WORLD_INTERACT,"interact",RuntimeText_Config_InteractButtonLabel,0),K(CONFIG_WORLD_AIM,"skill_aim",RuntimeText_Config_AimButtonLabel,1),
     K(CONFIG_WORLD_LEFT,"left_action",RuntimeText_Config_LeftActionButtonLabel,2),K(CONFIG_WORLD_RIGHT,"right_action",RuntimeText_Config_RightActionButtonLabel,3),
     K(CONFIG_WORLD_RUN,"run",RuntimeText_Config_RunButtonLabel,6),K(CONFIG_WORLD_MAP,"minimap",RuntimeText_Config_MapButtonLabel,7),

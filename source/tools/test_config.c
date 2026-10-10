@@ -22,6 +22,11 @@ int wmain(void)
     int value;char string[40];
     CHECK(Toml_Integer(&doc,Toml_Find(&doc,"controller.input","deadzone"),&value) && value==8000);
     CHECK(Toml_String(&doc,Toml_Find(&doc,"gameplay.stamina","guard_mode"),string,sizeof string) && !strcmp(string,"original"));
+    CHECK(Toml_String(&doc,Toml_Find(&doc,"controller.menu","skill_menu_navigation"),string,sizeof string) && !strcmp(string,"independent"));
+    const ConfigDescriptor *navigation=RuntimeConfig_Descriptor(CONFIG_ACTION_MENU_NAV);
+    CHECK(navigation && navigation->default_value==2 && navigation->maximum==2 && navigation->apply==CONFIG_APPLY_IDLE);
+    unsigned navigation_fields=0;for(unsigned i=0;i<SettingsModel_Count(1);++i)if(SettingsModel_Field(1,i)==CONFIG_ACTION_MENU_NAV)++navigation_fields;
+    CHECK(navigation_fields==1);
     const char *sample="# 中文说明\r\n[x]\r\np = 12.50 # 保留行内注释\r\ns = \"名字#不是注释\"\r\n";
     CHECK(Toml_Parse(&doc,sample,strlen(sample)));
     CHECK(Toml_Percent(&doc,Toml_Find(&doc,"x","p"),&value) && value==1250);
@@ -47,6 +52,15 @@ int wmain(void)
     CHECK(!RuntimeConfig_HasPending());
     CHECK(RuntimeConfig_GetInt(CONFIG_AIM_EXPAND_MS)==1000);
     CHECK(RuntimeConfig_GetInt(CONFIG_MENU_SWAP_AB)==0);
+    CHECK(RuntimeConfig_GetInt(CONFIG_ACTION_MENU_NAV)==2);
+    const char *navigation_choices[]={"left","right","independent"};
+    for(int mode=0;mode<3;++mode){
+        CHECK(RuntimeConfig_SetText(CONFIG_ACTION_MENU_NAV,navigation_choices[mode]));
+        RuntimeConfig_ApplyFrame(1);CHECK(RuntimeConfig_GetInt(CONFIG_ACTION_MENU_NAV)==mode);
+        CHECK(RuntimeConfig_OpenPath(path) && RuntimeConfig_GetInt(CONFIG_ACTION_MENU_NAV)==mode);
+    }
+    CHECK(!RuntimeConfig_SetText(CONFIG_ACTION_MENU_NAV,"both") && !RuntimeConfig_SetInt(CONFIG_ACTION_MENU_NAV,3));
+
     ConfigEdit key_swap[]={{CONFIG_WORLD_INTERACT,2,NULL},{CONFIG_WORLD_LEFT,0,NULL}};
     CHECK(!RuntimeConfig_SetInt(CONFIG_WORLD_INTERACT,2));
     CHECK(RuntimeConfig_SaveBatch(key_swap,2,NULL,0));RuntimeConfig_ApplyFrame(0);

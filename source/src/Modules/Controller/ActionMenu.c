@@ -73,6 +73,15 @@ void ActionMenu_Suspend(void)
     /* 来源切换只取消手柄拥有权；物理鼠标仍能继续操作这个原生菜单。 */
     active=false;memset(&selection,0,sizeof selection);
 }
+/* 导航只读取本模式负责的摇杆；另一摇杆不能抢走当前菜单焦点或改变侧别。 */
+static int navigation_direction(unsigned side)
+{
+    int mode=RuntimeConfig_GetInt(CONFIG_ACTION_MENU_NAV);
+    bool left=mode==0 || (mode==2 && side==1);
+    float x=left ? g_intent.lx:g_intent.rx,y=left ? g_intent.ly:g_intent.ry;
+    return fabsf(x)<0.55f && fabsf(y)<0.55f ? 0:
+        fabsf(y)>=fabsf(x) ? (y<0 ? 1:2):(x<0 ? 3:4);
+}
 bool ActionMenu_Update(void)
 {
     if (!installed) return false;
@@ -95,8 +104,6 @@ bool ActionMenu_Update(void)
     bool held=g_input.lt && g_input.rt;
     unsigned request=g_intent.pressed&(KEY(PAD_L3)|KEY(PAD_R3));
     bool choose_left=request==KEY(PAD_L3),choose_right=request==KEY(PAD_R3);
-    int direction=fabsf(g_intent.rx)<0.55f && fabsf(g_intent.ry)<0.55f ? 0:
-        fabsf(g_intent.ry)>=fabsf(g_intent.rx) ? (g_intent.ry<0 ? 1:2):(g_intent.rx<0 ? 3:4);
     if (!active) {
         void *root=ReadPtr((void *)g_profile->menu_action_global,0);if (!valid_root(root)) return false;
         unsigned reason;bool resume_native=g_intent.layer==LAYER_MENU && Menu_Context(&reason)==root;
@@ -105,7 +112,7 @@ bool ActionMenu_Update(void)
         selection.root=root;selection.side=choose_left ? 1u:0u;active=true;
         selection.world=ReadPtr((void *)g_profile->world_global,0);selection.actor=Game_Player();
         /* 两个按钮指定同一个原菜单的侧别，展开当帧只建立候选，不额外移动焦点。 */
-        ((This1)g_profile->menu_action_open)(root, NULL,(int)selection.side);seed();selection.direction=direction;
+        ((This1)g_profile->menu_action_open)(root, NULL,(int)selection.side);seed();selection.direction=navigation_direction(selection.side);
         g_intent.layer=LAYER_ACTION_MENU;
         Log_Write(ControllerText_ActionMenu_OpenedLog,selection.side ? ControllerText_LeftSideLabel:ControllerText_RightSideLabel);return false;
     }
@@ -125,6 +132,7 @@ bool ActionMenu_Update(void)
         }
         return false;
     }
+    int direction=navigation_direction(selection.side);
     if (direction && (direction!=selection.direction || (int32_t)(g_input.now-selection.repeat)>=0)) {
         ActionNode list[128];unsigned count=nodes(selection.root,list),at=0;
         for (unsigned i=0;i<count;++i) if (list[i].selector==selection.selector) at=i;

@@ -95,3 +95,5 @@ Guard设置应用测试使用真实TOML与双版本运动回放；test_menu链�
 调试时使用release/debug/EDSlash_debug.asi与同目录EDSlash.pdb；只加载一份ASI。源码符号在PDB中，ASI本身仍有CodeView身份记录，文件名固定为EDSlash.pdb而非本机绝对路径。构建会核对GUID/age，错误或旧PDB停止交付。
 
 手柄键位图为默认首页，用户提供并声明CC0授权的SVG副本在source/assets，已生成像素嵌入ASI。普通构建不需要Qt或Pillow；重新生成图时用generate_controller_art.py，需PySide6与Pillow。图示读取草稿，所以世界改键、菜单AB和连招切换可在保存前查看。
+
+技能菜单选择模式位于按键设置页，对应controller.menu.skill_menu_navigation。left、right、independent分别为左摇杆导航全部、右摇杆导航全部、各自独立导航；默认independent。L3/R3展开侧别不随导航模式变化，手柄键位图即时反映草稿；保存后安全空闲时生效。

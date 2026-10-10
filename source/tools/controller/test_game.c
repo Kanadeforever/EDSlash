@@ -38,7 +38,7 @@ static bool page_visible, physical_mouse, busy_gate;
 static int test_omni_setting=1;
 #ifndef EDSLASH_REAL_CONFIG
 static int test_inspect_distance=160;
-static int test_single_trigger=1,test_combo_switch=0;
+static int test_single_trigger=1,test_combo_switch=0,test_action_menu_nav=2;
 #endif
 static int test_dodge_setting=1,test_dodge_distance=128,test_aim_ms=1000;
 static int test_guard_setting=1,test_run_setting=1,test_cost=-1,test_recovery=-1;
@@ -85,6 +85,7 @@ int RuntimeConfig_GetInt(ConfigId id)
     case CONFIG_INSPECT_DISTANCE:return test_inspect_distance;
     case CONFIG_LEGACY_ULTIMATE:return test_single_trigger;
     case CONFIG_COMBO_SWITCH:return test_combo_switch;
+    case CONFIG_ACTION_MENU_NAV:return test_action_menu_nav;
     case CONFIG_OMNI_GUARD:return test_omni_setting;
     case CONFIG_DODGE_DISTANCE:return test_dodge_distance;
     case CONFIG_DIRECTIONAL_DODGE:return test_dodge_setting;

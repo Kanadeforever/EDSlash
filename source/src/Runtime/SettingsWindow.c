@@ -422,9 +422,15 @@ static void keymap_effect(unsigned key,char *output,size_t capacity,int *selecto
         snprintf(output,capacity,"%s",fixed);return;
     }
     if(key==0){snprintf(output,capacity,RuntimeText_KeymapGuard);return;}
+    if(keymap_state==3 && (key==2 || key==8)){
+        int navigation=model.draft.values[CONFIG_ACTION_MENU_NAV];
+        const char *effect=navigation==2 ? (key==2 ? RuntimeText_KeymapLeftMenuBrowse:RuntimeText_KeymapRightMenuBrowse):
+            ((navigation==0 && key==2) || (navigation==1 && key==8)) ? RuntimeText_KeymapBrowse:RuntimeText_KeymapNoEffect;
+        snprintf(output,capacity,"%s",effect);return;
+    }
     if(key==2){snprintf(output,capacity,RuntimeText_KeymapGuardDirection);return;}
     if(keymap_state==1 && key==6){snprintf(output,capacity,RuntimeText_KeymapDualMode);return;}
-    if(keymap_state==3){if(key==3){snprintf(output,capacity,RuntimeText_KeymapLeftMenu);return;}if(key==9){snprintf(output,capacity,RuntimeText_KeymapRightMenu);return;}if(key==8){snprintf(output,capacity,RuntimeText_KeymapBrowse);return;}}
+    if(keymap_state==3){if(key==3){snprintf(output,capacity,RuntimeText_KeymapLeftMenu);return;}if(key==9){snprintf(output,capacity,RuntimeText_KeymapRightMenu);return;}}
     int face=key>=14 ? (int)key-14:-1;int legacy=model.draft.values[CONFIG_LEGACY_ULTIMATE];
     if(face>=0 && (keymap_state==3 || legacy)){
         if(!model.role){snprintf(output,capacity,"%s",RuntimeText_Settings_UnavailableValue);return;}
@@ -637,6 +643,7 @@ static void value_text(ConfigId id,char *out,size_t cap)
     const ConfigDescriptor *f=RuntimeConfig_Descriptor(id);int v=model.draft.values[id];
     if(id==CONFIG_GUARD_MODE)snprintf(out,cap,"%s",v ? RuntimeText_Settings_GuardCostMaximumStaminaPercentValue:RuntimeText_Settings_GuardCostOriginalValue);
     else if(id==CONFIG_RECOVERY_MODE)snprintf(out,cap,"%s",v ? RuntimeText_Settings_HitRecoveryMaximumStaminaPercentValue:RuntimeText_Settings_HitRecoveryMatchesGuardValue);
+    else if(id==CONFIG_ACTION_MENU_NAV)snprintf(out,cap,"%s",RuntimeText_SkillMenuNavigationValues[v]);
     else if(id==CONFIG_COMBO_SWITCH)snprintf(out,cap,"%s",v ? RuntimeText_Settings_ComboSwitchDpadValue:RuntimeText_ComboFaceKeys);
     else if(id==CONFIG_PICKUP_MODE){const char *names[]={RuntimeText_PickupDisabled,RuntimeText_Settings_PickupMoneyValue,RuntimeText_Settings_PickupMoneyAndRecoveryValue,RuntimeText_Settings_PickupMoneyRecoveryAndStonesValue,RuntimeText_Settings_PickupAllDropsValue};snprintf(out,cap,"%s",names[v]);}
     else if(f->type==CONFIG_BOOL)snprintf(out,cap,"%s",v ? RuntimeText_Enabled:RuntimeText_Settings_DisabledValue);

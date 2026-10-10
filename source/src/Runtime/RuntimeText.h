@@ -283,4 +283,9 @@ extern const char RuntimeText_KeymapGuardDirection[];
 extern const char RuntimeText_KeymapLeftMenu[];
 extern const char RuntimeText_KeymapRightMenu[];
 extern const char RuntimeText_KeymapBrowse[];
+extern const char RuntimeText_Config_SkillMenuNavigationLabel[];
+extern const char RuntimeText_Config_SkillMenuNavigationDescription[];
+extern const char *const RuntimeText_SkillMenuNavigationValues[3];
+extern const char RuntimeText_KeymapLeftMenuBrowse[];
+extern const char RuntimeText_KeymapRightMenuBrowse[];
 #endif

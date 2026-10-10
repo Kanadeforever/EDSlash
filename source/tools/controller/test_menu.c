@@ -1033,18 +1033,21 @@ static int __fastcall action_commit(void *root, void *unused_edx)
     Write32(root,0x64,0);ptr(ui_data,0x3C,NULL);return 1;
 }
 static int __fastcall action_base(void *root, void *unused_edx) { (void)unused_edx;CHECK(root==action_root);ptr(root,0xC0,NULL);return 7;}
-static void action_step(unsigned buttons,float rx,float ry)
+static void action_step_axes(unsigned buttons,float lx,float ly,float rx,float ry)
 {
-    g_input.now+=20;g_input.buttons=buttons;g_input.rx=rx;g_input.ry=ry;
+    g_input.now+=20;g_input.buttons=buttons;g_input.lx=lx;g_input.ly=ly;g_input.rx=rx;g_input.ry=ry;
     g_input.menu=Game_Menu();g_input.action_menu=ActionMenu_Active();
     g_intent=Control_Step(&menu_control,&g_input);
     bool was_open=g_input.action_menu,closed=ActionMenu_Update();
     if (closed) Control_BlockMenuInputs(&menu_control,&g_input);
     if (!was_open && !closed && !ActionMenu_Active()) Menu_Update();
 }
+static void action_step(unsigned buttons,float rx,float ry)
+{action_step_axes(buttons,0,0,rx,ry);}
 static void action_regression(bool expansion)
 {
     Profile profile;menu_fixture(&profile,expansion);
+    Write32(combo_list_data,0,0); /* 本回放明确使用空套组，不能继承此前连招编辑样本。 */
     for (unsigned k=0;k<15;++k) Write32(menu_roots[k],0x64,0);
     ptr(ui_data,0x18,NULL);ptr(ui_data,0x1C,NULL);ptr(ui_data,0x3C,NULL);
     memset(action_root,0,sizeof action_root);memset(action_nodes,0,sizeof action_nodes);
@@ -1080,7 +1083,7 @@ static void action_regression(bool expansion)
     action_step(0,0,0);action_step(KEY(PAD_L3)|KEY(PAD_R3),0,0);CHECK(Read32(action_root,0xC8)==1 && action_builds==builds_before);
     action_step(0,0,0);action_step(KEY(PAD_R3),0,0);CHECK(Read32(action_root,0xC8)==0 && action_builds==builds_before+1);
     action_step(0,0,0);action_step(KEY(PAD_L3),0,0);CHECK(Read32(action_root,0xC8)==1 && action_commits==0);
-    action_step(0,0,0);action_step(0,1,0);CHECK(ReadPtr(action_root,0xC0)==action_nodes[1][1]);
+    action_step(0,0,0);action_step_axes(0,1,0,0,0);CHECK(ReadPtr(action_root,0xC0)==action_nodes[1][1]);
     BYTE keys[256]={0};g_intent.pressed=KEY(PAD_R3)|KEY(PAD_A)|KEY(PAD_START);Game_Keyboard(keys);
     for (unsigned i=0;i<256;++i) CHECK(keys[i]==0);
     unsigned old_releases=releases;Game_Update();CHECK((unsigned)releases==old_releases);
@@ -1096,6 +1099,33 @@ static void action_regression(bool expansion)
     Write32(world_data,0x58,0);action_step(0,0,0);CHECK(!ActionMenu_Active() && action_commits==2);
     Write32(world_data,0x58,1);action_step(0,0,0);action_step(KEY(PAD_L3),0,0);CHECK(ActionMenu_Active());
     g_intent.layer=LAYER_NATIVE;CHECK(!ActionMenu_Update() && !ActionMenu_Active() && Read32(action_root,0x64));
+    /* 三种模式分别在两个侧别回放。闲置摇杆不夺焦点，双杆同时输入只采负责的一根。 */
+    for(int mode=0;mode<3;++mode)for(unsigned side=0;side<2;++side){
+        ActionMenu_Suspend();Write32(action_root,0x64,0);ptr(ui_data,0x3C,NULL);
+        memset(&menu_control,0,sizeof menu_control);g_input.lt=g_input.rt=false;
+        Write32(hud_data,side ? 0x128:0x12C,111);test_action_menu_nav=mode;
+        action_step(0,0,0);action_step(0,0,0);g_input.lt=g_input.rt=true;action_step(0,0,0);action_step(side ? KEY(PAD_L3):KEY(PAD_R3),0,0);
+        CHECK(ActionMenu_Active() && Read32(action_root,0xC8)==side);
+        bool left=mode==0 || (mode==2 && side==1);
+        action_step(0,0,0);
+        action_step_axes(0,left ? 0:1,0,left ? 1:0,0);
+        CHECK(ReadPtr(action_root,0xC0)==action_nodes[side][0]);
+        action_step(0,0,0);
+        unsigned prior_builds=action_builds,prior_commits=action_commits;
+        action_step_axes(0,left ? 1:-1,0,left ? -1:1,0);
+        CHECK(ReadPtr(action_root,0xC0)==action_nodes[side][1]);
+        CHECK(action_builds==prior_builds && action_commits==prior_commits && Read32(action_root,0xC8)==side);
+        CHECK(Read32(hud_data,side ? 0x128:0x12C)==111);
+        /* 同方向持续推动可连发，回中后反向能返回；空连招候选仍不能进入。 */
+        g_input.now+=400;action_step_axes(0,left ? 1:0,0,left ? 0:1,0);
+        CHECK(ReadPtr(action_root,0xC0)==action_nodes[side][1]);
+        action_step(0,0,0);action_step_axes(0,left ? -1:0,0,left ? 0:-1,0);
+        CHECK(ReadPtr(action_root,0xC0)==action_nodes[side][0]);
+        g_input.rt=false;action_step_axes(0,1,0,1,0);
+        CHECK(!ActionMenu_Active() && action_commits==prior_commits+1);
+        action_step_axes(0,1,0,1,0);CHECK(g_intent.lx==0 && g_intent.rx==0);
+    }
+    test_action_menu_nav=2;
     ActionMenu_Shutdown();CHECK(action_table[1]==(uintptr_t)action_base && action_table[12]==(uintptr_t)menu_hover);
     Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
 }

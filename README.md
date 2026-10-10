@@ -87,7 +87,8 @@ EDSlash 是一个面向这两款游戏 Windows 版的非官方开源项目。
 | RB / LB + 槽位键 | 投掷 / 使用药品 |
 | LT + Y / B / A / X | 切换第 1 / 2 / 3 / 4 套连招 |
 | LT + RT + A / B / X / Y | 必杀准备，再次新按同键释放 |
-| LT + RT + 右摇杆 | 打开并浏览原动作菜单 |
+| LT + RT + L3 / R3 | 分别展开左侧／右侧技能菜单，同一时间只展开一个 |
+| 技能菜单内推动摇杆 | 默认左摇杆导航左侧、右摇杆导航右侧；可改为左摇杆或右摇杆导航全部 |
 | BACK + START | 救援鼠标模式 |
 
 手柄动作尽量交由游戏原版流程完成资格检查、消耗和执行。界面导航、世界键位改绑与菜单确认取消交换分别处理。
@@ -187,7 +188,7 @@ EDSlash/
 
 插件必须构建为 **Win32 / x86**，与游戏进程位数一致。
 
-当前构建环境需要 Windows、Python 3.11 或以上、CMake 3.21 或以上、Ninja、完整的 32 位 MinGW GCC/G++ 和 UPX。
+当前构建环境需要 Windows、Python 3.11 或以上、CMake 3.21 或以上、Ninja、Visual Studio／Build Tools 的 MSVC C++ 与 Windows SDK（支持 Win32 / x86） 和 UPX。
 
 在仓库根目录执行：
 
@@ -207,7 +208,7 @@ source\build.bat --no-pause
 python source/tools/build.py --checks-only
 ```
 
-构建器可通过 `EDSLASH_CC` 指定 GCC，通过 `MSYS2_ROOT` 指定 MSYS2 环境；CMake、Ninja 和 UPX 使用当前环境中的工具，UPX 也可通过 `UPX_BIN` 指定。构建过程不会自动下载或安装依赖。
+构建器通过 `vswhere` 和 `vcvarsall` 探测原生 MSVC 的 x86 编译环境；CMake、Ninja 和 UPX 使用当前环境中的工具，UPX 也可通过 `UPX_BIN` 指定。构建过程不会自动下载或安装依赖。
 
 发行件与调试件来自同一次优化链接：发行件剥离符号并使用 UPX 压缩，调试件保留源码调试信息。构建会执行离线回归、PE 与依赖检查、配置校验和非游戏加载检查，通过后输出至 `release/`，验证摘要写入 `release/统一构建验证.json`。
 

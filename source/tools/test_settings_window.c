@@ -208,6 +208,18 @@ int wmain(void)
         FillRect(fixture_dc,&about_canvas,(HBRUSH)GetStockObject(WHITE_BRUSH));paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
         const char *paths[]={"keymap_normal.bmp","keymap_lt.bmp","keymap_rt.bmp","keymap_dual.bmp"};snapshot_path=paths[state];CHECK(snapshot(&info.bmiHeader,pixels));
     }
+    /* 键位图即时反映草稿的导航模式；非负责摇杆明确显示无效果。 */
+    keymap_state=3;
+    for(int mode=0;mode<3;++mode){
+        model.draft.values[CONFIG_ACTION_MENU_NAV]=mode;
+        keymap_effect(2,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);
+        CHECK(!strcmp(keymap_description,mode==0 ? RuntimeText_KeymapBrowse:mode==1 ? RuntimeText_KeymapNoEffect:RuntimeText_KeymapLeftMenuBrowse));
+        keymap_effect(8,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);
+        CHECK(!strcmp(keymap_description,mode==0 ? RuntimeText_KeymapNoEffect:mode==1 ? RuntimeText_KeymapBrowse:RuntimeText_KeymapRightMenuBrowse));
+        value_text(CONFIG_ACTION_MENU_NAV,keymap_description,sizeof keymap_description);
+        CHECK(!strcmp(keymap_description,RuntimeText_SkillMenuNavigationValues[mode]));
+    }
+    SettingsModel_Discard(&model);
     keymap_state=2;model.draft_bindings[0]=(ConfigBinding){0,0,0};keymap_effect(14,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,RuntimeText_KeymapNoEffect));
     model.draft_bindings[0]=(ConfigBinding){1,123,1};skill_count=1;skills[0].selector=123;skills[0].icon=2;strcpy(skills[0].name,"测试技能");
     keymap_effect(14,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"测试技能") && keymap_selection==123 && keymap_icon==2);SettingsModel_Discard(&model);
@@ -246,7 +258,8 @@ int wmain(void)
     picker=editing=0;model.page=0;model.scroll[0]=0;model.focus[0]=7;RECT h=help_rectangle();CHECK(h.left==16 && h.top==82);
     model.focus[0]=0;h=help_rectangle();CHECK(h.left==316 && h.top==194);
     RECT thumb=scroll_thumb();CHECK(thumb.bottom<370 && thumb.top==82);scroll_at(370);CHECK(model.scroll[0]>0 && model.focus[0]/2>=model.scroll[0]);
-    model.page=1;model.scroll[1]=0;thumb=scroll_thumb();CHECK(thumb.top==82 && thumb.bottom==370);
+    model.page=1;model.scroll[1]=0;thumb=scroll_thumb();CHECK(thumb.top==82 && thumb.bottom<370);
+    scroll_at(370);CHECK(model.scroll[1]>0 && model.focus[1]/2>=model.scroll[1]);
     model.page=2;model.scroll[2]=0;thumb=scroll_thumb();CHECK(thumb.bottom<370);scroll_at(370);CHECK(model.scroll[2]==1);
     CHECK(open_window());SettingsModel_SetInt(&model,CONFIG_WORLD_LEFT,0);footer=1;activate();CHECK(error_modal && active && SettingsModel_Dirty(&model));
     unsigned before_focus=model.focus[model.page];move(2);CHECK(model.focus[model.page]==before_focus);
