@@ -482,17 +482,25 @@ void Game_Update(void)
     }
 }
 
+static void toggle_minimap(void)
+{
+    /* 原Tab分支调用JM 0x01的Show取反显示标志。复用业务，避开原键盘锁存和菜单捕获。 */
+    void *map=global(g_profile->menu_map_global);
+    if(!Memory_Readable(map,0x104) || Read32(map,0)!=g_profile->menu_map_vtable ||
+       Read32((void *)g_profile->menu_map_vtable,0x1C)!=g_profile->menu_map_show)return;
+    ((This2)g_profile->menu_map_show)(map,NULL,Read32(map,0x64) ? 0:1,0);
+}
 void Game_Keyboard(BYTE *keys)
 {
-    if (g_intent.layer==LAYER_ACTION_MENU) return;
+    if (SettingsWindow_Active() || g_intent.layer==LAYER_ACTION_MENU) return;
     if (g_intent.layer==LAYER_NONE || g_intent.layer==LAYER_MOUSE || g_intent.layer==LAYER_NATIVE) return;
     /* 本批页面已消费A/B/方向/START，不再把同一操作桥成Esc或世界热键。
      * 未实现页面保留原有限键盘导航，A仍不写Enter。 */
     /* 小地图属于世界快捷操作。已进入地图时，格子页捕获仍允许R3原Tab入口；
      * 标题/读档没有玩家，不发送。RT等组合层保留自己的绑定，不额外切小地图。 */
-    if ((g_intent.layer==LAYER_GAME || g_intent.layer==LAYER_MENU) &&
+    if (!g_input.lt && !g_input.rt && (g_intent.layer==LAYER_GAME || g_intent.layer==LAYER_MENU) &&
         (g_intent.pressed & KEY(PAD_R3)) && Memory_Readable(world(),0x5C) &&
-        Read32(world(),0x58) && role_valid(player())) keys[VK_TAB]|=0x80;
+        Read32(world(),0x58) && role_valid(player())) toggle_minimap();
     if (Menu_CapturesInput()) return;
     if (g_intent.menu_toggle) keys[VK_ESCAPE]|=0x80;
     if (g_intent.layer==LAYER_GAME) {

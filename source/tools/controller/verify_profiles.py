@@ -43,6 +43,14 @@ class PE:
 def verify_static_sources(pe, profile):
     """从原指令交叉核对静态地图、句柄表及资格回调的来源。"""
     # 地址表可以语法正确但指向错误全局。原选择器两次读取同一地图，必须分别相符。
+    # 独立地图接口必须与原Tab及其锁存分支读取的对象一致，不能只核函数首字节。
+    map_evidence=profile.get('minimap_evidence')
+    if map_evidence:
+        branch=map_evidence['tab_branch'];keyboard=profile['addresses']['keyboard_buffer']
+        assert pe.read(branch,6)==b'\x84\x1d'+struct.pack('<I',keyboard+9)
+        assert pe.read(branch+8,5)==b'\xa0'+struct.pack('<I',keyboard+0x100+9)
+        assert pe.read(branch+17,6)==b'\x8b\x0d'+struct.pack('<I',profile['addresses']['menu_map_global'])
+        assert struct.unpack('<I',pe.read(profile['addresses']['menu_map_vtable']+0x1C,4))[0]==profile['addresses']['menu_map_show']
     picker=profile['addresses']['inspect_static_picker']
     for offset,opcode,field in [(0,b'\x8b\x15','inspect_map_global'),
                                 (0xE4,b'\x8b\x35','inspect_map_global'),

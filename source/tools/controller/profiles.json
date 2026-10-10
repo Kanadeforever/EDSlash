@@ -265,7 +265,10 @@
         "menu_newgame_primary": 4861488,
         "menu_newgame_cycle": 4862032,
         "menu_name_vtable": 5416344,
-        "menu_name_set": 4964192
+        "menu_name_set": 4964192,
+        "menu_map_global": 5613868,
+        "menu_map_vtable": 5415084,
+        "menu_map_show": 4886128
       },
       "offsets": {
         "invalid_offset": 1082,
@@ -476,7 +479,8 @@
         "menu_newgame_hover": "568bf1e8e81301008986a800",
         "menu_newgame_primary": "568bf18b86a800000085c074",
         "menu_newgame_cycle": "568bf1689f000000b998af55",
-        "menu_name_set": "8b4424045685c0578bf17426"
+        "menu_name_set": "8b4424045685c0578bf17426",
+        "menu_map_show": "8b44240856578b7c240c508b"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -485,7 +489,13 @@
       "retry_call_bytes": "e819090000",
       "end_call_bytes": "e88bb60000",
       "edition": "NonSteam",
-      "game_id": 1
+      "game_id": 1,
+      "minimap_evidence": {
+        "tab_branch": 4997936,
+        "key": 9,
+        "latch_delta": 256,
+        "global_load_offset": 17
+      }
     },
     {
       "tag": "WaiZhuan",
@@ -752,7 +762,10 @@
         "menu_newgame_primary": 4935600,
         "menu_newgame_cycle": 4936432,
         "menu_name_vtable": 5585124,
-        "menu_name_set": 5045456
+        "menu_name_set": 5045456,
+        "menu_map_global": 5815484,
+        "menu_map_vtable": 5583816,
+        "menu_map_show": 4962608
       },
       "offsets": {
         "invalid_offset": 1094,
@@ -963,7 +976,8 @@
         "menu_newgame_hover": "568bf1e8b8e0feff8986a800",
         "menu_newgame_primary": "568bf18b86a800000085c00f",
         "menu_newgame_cycle": "568bf1689f000000b9e8c358",
-        "menu_name_set": "8b4424045685c08bf1740c50"
+        "menu_name_set": "8b4424045685c08bf1740c50",
+        "menu_map_show": "8b44240856578b7c240c508b"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -972,7 +986,13 @@
       "retry_call_bytes": "e819090000",
       "end_call_bytes": "e8abc20000",
       "edition": "NonSteam",
-      "game_id": 2
+      "game_id": 2,
+      "minimap_evidence": {
+        "tab_branch": 5081360,
+        "key": 9,
+        "latch_delta": 256,
+        "global_load_offset": 17
+      }
     },
     {
       "tag": "DaoJian",
@@ -1239,7 +1259,10 @@
         "menu_newgame_primary": 4861488,
         "menu_newgame_cycle": 4862032,
         "menu_name_vtable": 5416344,
-        "menu_name_set": 4964192
+        "menu_name_set": 4964192,
+        "menu_map_global": 5613868,
+        "menu_map_vtable": 5415084,
+        "menu_map_show": 4886128
       },
       "offsets": {
         "invalid_offset": 1082,
@@ -1450,7 +1473,8 @@
         "menu_newgame_hover": "568bf1e8e81301008986a800",
         "menu_newgame_primary": "568bf18b86a800000085c074",
         "menu_newgame_cycle": "568bf1689f000000b998af55",
-        "menu_name_set": "8b4424045685c0578bf17426"
+        "menu_name_set": "8b4424045685c0578bf17426",
+        "menu_map_show": "8b44240856578b7c240c508b"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -1459,7 +1483,13 @@
       "retry_call_bytes": "e819090000",
       "end_call_bytes": "e88bb60000",
       "edition": "Steam",
-      "game_id": 1
+      "game_id": 1,
+      "minimap_evidence": {
+        "tab_branch": 4997936,
+        "key": 9,
+        "latch_delta": 256,
+        "global_load_offset": 17
+      }
     },
     {
       "tag": "WaiZhuan",
@@ -1726,7 +1756,10 @@
         "menu_newgame_primary": 4935600,
         "menu_newgame_cycle": 4936432,
         "menu_name_vtable": 5585124,
-        "menu_name_set": 5045456
+        "menu_name_set": 5045456,
+        "menu_map_global": 5815484,
+        "menu_map_vtable": 5583816,
+        "menu_map_show": 4962608
       },
       "offsets": {
         "invalid_offset": 1094,
@@ -1937,7 +1970,8 @@
         "menu_newgame_hover": "568bf1e8b8e0feff8986a800",
         "menu_newgame_primary": "568bf18b86a800000085c00f",
         "menu_newgame_cycle": "568bf1689f000000b9e8c358",
-        "menu_name_set": "8b4424045685c08bf1740c50"
+        "menu_name_set": "8b4424045685c08bf1740c50",
+        "menu_map_show": "8b44240856578b7c240c508b"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -1946,7 +1980,13 @@
       "retry_call_bytes": "e819090000",
       "end_call_bytes": "e8abc20000",
       "edition": "Steam",
-      "game_id": 2
+      "game_id": 2,
+      "minimap_evidence": {
+        "tab_branch": 5081360,
+        "key": 9,
+        "latch_delta": 256,
+        "global_load_offset": 17
+      }
     }
   ]
 }

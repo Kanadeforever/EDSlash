@@ -12,7 +12,8 @@
 
 /* 在真正的 32 位进程中，让游戏适配层调用同约定的替身函数。
    这验证 this、参数值、功能路由及两个 Profile 偏移；不冒充真实游戏测试。 */
-int __declspec(noinline) SettingsWindow_Active(void){return 0;}
+static int test_settings_active;
+int __declspec(noinline) SettingsWindow_Active(void){return test_settings_active;}
 int SettingsWindow_ShowPointer(void){return 0;}
 static int entry_enabled;static unsigned entry_opened;
 int SettingsWindow_NativeEntryRect(void *p,RuntimeFocusRect *r){if(!entry_enabled || !p || !r)return 0;*r=(RuntimeFocusRect){400,306,576,342};return 1;}
@@ -260,10 +261,16 @@ static int __fastcall native_animation(void *role, void *unused_edx)
 static int __fastcall native_animation_finished(void *animation, void *unused_edx)
 { (void)unused_edx; CHECK(animation==animation_pointer);return animation_done; }
 static WorldPoint *__cdecl native_dash_grid(WorldPoint *out,const WorldPoint *in);
+static BYTE test_map_root[0x110];static uintptr_t test_map_table[8];static void *test_map_pointer=test_map_root;static unsigned test_map_toggles;
+static int __fastcall test_map_show(void *self,void *edx,int shown,int style)
+{(void)edx;CHECK(self==test_map_root && !style);Write32(self,0x64,shown);++test_map_toggles;return 1;}
 static void configure(Profile *profile, bool expansion)
 {
     Feedback_End();Combat_Reset();animation_pointer=animation_data;animation_done=false;test_throwing=false;test_guard_setting=test_run_setting=1;test_cost=test_recovery=-1;
     memset(profile,0,sizeof *profile);
+    memset(test_map_root,0,sizeof test_map_root);test_map_toggles=0;test_settings_active=0;
+    test_map_table[7]=(uintptr_t)test_map_show;ptr(test_map_root,0,test_map_table);
+    profile->menu_map_global=(uintptr_t)&test_map_pointer;profile->menu_map_vtable=(uintptr_t)test_map_table;profile->menu_map_show=(uintptr_t)test_map_show;
     custom_binding=custom_right=0;runtime_profile.game_id=expansion ? GAME_ID_WAIZHUAN:GAME_ID_DAOJIAN;
     profile->player_class_global=(uintptr_t)&class_ptr;Write32(class_data,0x2E0,1);
     profile->world_global=(uintptr_t)&world_ptr;profile->mouse_global=(uintptr_t)&mouse_ptr;

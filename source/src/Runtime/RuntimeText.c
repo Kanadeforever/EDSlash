@@ -76,7 +76,7 @@ const char RuntimeText_Config_InteractButtonLabel[] = "调查键";
 const char RuntimeText_Config_AimButtonLabel[] = "技能落点预览键";
 const char RuntimeText_Config_LeftActionButtonLabel[] = "左手动作键";
 const char RuntimeText_Config_RightActionButtonLabel[] = "右手动作键";
-const char RuntimeText_Config_RunButtonLabel[] = "奔跑切换键";
+const char RuntimeText_Config_RunButtonLabel[] = "奔跑键";
 const char RuntimeText_Config_MapButtonLabel[] = "小地图键";
 const char RuntimeText_Config_SystemMenuButtonLabel[] = "系统菜单键";
 const char RuntimeText_Config_LoggingEnabledLabel[] = "插件日志";
@@ -185,7 +185,7 @@ const char RuntimeText_AboutAuthor[] = "作者";
 const char RuntimeText_AboutFaqTitle[] = "常见问题解答";
 const char RuntimeText_AboutDependencies[] = "第三方组件";
 const char RuntimeText_Settings_AboutIntroductionBody[] = "为《刀剑封魔录》、《刀剑封魔录外传：上古传说》提供手柄操作、现代化画面适配和便利功能。";
-const char RuntimeText_Settings_AboutVersionBuildFormat[] = "版本：%s\n构建：%s\n构建日期：%s（北京时间）";
+const char RuntimeText_Settings_AboutVersionBuildFormat[] = "版本：%s\n构建：%s\n构建日期：%s";
 const char RuntimeText_Settings_AboutDependenciesBody[] = "使用 SDL 3.4.16 官方库。随发行提供第三方许可说明；本插件不包含游戏文件与ASI加载器。\n\n手柄图标作者：Jishenaz（CC0 1.0）。";
 const wchar_t RuntimeText_Settings_FontFace[] = L"宋体";
 const char RuntimeText_Settings_SavedRestartRequiredMessage[] = "设置已保存。待重启的项目在下次启动时生效。";
@@ -301,7 +301,7 @@ const char *const RuntimeText_KeymapCallouts[6]={"LT / LB","左摇杆 / L3","BAC
 
 const char RuntimeText_KeymapNavigationHint[]="图中为当前设置草稿；START保存，取消键关闭";
 
-const char *const RuntimeText_KeymapActions[7]={"调查","落点预览","左手动作","右手动作","奔跑切换","小地图","系统菜单"};
+const char *const RuntimeText_KeymapActions[7]={"调查","落点预览","左手动作","右手动作","开始奔跑","小地图","系统菜单"};
 
 const char RuntimeText_KeymapUnassigned[]="未分配";
 const char RuntimeText_KeymapLeftShoulderBody[]="LT：防御／组合\nLB：物品快捷";
@@ -323,25 +323,25 @@ const char RuntimeText_KeymapStateHint[]="左右或图上箭头翻状态；LB/RB
 const char RuntimeText_KeymapComboSlotFormat[]="第%u套连招";
 
 const char RuntimeText_KeymapJump[]="跳跃";
-const char RuntimeText_KeymapMoveAim[]="移动／落点方向";
+const char RuntimeText_KeymapMoveAim[]="移动／定向";
 const char RuntimeText_KeymapDualMode[]="双扳机组合";
 const char RuntimeText_KeymapGuard[]="防御";
-const char RuntimeText_KeymapItems[]="展开物品";
+const char RuntimeText_KeymapItems[]="回复物品组合";
 const char RuntimeText_KeymapMove[]="移动";
-const char RuntimeText_KeymapSkills[]="展开技能";
-const char RuntimeText_KeymapThrow[]="展开投掷";
+const char RuntimeText_KeymapSkills[]="技能快捷组合";
+const char RuntimeText_KeymapThrow[]="投掷物品组合";
 const char RuntimeText_KeymapQuickItem[]="快捷物品";
-const char RuntimeText_KeymapGuardDirection[]="防御方向";
-const char RuntimeText_KeymapLeftMenu[]="左手选单";
-const char RuntimeText_KeymapRightMenu[]="右手选单";
-const char RuntimeText_KeymapBrowse[]="选单浏览";
+const char RuntimeText_KeymapGuardDirection[]="触发闪避";
+const char RuntimeText_KeymapLeftMenu[]="展开左菜单";
+const char RuntimeText_KeymapRightMenu[]="展开右菜单";
+const char RuntimeText_KeymapBrowse[]="菜单导航\n（展开后）";
 
 /* 菜单选择模式同时用于TOML注释、设置项与当前键位图，三处保持相同含义。 */
 const char RuntimeText_Config_SkillMenuNavigationLabel[]="技能菜单选择模式";
 const char RuntimeText_Config_SkillMenuNavigationDescription[]="同时按住LT和RT，按L3展开左侧菜单，按R3展开右侧菜单；两个菜单只能展开一个。选择左摇杆导航全部、右摇杆导航全部，或各自独立导航。独立时左摇杆只选择左侧菜单，右摇杆只选择右侧菜单。松开任一扳机确认当前选择；保存后在操作空闲时生效。";
 const char *const RuntimeText_SkillMenuNavigationValues[]={"左摇杆导航全部","右摇杆导航全部","各自独立导航"};
-const char RuntimeText_KeymapLeftMenuBrowse[]="左菜单导航";
-const char RuntimeText_KeymapRightMenuBrowse[]="右菜单导航";
+const char RuntimeText_KeymapLeftMenuBrowse[]="左菜单导航\n（展开后）";
+const char RuntimeText_KeymapRightMenuBrowse[]="右菜单导航\n（展开后）";
 
 /* 外置技能配置只在用户保存自定义技能时出现，错误不能覆盖另一作的文件。 */
 const char RuntimeText_Skills_InvalidFile[]="EDSlash.SkillContols.toml格式、角色或技能字段无效";
@@ -360,3 +360,15 @@ const char RuntimeText_KeymapRescueFineMove[]="微调（1/3速）";
 const char RuntimeText_KeymapRescueBack[]="与START切换";
 const char RuntimeText_KeymapRescueStart[]="与BACK切换";
 const char RuntimeText_KeymapRescueHint[]="游戏中松开LT/RT、关闭技能菜单，再用BACK＋START切换。\n切换后松键、松扳机、摇杆回中；左右翻页，LB/RB切主页面。";
+
+/* 世界热键已按原集中输入与JM菜单对应关系核对，不能与LB/RB物品组合混用。 */
+const char *const RuntimeText_KeymapWorldMenus[4]={"角色属性","技能页面","任务日志","背包"};
+const char RuntimeText_KeymapRescueChord[]="与START救援";
+const char RuntimeText_KeymapSettingsEntry[]="EDSlash设置";
+const char RuntimeText_KeymapPreviewFormat[]="%s预览";
+const char RuntimeText_KeymapNormalHint[]="预览键按住选点、松开发动；奔跑键在移动时按下。\nLB/RB＋A/B/X/Y/←/→；BACK＋START救援。左右翻页，LB/RB切主页面。";
+const char RuntimeText_KeymapLtFaceHint[]="Y/B/A/X切换第1/2/3/4套连招；左摇杆触发闪避。\n改为方向键模式后用↑/→/↓/←切套；左右翻页，LB/RB切主页面。";
+const char RuntimeText_KeymapLtDpadHint[]="↑/→/↓/←切换第1/2/3/4套连招；左摇杆触发闪避。\n此模式面键不切套；左右翻页，LB/RB切主页面。";
+const char RuntimeText_KeymapLtLegacyHint[]="旧必杀模式：面键先准备、再按同键释放；方向键切连招。\n左摇杆触发闪避；左右翻页，LB/RB切主页面。";
+const char RuntimeText_KeymapRtHint[]="RT配合已绑定按键直接施放；未设置的位置无效果。\n左杆移动／施放方向；左右翻页，LB/RB切主页面。";
+const char RuntimeText_KeymapDualHint[]="未开菜单：必杀先准备、再按释放；BACK打开设置。左右翻页。\nL3/R3展开；菜单内ABXY无效，摇杆选技能，松扳机确认；LB/RB切主页面。";

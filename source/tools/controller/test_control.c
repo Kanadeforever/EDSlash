@@ -33,6 +33,10 @@ int main(void)
     in.menu=false;in.rt=true;step(0);mapped=step(KEY(PAD_X));CHECK(mapped.pressed==KEY(PAD_X) && mapped.layer==LAYER_SKILL);
     reset();in.world_remap=true;memcpy(in.world_buttons,world_map,7);
     mapped=step(KEY(PAD_BACK)|KEY(PAD_START));CHECK(mapped.mode_changed && !mapped.pressed);
+    /* 小地图改绑到BACK仍只在普通世界层形成R3语义，双扳机入口保留原BACK。 */
+    reset();in.world_remap=true;memcpy(in.world_buttons,world_map,7);in.world_buttons[5]=PAD_BACK;
+    mapped=step(KEY(PAD_BACK));CHECK(mapped.layer==LAYER_GAME && mapped.pressed==KEY(PAD_R3));
+    step(0);in.lt=in.rt=true;step(0);mapped=step(KEY(PAD_BACK));CHECK(mapped.layer==LAYER_DUAL && (mapped.pressed&KEY(PAD_BACK)) && !(mapped.pressed&KEY(PAD_R3)));
     reset();in.menu=true;step(0);in.swap_menu_ab=true;step(0);
     Intent swapped=step(KEY(PAD_A));CHECK(swapped.pressed==KEY(PAD_B) && swapped.held==KEY(PAD_B));
     step(0);swapped=step(KEY(PAD_B));CHECK(swapped.pressed==KEY(PAD_A));

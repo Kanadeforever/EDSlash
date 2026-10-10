@@ -301,4 +301,14 @@ extern const char RuntimeText_KeymapRescueFineMove[];
 extern const char RuntimeText_KeymapRescueBack[];
 extern const char RuntimeText_KeymapRescueStart[];
 extern const char RuntimeText_KeymapRescueHint[];
+extern const char *const RuntimeText_KeymapWorldMenus[4];
+extern const char RuntimeText_KeymapRescueChord[];
+extern const char RuntimeText_KeymapSettingsEntry[];
+extern const char RuntimeText_KeymapPreviewFormat[];
+extern const char RuntimeText_KeymapNormalHint[];
+extern const char RuntimeText_KeymapLtFaceHint[];
+extern const char RuntimeText_KeymapLtDpadHint[];
+extern const char RuntimeText_KeymapLtLegacyHint[];
+extern const char RuntimeText_KeymapRtHint[];
+extern const char RuntimeText_KeymapDualHint[];
 #endif

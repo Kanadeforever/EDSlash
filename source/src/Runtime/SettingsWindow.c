@@ -20,12 +20,13 @@ typedef int (__fastcall *This3)(void *, void *,int,int,void *);
 typedef int (__fastcall *IconDraw)(void *, void *,int,int,int,int,int,int,int,int,int);
 typedef struct {
     uintptr_t world_global,ui,skill_global,inventory_root,inventory_get,get_jm;
+    uintptr_t menu_map_global,menu_map_vtable,menu_map_show;
     uintptr_t menu_system_vtable,menu_system_show,menu_system_primary;
     uintptr_t settings_actor_get,settings_string_get,settings_icon_global;
     uintptr_t ui_property,skill_groups,methods,lookup,skill_eligibility,icon_resolve,icon_draw;
     uintptr_t settings_skill_name,settings_skill_description,settings_string_destroy,settings_query_skill,settings_empty_string,settings_text_get,settings_text_table,focus_frame_get,focus_image_get;
     unsigned active_offset,invalid_offset;uintptr_t menu_settings_vtable,menu_settings_show,menu_settings_primary,menu_native_text_draw;
-    BYTE signatures[21][12];
+    BYTE signatures[22][12];
 } SettingsBackend;
 #include "SettingsData.h"
 static SettingsBackend backend;
@@ -39,6 +40,7 @@ static ConfigId edit_id;static int edit_before;static char edit_text_before[40];
 static void *root;static uintptr_t old_primary,old_draw,host_table,host_show;
 static int native_host;
 static int wheel_remainder;
+static void *preserved_map,*preserved_world;static int preserved_map_visible;
 static void paint(RuntimeEventId,void *,unsigned long,unsigned long,void *);
 static void clear_icon_cache(void);
 static void about_clear_layout(void);
@@ -92,6 +94,21 @@ static int __fastcall fallback_draw(void *self,void *unused,unsigned long surfac
     if(active && !RuntimeConfig_GetInt(CONFIG_DISPLAY_ENABLED))paint(RUNTIME_EVENT_UI_DRAW_END,self,surface,0,NULL);
     return result;
 }
+static void capture_map_state(void)
+{
+    preserved_map=NULL;void *map=ptr((void *)backend.menu_map_global,0);
+    if(readable(map,0x104) && rd(map,0)==backend.menu_map_vtable && rd((void *)backend.menu_map_vtable,0x1C)==backend.menu_map_show){
+        preserved_map=map;preserved_world=ptr((void *)backend.world_global,0);preserved_map_visible=rd(map,0x64)!=0;
+    }
+}
+static void restore_map_state(void)
+{
+    /* 不恢复另一地图／另一对象的旧状态，不把模组暂停窗口当成小地图开关键。 */
+    void *map=ptr((void *)backend.menu_map_global,0);
+    if(map==preserved_map && map && preserved_world==ptr((void *)backend.world_global,0) && readable(map,0x104) && rd(map,0)==backend.menu_map_vtable &&
+       rd((void *)backend.menu_map_vtable,0x1C)==backend.menu_map_show && (rd(map,0x64)!=0)!=preserved_map_visible)
+        ((This2)backend.menu_map_show)(map,NULL,(int)preserved_map_visible,0);
+}
 void SettingsWindow_Close(void)
 {
     if(!active)return;
@@ -113,6 +130,7 @@ void SettingsWindow_Close(void)
     }
     old_draw=0;
     if(!native_host && readable(root,0x68))((This2)host_show)(root, NULL,0,0);
+    restore_map_state();preserved_map=NULL;
     about_clear_layout();
     active=editing=picker=confirm_discard=confirm_reset=0;root=NULL;old_primary=0;message[0]=0;
     RuntimeLog_Write(RuntimeText_Settings_ClosedLog);
@@ -221,7 +239,9 @@ static int open_on(void *native_page)
     active=1;barrier=1;editing=footer=picker=confirm_discard=confirm_reset=error_modal=picker_footer=scroll_drag=0;previous_direction=0;message[0]=0;
     clear_icon_cache();
     keymap_state=0;wheel_remainder=0;
+    capture_map_state();
     if(!native_host)((This2)host_show)(root, NULL,1,0);
+    restore_map_state();
     skill_count=skill_view_count=0;if(selector)build_skills();
     keymap_collect_specials();
     RuntimeLog_Write(RuntimeText_Settings_OpenedLog,selector);return 1;
@@ -424,9 +444,17 @@ static void keymap_effect(unsigned key,char *output,size_t capacity,int *selecto
     }
     if(keymap_state==0){
         int button=keymap_world_buttons[key];output[0]=0;
-        if(button>=0)for(unsigned i=0;i<7;++i)if(model.draft.values[CONFIG_WORLD_INTERACT+i]==button){size_t used=strlen(output);snprintf(output+used,capacity-used,"%s%s",used ? "/":"",i==1 ? keymap_jump_name:RuntimeText_KeymapActions[i]);}
+        if(button>=0)for(unsigned i=0;i<7;++i)if(model.draft.values[CONFIG_WORLD_INTERACT+i]==button){
+            size_t used=strlen(output);char action[160];
+            if(i==1)snprintf(action,sizeof action,RuntimeText_KeymapPreviewFormat,keymap_jump_name);
+            else snprintf(action,sizeof action,"%s",RuntimeText_KeymapActions[i]);
+            snprintf(output+used,capacity-used,"%s%s",used ? "/":"",action);
+        }
         if(output[0])return;
-        const char *fixed=key==0 ? RuntimeText_KeymapGuard:key==1 ? RuntimeText_KeymapItems:key==2 ? RuntimeText_KeymapMove:key==6 ? RuntimeText_KeymapSkills:key==7 ? RuntimeText_KeymapThrow:(key==5 || key==11 || key==12 || key==13) ? RuntimeText_KeymapQuickItem:RuntimeText_KeymapNoEffect;
+        const char *fixed=key==0 ? RuntimeText_KeymapGuard:key==1 ? RuntimeText_KeymapItems:key==2 ? RuntimeText_KeymapMove:
+            key==6 ? RuntimeText_KeymapSkills:key==7 ? RuntimeText_KeymapThrow:key==4 ? RuntimeText_KeymapRescueChord:
+            key==5 ? RuntimeText_KeymapWorldMenus[0]:key==11 ? RuntimeText_KeymapWorldMenus[1]:
+            key==12 ? RuntimeText_KeymapWorldMenus[2]:key==13 ? RuntimeText_KeymapWorldMenus[3]:RuntimeText_KeymapNoEffect;
         snprintf(output,capacity,"%s",fixed);return;
     }
     if(key==0){snprintf(output,capacity,RuntimeText_KeymapGuard);return;}
@@ -438,7 +466,7 @@ static void keymap_effect(unsigned key,char *output,size_t capacity,int *selecto
     }
     if(key==2){snprintf(output,capacity,RuntimeText_KeymapGuardDirection);return;}
     if(keymap_state==1 && key==6){snprintf(output,capacity,RuntimeText_KeymapDualMode);return;}
-    if(keymap_state==3){if(key==3){snprintf(output,capacity,RuntimeText_KeymapLeftMenu);return;}if(key==9){snprintf(output,capacity,RuntimeText_KeymapRightMenu);return;}}
+    if(keymap_state==3){if(key==4){snprintf(output,capacity,"%s",RuntimeText_KeymapSettingsEntry);return;}if(key==3){snprintf(output,capacity,RuntimeText_KeymapLeftMenu);return;}if(key==9){snprintf(output,capacity,RuntimeText_KeymapRightMenu);return;}}
     int face=key>=14 ? (int)key-14:-1;int legacy=model.draft.values[CONFIG_LEGACY_ULTIMATE];
     if(face>=0 && (keymap_state==3 || legacy)){
         if(!model.role){snprintf(output,capacity,"%s",RuntimeText_Settings_UnavailableValue);return;}
@@ -455,6 +483,16 @@ static void keymap_effect(unsigned key,char *output,size_t capacity,int *selecto
                 snprintf(output,capacity,RuntimeText_KeymapComboSlotFormat,combo);
         }
     }
+}
+/* 操作条件放在两行说明中，技能格仍保留真实名称和图标；内容读取当前草稿。 */
+static const char *keymap_hint(void)
+{
+    if(keymap_state==0)return RuntimeText_KeymapNormalHint;
+    if(keymap_state==1)return model.draft.values[CONFIG_LEGACY_ULTIMATE] ? RuntimeText_KeymapLtLegacyHint:
+        model.draft.values[CONFIG_COMBO_SWITCH] ? RuntimeText_KeymapLtDpadHint:RuntimeText_KeymapLtFaceHint;
+    if(keymap_state==2)return RuntimeText_KeymapRtHint;
+    if(keymap_state==3)return RuntimeText_KeymapDualHint;
+    return RuntimeText_KeymapRescueHint;
 }
 /* 两个信息页只读；共同处理关闭/保存，不向配置描述表查询不存在的字段。 */
 static int information_page(void)
@@ -838,10 +876,10 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         action_button(dc,x+304,y+378,136,30,editing ? RuntimeText_ResetCurrent:RuntimeText_ResetPage,RuntimeText_Key_BackUppercase,footer==3);
         if(!picker)action_button(dc,x+448,y+378,144,30,model.help ? RuntimeText_Settings_HideHelpButton:RuntimeText_Settings_ShowHelpButton,RuntimeText_Key_Y,0);
     }
-    const char *hint=model.page==SETTINGS_PAGE_KEYMAP ? (keymap_state==4 ? RuntimeText_KeymapRescueHint:RuntimeText_KeymapStateHint):model.page==SETTINGS_PAGE_ABOUT ? RuntimeText_Settings_AboutNavigationHint:editing ? RuntimeText_Settings_ValueEditorNavigationHint:RuntimeText_Settings_SettingsNavigationHint;
-    /* 救援页的两行使用说明用同页小字号，保持完整显示且不挤占保存/关闭按钮。 */
+    const char *hint=model.page==SETTINGS_PAGE_KEYMAP ? keymap_hint():model.page==SETTINGS_PAGE_ABOUT ? RuntimeText_Settings_AboutNavigationHint:editing ? RuntimeText_Settings_ValueEditorNavigationHint:RuntimeText_Settings_SettingsNavigationHint;
+    /* 各键位页的两行使用说明用同页小字号，保持完整显示且不挤占保存/关闭按钮。 */
     HGDIOBJ hint_font=NULL;
-    if(model.page==SETTINGS_PAGE_KEYMAP && keymap_state==4 && keymap_font)hint_font=SelectObject(dc,keymap_font);
+    if(model.page==SETTINGS_PAGE_KEYMAP && keymap_font)hint_font=SelectObject(dc,keymap_font);
     text(dc,x+16,y+416,576,26,message[0] ? message:hint,RGB(207,188,154));
     if(hint_font)SelectObject(dc,hint_font);
     if(model.page!=SETTINGS_PAGE_KEYMAP)paint_scrollbar(dc,x,y);
@@ -897,8 +935,8 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
     if(saved_dc)RestoreDC(dc,saved_dc);
     ((ReleaseDCFn)(uintptr_t)rd(table,0x68))(dd,dc);
     if(model.page==SETTINGS_PAGE_KEYMAP && model.role && (keymap_state==2 || keymap_state==3 || (keymap_state==1 && model.draft.values[CONFIG_LEGACY_ULTIMATE])) && !confirm_discard && !error_modal){
-        void *icons=ptr((void *)backend.settings_icon_global,0);unsigned art_icon_count=rd(icons,0x24);void *sprites=ptr(icons,0x28);
-        if(readable(icons,0x2C) && art_icon_count<=4096)for(unsigned i=0;i<KEYMAP_KEY_COUNT;++i){char effect_text[256];int selection,icon;keymap_effect(i,effect_text,sizeof effect_text,&selection,&icon);
+        void *icons=ptr((void *)backend.settings_icon_global,0);unsigned art_icon_count=rd(icons,0x44);void *sprites=ptr(icons,0x48);
+        if(readable(icons,0x4C) && art_icon_count && art_icon_count<=4096 && sprites)for(unsigned i=0;i<KEYMAP_KEY_COUNT;++i){char effect_text[256];int selection,icon;keymap_effect(i,effect_text,sizeof effect_text,&selection,&icon);
             if(icon>=0 && (unsigned)icon<art_icon_count && readable((BYTE *)sprites+(unsigned)icon*32u,32)){RECT cell=keymap_cell(i);int kw=i==2 || i==8 || i==10 || i==4 ? 48:30;
                 scaled_icon(context,icons,(BYTE *)sprites+(unsigned)icon*32u,icon,selection,cell.left+kw-8-8,cell.top,32,24,RGB(28,25,19));}
         }
@@ -1060,8 +1098,8 @@ int SettingsWindow_Initialize(const RuntimeContext *runtime)
     if(ready)return 1;
     if(!runtime || !runtime->profile || runtime->profile->game_id<1 || runtime->profile->game_id>2)return 0;
     backend=settings_profiles[runtime->profile->game_id-1];game=runtime->profile->game_id;
-    uintptr_t functions[]={backend.inventory_get,backend.get_jm,backend.menu_system_show,backend.menu_system_primary,backend.settings_actor_get,backend.settings_string_get,backend.ui_property,backend.lookup,backend.skill_eligibility,backend.icon_resolve,backend.icon_draw,backend.settings_skill_name,backend.settings_skill_description,backend.settings_string_destroy,backend.settings_query_skill,backend.settings_text_get,backend.focus_frame_get,backend.focus_image_get,backend.menu_settings_show,backend.menu_settings_primary,backend.menu_native_text_draw};
-    for(unsigned i=0;i<21;++i){BYTE bytes[12];if(!RuntimeWin32_Read((unsigned long)functions[i],bytes,12) || memcmp(bytes,backend.signatures[i],12)) {
+    uintptr_t functions[]={backend.menu_map_show,backend.inventory_get,backend.get_jm,backend.menu_system_show,backend.menu_system_primary,backend.settings_actor_get,backend.settings_string_get,backend.ui_property,backend.lookup,backend.skill_eligibility,backend.icon_resolve,backend.icon_draw,backend.settings_skill_name,backend.settings_skill_description,backend.settings_string_destroy,backend.settings_query_skill,backend.settings_text_get,backend.focus_frame_get,backend.focus_image_get,backend.menu_settings_show,backend.menu_settings_primary,backend.menu_native_text_draw};
+    for(unsigned i=0;i<sizeof functions/sizeof functions[0];++i){BYTE bytes[12];if(!RuntimeWin32_Read((unsigned long)functions[i],bytes,12) || memcmp(bytes,backend.signatures[i],12)) {
         RuntimeLog_Write(RuntimeText_Settings_InterfaceSignatureMismatchLog,i,(unsigned long)functions[i]);return 0;}}
     /* 订阅分别记账；后一项失败时重试也不会重复注册前一项。 */
     if(!draw_subscribed)draw_subscribed=Runtime_Subscribe(RUNTIME_EVENT_UI_DRAW_END,paint,NULL);

@@ -47,6 +47,8 @@ typedef struct {
     uintptr_t menu_native_text_draw;
     uintptr_t menu_settings_vtable,menu_settings_tick,menu_settings_show,menu_settings_hover;
     uintptr_t menu_settings_primary,menu_settings_close,menu_settings_apply,menu_settings_slider_set;
+    /* 原Tab分支使用的地图对象和Show业务，避免依赖键盘锁存。 */
+    uintptr_t menu_map_global,menu_map_vtable,menu_map_show;
     uintptr_t menu_title_vtable,menu_system_vtable,menu_confirm_vtable;
     uintptr_t menu_title_activate,menu_texture,menu_animation_reset;
     uintptr_t menu_system_primary,menu_confirm_submit;

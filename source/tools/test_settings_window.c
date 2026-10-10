@@ -41,8 +41,11 @@ static void wr(void *p,unsigned offset,uint32_t v){memcpy((BYTE *)p+offset,&v,4)
 static int __fastcall get_actor(void *manager, void *unused_edx){ (void)unused_edx;(void)manager;return (int)(uintptr_t)fake_actor;}
 static int __fastcall get_player(void *manager, void *unused_edx){ (void)unused_edx;(void)manager;return (int)(uintptr_t)fake_player;}
 static int __fastcall get_root(void *manager, void *unused_edx,int id){ (void)unused_edx;(void)manager;return id==0xAA ? (int)(uintptr_t)native_settings_root:id==0x2D ? (int)(uintptr_t)fake_root:0;}
+static BYTE fixture_map_root[0x110];static uintptr_t fixture_map_table[8];static void *fixture_map_pointer=fixture_map_root;static int map_host_side_effect;static unsigned fixture_map_calls;
+static int __fastcall fixture_map_show(void *self,void *edx,int shown,int mode)
+{(void)edx;CHECK(self==fixture_map_root && !mode);wr(self,0x64,shown);++fixture_map_calls;return 1;}
 static int __fastcall show_root(void *p, void *unused_edx,int show,int mode)
-{ (void)unused_edx;
+{if(map_host_side_effect)wr(fixture_map_root,0x64,show!=0); (void)unused_edx;
     (void)mode;wr(p,0x64,(unsigned)show);wr(fake_ui,0x3C,show ? (uint32_t)(uintptr_t)p:0);
     if(show)++pauses;else ++resumes;return 1;
 }
@@ -151,6 +154,15 @@ int wmain(void)
     CHECK(!SettingsWindow_Pad(1u<<4,1u<<4,0,1,0,0,0,0,60));
     CHECK(!SettingsWindow_Pad((1u<<4)|(1u<<6),1u<<4,1,1,0,0,0,0,70));
     CHECK(open_window());SettingsWindow_Close();CHECK(pauses==2 && resumes==2);
+    backend.menu_map_global=(uintptr_t)&fixture_map_pointer;backend.menu_map_vtable=(uintptr_t)fixture_map_table;backend.menu_map_show=(uintptr_t)fixture_map_show;
+    fixture_map_table[7]=(uintptr_t)fixture_map_show;wr(fixture_map_root,0,(uint32_t)(uintptr_t)fixture_map_table);
+    map_host_side_effect=1;
+    for(unsigned shown=0;shown<2;++shown){
+        wr(fixture_map_root,0x64,shown);CHECK(open_window());CHECK(rd(fixture_map_root,0x64)==shown);
+        SettingsWindow_Close();CHECK(rd(fixture_map_root,0x64)==shown);
+    }
+    CHECK(fixture_map_calls==2);map_host_side_effect=0;
+
     fixture_write_result=2;CHECK(!open_window() && table[0x24/4]==(uintptr_t)native_action);
     CHECK(open_window());fixture_write_result=0;SettingsWindow_Close();CHECK(active && old_primary);
     SettingsWindow_Close();CHECK(!active && table[0x24/4]==(uintptr_t)native_action);
@@ -190,7 +202,7 @@ int wmain(void)
     /* 验证超过2048宽字符的长FAQ完整转换且末尾可滚到，检查后恢复正式文案。 */
     char build_info[1024];const char *build_text=about_text(1,build_info,sizeof build_info);
     CHECK(strlen(EDSLASH_BUILD_DATE)==19 && EDSLASH_BUILD_DATE[4]=='-' && EDSLASH_BUILD_DATE[10]==' ' && EDSLASH_BUILD_DATE[16]==':');
-    CHECK(strstr(build_text,EDSLASH_BUILD_DATE) && strstr(build_text,"构建日期") && strstr(build_text,"北京时间"));
+    CHECK(strstr(build_text,EDSLASH_BUILD_DATE) && strstr(build_text,"构建日期") && !strstr(build_text,"北京时间"));
     const char *saved_faq=about_faq;static char long_faq[32768];
     for(unsigned n=0;n<100;++n)strcat(long_faq,"问：追加的问题。\n答：追加说明应完整显示，不能被固定缓存和高度裁掉。\n\n");
     strcat(long_faq,"末尾验收标记");about_clear_layout();about_faq=long_faq;about_layout();
@@ -227,6 +239,25 @@ int wmain(void)
         FillRect(fixture_dc,&about_canvas,(HBRUSH)GetStockObject(WHITE_BRUSH));paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
         const char *paths[]={"keymap_normal.bmp","keymap_lt.bmp","keymap_rt.bmp","keymap_dual.bmp","keymap_rescue.bmp"};snapshot_path=paths[state];CHECK(snapshot(&info.bmiHeader,pixels));
     }
+    /* 直接核对路由对应的文字，不把旧显示常量作为正确答案。 */
+    keymap_state=0;
+    const unsigned direction_cells[]={5,11,12,13};const char *menu_labels[]={"角色属性","技能页面","任务日志","背包"};
+    for(unsigned i=0;i<4;++i){keymap_effect(direction_cells[i],keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,menu_labels[i]));}
+    keymap_effect(1,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"回复物品组合"));
+    keymap_effect(7,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"投掷物品组合"));
+    keymap_effect(6,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"技能快捷组合"));
+    keymap_effect(3,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"开始奔跑"));
+    keymap_effect(4,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(strstr(keymap_description,"START") && strstr(keymap_description,"救援"));
+    keymap_effect(15,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(strstr(keymap_description,"预览"));
+    CHECK(strstr(keymap_hint(),"松开发动") && strstr(keymap_hint(),"BACK"));
+    keymap_state=1;keymap_effect(2,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"触发闪避"));
+    model.draft.values[CONFIG_COMBO_SWITCH]=0;model.draft.values[CONFIG_LEGACY_ULTIMATE]=0;CHECK(strstr(keymap_hint(),"Y/B/A/X"));
+    model.draft.values[CONFIG_COMBO_SWITCH]=1;CHECK(strstr(keymap_hint(),"此模式面键不切套"));
+    model.draft.values[CONFIG_LEGACY_ULTIMATE]=1;CHECK(strstr(keymap_hint(),"旧必杀") && strstr(keymap_hint(),"再按同键释放"));
+    keymap_state=2;keymap_effect(2,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"移动／定向"));
+    keymap_state=3;keymap_effect(4,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"EDSlash设置"));
+    CHECK(strstr(keymap_hint(),"未开菜单") && strstr(keymap_hint(),"ABXY无效") && strstr(keymap_hint(),"松扳机确认"));
+    SettingsModel_Discard(&model);
     /* 第五页逐键对应真实救援映射；普通改绑、无角色、技能草稿不能污染鼠标说明。 */
     SettingsModel rescue_before=model;keymap_state=4;unsigned saved_role=model.role;model.role=0;
     for(unsigned key=0;key<KEYMAP_KEY_COUNT;++key){
@@ -331,6 +362,22 @@ int wmain(void)
     RECT compact=icon_rectangle(16,82,42,43,47,32);CHECK(compact.bottom-compact.top==32 && compact.top==87);
     CHECK(small.right-small.left<43 && compact.right-compact.left<43);
     paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);CHECK(icon_calls==1); /* 复用缓存 */
+    /* 同一真实图标库在技能页能画，也必须在RT、双扳机及旧单LT键位页画；0x24是空值陷阱。 */
+    SettingsModel icons_before=model;int picker_before=picker;unsigned state_before=keymap_state;
+    picker=0;model.page=SETTINGS_PAGE_KEYMAP;model.role=4;skill_count=1;skills[0].selector=123;skills[0].icon=2;strcpy(skills[0].name,"测试技能");
+    model.draft_bindings[0]=(ConfigBinding){1,123,1};keymap_finishers[0].selector=123;keymap_finishers[0].icon=2;strcpy(keymap_finishers[0].name,"测试必杀");
+    unsigned native_icon_before=icon_calls;
+    wr(fixture_icons,0x24,0);wr(fixture_icons,0x28,0);
+    const unsigned icon_states[]={2,3,1};
+    for(unsigned n=0;n<3;++n){keymap_state=icon_states[n];model.draft.values[CONFIG_LEGACY_ULTIMATE]=n==2;
+        FillRect(fixture_dc,&about_canvas,(HBRUSH)GetStockObject(WHITE_BRUSH));paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
+        RECT key_glyph=icon_rectangle(414,302,32,43,47,24);
+        CHECK(GetPixel(fixture_dc,origin_x+(key_glyph.left+key_glyph.right)/2,origin_y+(key_glyph.top+key_glyph.bottom)/2)==RGB(38,66,92));
+        const char *icon_paths[]={"keymap_icons_rt.bmp","keymap_icons_dual.bmp","keymap_icons_legacy.bmp"};
+        snapshot_path=icon_paths[n];CHECK(snapshot(&info.bmiHeader,pixels));
+    }
+    CHECK(icon_calls>native_icon_before);
+    model=icons_before;picker=picker_before;keymap_state=state_before;
     move(1);activate();CHECK(!model.draft_bindings[0].custom); /* 第一项未设置 */
     snapshot_path="settings_skill_fixture.bmp";CHECK(snapshot(&info.bmiHeader,pixels));
     CHECK(!picker);SettingsWindow_Close();

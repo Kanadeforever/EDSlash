@@ -766,13 +766,21 @@ static void menu_regression(bool expansion)
     for (unsigned i=0;i<5;++i) menu_step(KEY(PAD_RB),0,0);
     CHECK(quest_switches==1);game_isolated();
     neutral_menu();menu_step(KEY(PAD_LB),0,0);CHECK(Read32(menu_roots[7],0xC0)==0x78);
-    neutral_menu();menu_step(KEY(PAD_LB),0,0);CHECK(Read32(menu_roots[7],0xC0)==0x7B);
+    Write32(menu_children[7][3],0x64,0);Write32(menu_children[7][3],0x68,0);
+    neutral_menu();menu_step(KEY(PAD_LB),0,0);CHECK(Read32(menu_roots[7],0xC0)==0x7A);
     neutral_menu();menu_step(KEY(PAD_A),0,0);CHECK(quest_switches==3 && quest_selections==2);
     /* 原fixture视口40像素、行高20，左右每次跨2项；LB/RB仍是分类切换。 */
     neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);CHECK(Read32(quest_list_data,0xF4)==2 && quest_selections==3);
     neutral_menu();menu_step(KEY(PAD_LEFT),0,0);CHECK(Read32(quest_list_data,0xF4)==0 && quest_selections==4);
     neutral_menu();menu_step(KEY(PAD_LEFT),0,0);CHECK(Read32(quest_list_data,0xF4)==0 && quest_selections==4 && quest_switches==3);
     Write32(quest_list_data,0xE0,0);CHECK(!Menu_CursorAnchor(&anchor));
+    /* 隐藏分类即使被外部保留为当前编号，也应回到可见分类；单一分类不反复重建。 */
+    Write32(menu_roots[7],0xC0,0x7B);unsigned old_switches=quest_switches;
+    neutral_menu();menu_step(KEY(PAD_RB),0,0);CHECK(Read32(menu_roots[7],0xC0)==0x78 && quest_switches==old_switches+1);
+    Write32(menu_children[7][1],0x64,0);Write32(menu_children[7][2],0x64,0);
+    neutral_menu();menu_step(KEY(PAD_LB),0,0);CHECK(Read32(menu_roots[7],0xC0)==0x78 && quest_switches==old_switches+1);
+    Write32(menu_children[7][1],0x64,1);Write32(menu_children[7][2],0x64,1);
+
     neutral_menu();menu_step(KEY(PAD_DOWN),0,0);CHECK(quest_selections==4);
     neutral_menu();menu_step(KEY(PAD_B),0,0);CHECK(!Read32(menu_roots[7],0x64));
     /* 技能学习焦点经过原base Tick后仍在，详情不会受物理鼠标悬停清空。 */
@@ -1005,7 +1013,15 @@ static void __declspec(noinline) modal_region_regression(bool expansion)
     neutral_menu();menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[13]);
     menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==hud_data);
     menu_step(KEY(PAD_X),0,0);neutral_menu();CHECK(Menu_Context(&reason)==menu_roots[9]);
-    BYTE keys[256]={0};g_intent.pressed=KEY(PAD_R3);Game_Keyboard(keys);CHECK(keys[VK_TAB]==0x80);
+    BYTE keys[256]={0};g_intent.pressed=KEY(PAD_R3);Game_Keyboard(keys);CHECK(!keys[VK_TAB] && test_map_toggles==1 && Read32(test_map_root,0x64));
+    Game_Keyboard(keys);CHECK(test_map_toggles==2 && !Read32(test_map_root,0x64));
+    g_intent.layer=LAYER_DUAL;g_intent.pressed=KEY(PAD_BACK);Game_Keyboard(keys);CHECK(test_map_toggles==2);
+    g_intent.layer=LAYER_MENU;g_intent.pressed=KEY(PAD_R3);test_settings_active=1;Game_Keyboard(keys);CHECK(test_map_toggles==2);test_settings_active=0;
+    g_intent.layer=LAYER_GAME;g_intent.pressed=0;Game_Keyboard(keys);CHECK(test_map_toggles==2);
+    g_intent.pressed=KEY(PAD_R3);Game_Keyboard(keys);CHECK(test_map_toggles==3 && Read32(test_map_root,0x64));
+    g_intent.layer=LAYER_SKILL;Game_Keyboard(keys);CHECK(test_map_toggles==3);g_intent.layer=LAYER_MENU;
+    g_input.lt=g_input.rt=true;g_intent.pressed=KEY(PAD_R3)|KEY(PAD_BACK);Game_Keyboard(keys);CHECK(test_map_toggles==3);
+    g_input.lt=g_input.rt=false;
     /* 依附已关闭页的过期辅助窗口不能继续截住世界输入。 */
     Write32(settings_root,0x64,0);
     Write32(unknown_root,0x64,0);Write32(menu_roots[9],0x64,0);Write32(menu_roots[14],0x64,0);

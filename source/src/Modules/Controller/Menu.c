@@ -489,6 +489,18 @@ static void *quest_list(void *root)
     }
     return list;
 }
+static bool quest_tab_visible(void *root,unsigned id)
+{
+    /* 日志分类独立于通用按钮导航；检查原子控件身份、父页、显示标志及尺寸。 */
+    void *node=ReadPtr(root,0x9C);
+    for(unsigned i=0;node && i<128;++i){
+        if(!Memory_Readable(node,0xC0))break;
+        if(Read32(node,0x28)==id && ReadPtr(node,0xA4)==root && Read32(node,0x64) &&
+           (int)Read32(node,0x1C)>0 && (int)Read32(node,0x20)>0)return true;
+        void *next=ReadPtr(node,8);if(next==node)break;node=next;
+    }
+    return false;
+}
 static void quest_update(void *root)
 {
     if (state.barrier || !Read32(root,0x64)) return;
@@ -498,11 +510,17 @@ static void quest_update(void *root)
     if (left!=right) {
         unsigned current=Read32(root,0xC0);
         if (current>=0x78 && current<=0x7B) {
-            unsigned target=0x78+((current-0x78+(left ? 3:1))%4);
-            /* 原分类helper会记住各分类位置、重建列表、更新文字和原选中外观。 */
-            ((This2)g_profile->menu_quest_switch)(root, NULL,(int)target,-1);
-            Log_Write(ControllerText_Menu_JournalCategoryChangedLog,target);
-            state.direction=0;state.barrier=true;
+            unsigned target=current;
+            /* 0x7B虽有原分类处理，但可能没有可见页签；只跳到真实显示且有尺寸的分类按钮。 */
+            for(unsigned distance=1;distance<=4;++distance){unsigned wanted=0x78+((current-0x78+(left ? 4-distance:distance))%4);
+                if(quest_tab_visible(root,wanted))target=wanted;
+                if(target!=current)break;
+            }
+            if(target!=current){
+                ((This2)g_profile->menu_quest_switch)(root,NULL,(int)target,-1);
+                Log_Write(ControllerText_Menu_JournalCategoryChangedLog,target);
+                state.direction=0;state.barrier=true;
+            }
         }
         return;
     }

@@ -5,11 +5,11 @@ import sys
 
 SOURCE = Path(__file__).resolve().parents[1]
 FIELDS = ('world_global', 'ui', 'skill_global', 'inventory_root', 'inventory_get',
-          'get_jm', 'menu_system_vtable', 'menu_system_show', 'menu_system_primary',
+          'get_jm', 'menu_map_global', 'menu_map_vtable', 'menu_map_show', 'menu_system_vtable', 'menu_system_show', 'menu_system_primary',
           'settings_actor_get', 'settings_string_get', 'settings_icon_global',
           'ui_property', 'skill_groups', 'methods', 'lookup', 'skill_eligibility', 'icon_resolve', 'icon_draw',
           'settings_skill_name', 'settings_skill_description', 'settings_string_destroy', 'settings_query_skill', 'settings_empty_string', 'settings_text_get', 'settings_text_table', 'focus_frame_get', 'focus_image_get', 'menu_settings_vtable', 'menu_settings_show', 'menu_settings_primary', 'menu_native_text_draw')
-FUNCTIONS = ('inventory_get', 'get_jm', 'menu_system_show', 'menu_system_primary',
+FUNCTIONS = ('menu_map_show', 'inventory_get', 'get_jm', 'menu_system_show', 'menu_system_primary',
              'settings_actor_get', 'settings_string_get', 'ui_property', 'lookup',
              'skill_eligibility', 'icon_resolve', 'icon_draw',
              'settings_skill_name', 'settings_skill_description', 'settings_string_destroy', 'settings_query_skill', 'settings_text_get', 'focus_frame_get', 'focus_image_get', 'menu_settings_show', 'menu_settings_primary', 'menu_native_text_draw')
