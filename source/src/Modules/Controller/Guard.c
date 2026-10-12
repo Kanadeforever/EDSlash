@@ -109,8 +109,8 @@ static int __fastcall receiver_hook(void *victim,void *unused,void *runtime)
     (void)unused;
     int64_t wrapper_perf=RuntimePerf_Begin();
     void *attacker=NULL,*scope=ReadPtr((void *)g_profile->world_global,0);
-    bool was_enemy=false;float health_before=0;
-    /* 只观测LT受击，不改变格挡方向、穿防招式或硬直。下一轮日志可区分姿态失效和穿防。 */
+    bool was_enemy=false,player_hit=false;uint32_t victim_handle=0;float health_before=0;
+    /* LT受击诊断只记录姿态、体力和反应，不改变格挡方向、穿防招式或硬直。 */
     bool diagnose=controlled(victim) && g_intent.layer==LAYER_GUARD && Memory_Readable(runtime,0x93);
     unsigned guard_before=diagnose ? *((BYTE *)victim+0x219):0;
     unsigned state_before=diagnose ? Read32(victim,0x73):0;
@@ -122,8 +122,12 @@ static int __fastcall receiver_hook(void *victim,void *unused,void *runtime)
          * 持续毒伤/环境扣血若不经过该攻击回调，不会给玩家错误回血。 */
         attacker=(void *)(uintptr_t)((This0)g_profile->runtime_owner)(runtime, NULL);
         void *method=ReadPtr(runtime,0x8F);
-        was_enemy=controlled(attacker) && Game_Enemy(attacker,victim) &&
-            Memory_Readable(method,0x24) && (Read32(method,0x22)&0xFFFFu)==0;
+        bool attack_method=Memory_Readable(method,0x24) && (Read32(method,0x22)&0xFFFFu)==0;
+        was_enemy=attack_method && controlled(attacker) && Game_Enemy(attacker,victim);
+        /* 只记录敌人攻击当前玩家的事件。治疗、脚本效果及持续状态扣血不作为攻击命中。
+         * 在调用原版前保存身份；原版可能使敌人死亡或切换场景，返回后不能重新猜攻击者。 */
+        player_hit=attack_method && controlled(victim) && attacker && Game_Enemy(victim,attacker);
+        victim_handle=Read32(victim,0x14);
         uint32_t bits=Read32(victim,g_profile->health_offset);memcpy(&health_before,&bits,4);
     }
     int64_t native_perf=RuntimePerf_Begin();
@@ -132,6 +136,16 @@ static int __fastcall receiver_hook(void *victim,void *unused,void *runtime)
     /* 原回调可能死亡/换图；不能把旧场景的命中奖励加给新角色。 */
     if (scope==ReadPtr((void *)g_profile->world_global,0)) {
         Guard_RecoverHit(victim,attacker,health_before,was_enemy);
+        /* 原受击返回成功也可能是格挡或无敌，必须确认同一玩家生命实际减少。
+         * 不因按着LT直接排除：体力不足或穿防时，原版确实造成伤害仍应反馈。
+         * 不监听全局生命变化，异常状态的周期扣血不会反复触发；每次命中短震动180毫秒。 */
+        if(player_hit && controlled(victim) && Memory_Readable(victim,g_profile->health_offset+4) &&
+           Game_Resolve(victim_handle)==victim && Read32(victim,0x14)==victim_handle &&
+           g_input.connected && g_input.focused && RuntimeConfig_GetInt(CONFIG_RUMBLE)) {
+            float health_after;uint32_t bits=Read32(victim,g_profile->health_offset);memcpy(&health_after,&bits,4);
+            if(isfinite(health_before) && isfinite(health_after) && health_before>0 && health_after<health_before)
+                Input_Rumble(180);
+        }
         if (diagnose && controlled(victim) && Memory_Readable(victim,g_profile->health_offset+4)) {
             float after,stamina_after;uint32_t bits=Read32(victim,g_profile->health_offset);memcpy(&after,&bits,4);
             bits=Read32(victim,g_profile->stamina_offset);memcpy(&stamina_after,&bits,4);

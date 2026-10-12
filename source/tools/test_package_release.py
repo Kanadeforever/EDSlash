@@ -7,6 +7,7 @@ import json
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
 
 from package_release import LICENSE_FILES, PACKAGE_FILES, license_contents, package, safe_file, source_digest, write_license_files
 
@@ -18,8 +19,13 @@ class PackageTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.output = self.root / "output/EDSlash-dev-auto.zip"
+        # 基础拒绝回归使用隔离依赖；官方件及嵌套覆盖另由依赖测试验证。
+        dependency_mock = patch("package_release.dependency_contents", return_value={"ddraw.dll": b"dependency"})
+        dependency_mock.start()
+        self.addCleanup(dependency_mock.stop)
         config = b"[meta]\r\nschema = 1\r\n"
         files = {
+            "docs/自动构建分发说明/使用说明.txt": "玩家安装说明\r\n".encode("utf-8"),
             "README.md": b"readme", "LICENSE": b"license",
             ".gitignore": b"ignore", ".gitattributes": b"attributes",
             ".github/workflows/build.yml": b"name: build\r\n",
@@ -95,13 +101,14 @@ class PackageTests(unittest.TestCase):
     def test_exact_file_manifest_and_original_bytes(self):
         self.pack()
         with zipfile.ZipFile(self.output) as archive:
-            self.assertEqual(len(archive.namelist()), len(PACKAGE_FILES))
-            self.assertEqual(set(archive.namelist()), set(PACKAGE_FILES))
+            self.assertEqual(len(archive.namelist()), len(PACKAGE_FILES) + 1)
+            self.assertEqual(set(archive.namelist()), set(PACKAGE_FILES) | {"ddraw.dll"})
             self.assertNotIn("LICENSE-SDL.txt", archive.namelist())
             for name, original in license_contents(self.root).items():
-                self.assertEqual(archive.read(name), original)
-            self.assertEqual(archive.read("第三方声明.txt"), b"own notices")
-            self.assertEqual(archive.read("EDSlash.asi"), b"formal-build")
+                self.assertEqual(archive.read("Third_Party_Licenses/" + Path(name).name), original)
+            self.assertEqual(archive.read("Third_Party_Licenses/第三方声明.txt"), b"own notices")
+            self.assertEqual(archive.read("plugins/EDSlash.asi"), b"formal-build")
+            self.assertEqual(archive.read("使用说明.txt"), "玩家安装说明\r\n".encode("utf-8"))
         self.assertEqual({p.name for p in self.output.parent.iterdir()}, {self.output.name})
 
     def test_changed_binary_preserves_old_package(self):

@@ -8,6 +8,7 @@ import sys
 import tempfile
 import tomllib
 import zipfile
+from release_dependencies import dependency_contents
 
 ROOT = Path(__file__).resolve().parents[2]
 # 许可证来源是只读的仓库原件，发行副本不能转换编码、换行、空白或加入说明。
@@ -20,11 +21,12 @@ LICENSE_FILES = {
 }
 # ZIP逐项收集，不递归包含debug、源码、游戏或私人资料。
 PACKAGE_FILES = {
-    "EDSlash.asi": "release/EDSlash.asi",
-    "EDSlash.toml": "release/EDSlash.toml",
-    "第三方声明.txt": "release/第三方声明.txt",
-    **{name: "release/" + name for name in LICENSE_FILES},
-    "licenses/SunPro-NOTICE.txt": "release/licenses/SunPro-NOTICE.txt",
+    "使用说明.txt": "docs/自动构建分发说明/使用说明.txt",
+    "plugins/EDSlash.asi": "release/EDSlash.asi",
+    "plugins/EDSlash.toml": "release/EDSlash.toml",
+    "Third_Party_Licenses/第三方声明.txt": "release/第三方声明.txt",
+    **{"Third_Party_Licenses/" + Path(name).name: "release/" + name for name in LICENSE_FILES},
+    "Third_Party_Licenses/SunPro-NOTICE.txt": "release/licenses/SunPro-NOTICE.txt",
 }
 
 
@@ -93,7 +95,7 @@ def write_license_files(root, directory):
 
 
 
-def package(root, output):
+def package(root, output, dependencies=None):
     """校验报告只在打包时使用；固定文件清单不递归收集任何目录。"""
     root = root.resolve()
     output = output.resolve()
@@ -105,25 +107,31 @@ def package(root, output):
     report = json.loads(safe_file(root, "release/统一构建验证.json").read_text(encoding="utf-8"))
     contents = {name: safe_file(root, relative).read_bytes() for name, relative in PACKAGE_FILES.items()}
     # 构建报告对应当前正式件，拒绝误取旧件或debug冒充发行件。
-    asi = contents["EDSlash.asi"]
+    asi = contents["plugins/EDSlash.asi"]
     if hashlib.sha256(asi).hexdigest() != report["ASI_SHA256"] or len(asi) != report["ASI字节数"]:
         raise RuntimeError("正式ASI与构建验证报告不匹配")
     if not report.get("UPX") or report.get("外置SDL3.dll") is not False:
         raise RuntimeError("发行报告未满足UPX与静态SDL契约")
     template = safe_file(root, "source/config/EDSlash.toml").read_bytes()
-    config = contents["EDSlash.toml"]
+    config = contents["plugins/EDSlash.toml"]
     if template != config or hashlib.sha256(template).hexdigest() != report["默认模板SHA256"]:
         raise RuntimeError("自动发行只能携带与报告匹配的默认配置，不能发布个人配置")
     tomllib.loads(config.decode("utf-8"))
     originals = license_contents(root)
     for name, original in originals.items():
-        if contents[name] != original:
+        if contents["Third_Party_Licenses/" + Path(name).name] != original:
             raise RuntimeError(f"许可证副本与原件字节不一致：{name}")
     notices = safe_file(root, "docs/第三方许可/第三方声明.txt").read_bytes()
-    if contents["第三方声明.txt"] != notices:
+    if contents["Third_Party_Licenses/第三方声明.txt"] != notices:
         raise RuntimeError("第三方声明与仓库不匹配")
     if source_digest(root) != report["构建身份"]["源码与构建输入SHA256"]:
         raise RuntimeError("源码与构建报告不匹配，请先运行统一构建入口")
+
+    # 官方压缩包先做摘要核对，再合并内嵌着色器；任何重名都不能覆盖本项目产物。
+    extra = dependency_contents(dependencies or root / ".build/release-dependencies")
+    if set(contents) & set(extra):
+        raise RuntimeError("依赖文件与项目发行文件重名")
+    contents.update(extra)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
@@ -135,7 +143,7 @@ def package(root, output):
             for name, data in contents.items():
                 archive.writestr(name, data)
         with zipfile.ZipFile(temporary) as archive:
-            if len(archive.namelist()) != len(PACKAGE_FILES) or set(archive.namelist()) != set(PACKAGE_FILES):
+            if len(archive.namelist()) != len(contents) or set(archive.namelist()) != set(contents):
                 raise RuntimeError("ZIP文件清单与正式产物、独立声明及原件许可证清单不匹配")
             if archive.testzip() is not None:
                 raise RuntimeError("ZIP完整性校验失败")
@@ -147,7 +155,7 @@ def package(root, output):
         if temporary is not None and temporary.exists():
             temporary.unlink()
     checksum = hashlib.sha256(output.read_bytes()).hexdigest()
-    print(f"正式发行包完成：{output}；ASI、TOML、独立声明与许可证原件，共{len(PACKAGE_FILES)}个文件。")
+    print(f"正式发行包完成：{output}；插件、固定依赖、着色器与原样许可，共{len(contents)}个文件。")
     return checksum
 
 
@@ -155,8 +163,9 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="打包正式ASI、默认TOML、独立第三方声明及原样许可证。")
     parser.add_argument("--output", type=Path, required=True, help="目标ZIP路径；不能放入源码或只读参考目录")
+    parser.add_argument("--dependencies", type=Path, help="已下载并验证的固定依赖缓存目录")
     args = parser.parse_args()
-    checksum = package(ROOT, args.output)
+    checksum = package(ROOT, args.output, args.dependencies)
     # 校验值只作为工作流内部输出传递，不生成玩家下载的额外文件。
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:

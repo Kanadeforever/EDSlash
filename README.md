@@ -26,9 +26,9 @@ EDSlash 是一个面向这两款游戏 Windows 版的非官方开源项目。
 
 `main` 分支每次更新后，GitHub Actions 会自动构建、执行离线验证，并更新 [dev-auto 开发版](https://github.com/Kanadeforever/EDSlash/releases/tag/dev-auto)。也可以在 [Actions 页面](https://github.com/Kanadeforever/EDSlash/actions/workflows/build.yml) 手动运行构建；只有 `main` 的成功构建更新公开开发版，其它分支仅提供构建附件。
 
-自动发行附件为 `EDSlash-dev-auto.zip`，ZIP 根目录包含 `EDSlash.asi`、`EDSlash.toml`、`LICENSE.txt` 和独立的 `第三方声明.txt`，`licenses/` 目录包含各组件的许可证原件副本及明确标注的源码声明片段。**不发布 debug、源码、SDL 源码、文档或验证报告，也不附带额外校验文件。**
+自动发行附件为 `EDSlash-dev-auto.zip`，解压到游戏主程序所在目录。`plugins/` 放置 EDSlash.asi 与默认 EDSlash.toml；根目录附带 cnc-ddraw 7.1 的配置工具、ddraw.dll、ddraw.ini 和 Ultimate ASI Loader 9.0 的32位 dinput8.dll；`Shaders/` 已展开全部内嵌着色器；`Third_Party_Licenses/` 集中保留项目与依赖许可及第三方声明。完整着色器中含限非商业使用的 CC BY-NC-SA 3.0 文件，详见第三方声明。自动包不含 debug、游戏本体、构建源码和验证报告。
 
-下载后保留 ZIP 的文件与目录结构安装，具体步骤见下文。自动构建只验证构建与离线行为，不代表实机验收完成。源码仓库中的 `release/` 为本地构建输出目录，不纳入 Git；源码构建方法见下文。
+下载后保留 ZIP 的文件与目录结构安装，详细安装、dgVoodoo2 清理、更新与常见问题见[自动构建分发版使用说明](docs/自动构建分发说明/使用说明.txt)，基本步骤见下文。自动构建只验证构建与离线行为，不代表实机验收完成。源码仓库中的 `release/` 为本地构建输出目录，不纳入 Git；源码构建方法见下文。
 
 项目按以下四份准确的游戏可执行文件维护版本资料：
 
@@ -126,8 +126,8 @@ QOL 模块提供地面物品名称、分类自动拾取与成功提示。距离�
 ## 安装与配置
 
 1. 准备对应版本的游戏，先备份存档和现有模组配置。
-2. 准备可在该游戏进程中加载 **32 位 ASI** 的加载器。EDSlash 本身是插件，具体搜索目录与启动方式由所使用的加载器决定。
-3. 将发行 ZIP 解压到加载器实际扫描的目录，保留 `LICENSE.txt`、`第三方声明.txt` 和 `licenses/` 目录。
+2. 自动包已附带 **32 位 Ultimate ASI Loader**，EDSlash 位于其扫描的 `plugins/` 目录。使用其他加载器时，请按该加载器的目录和启动方式安装插件。
+3. 将发行 ZIP 解压到游戏主程序所在目录，保留 `plugins/`、`Shaders/` 和 `Third_Party_Licenses/`。如果目录已有同名加载器或配置，先备份再决定覆盖。
 4. 停用旧独立 Controller 和与统一插件功能重叠的旧插件，避免重复修改同一处游戏逻辑。
 5. 启动游戏后检查 `EDSlash.log`，确认当前版本识别和模块初始化情况，再按实机清单测试。
 
@@ -222,11 +222,12 @@ python source/tools/build.py --checks-only
 
 工作流位于 [.github/workflows/build.yml](.github/workflows/build.yml)。Windows runner 安装 Python、32 位 MinGW、CMake、Ninja 与 UPX，然后调用相同的 `source/tools/build.py`。SDL 直接编译仓库内 `thirdparty/SDL-release-3.4.16/`，不另取运行库或上游源码。
 
-本地构建仍生成并验证发行与 debug 两件；自动打包使用明确文件清单，只收集正式 ASI、默认 TOML、项目许可证、独立第三方声明和各组件的许可证原件副本；许可证文件按原始字节复制。验证报告仅用于打包核对，源码、完整 SDL、文档和工具继续保留在仓库中。ZIP 完整性与散列检查在 runner 内完成，公开附件只有这一个 ZIP。
+本地构建仍生成并验证发行与 debug 两件；自动打包只收集正式插件、默认配置、固定版本官方依赖、完整着色器和许可。下载件逐份核对 SHA-256，许可证和着色器按原字节复制。内嵌 `Shaders/shader-package.zip` 解压到上一级目录，同名文件由内层覆盖，原 ZIP 保留。公开附件只有最终 ZIP。
 
 如需在本地生成相同结构的发行包，先完成正式构建，再执行：
 
 ```powershell
+python source/tools/release_dependencies.py --directory .build/release-dependencies
 python source/tools/package_release.py --output .workspace/release/EDSlash-dev-auto.zip
 ```
 
@@ -260,7 +261,7 @@ python source/tools/package_release.py --output .workspace/release/EDSlash-dev-a
 - **[CastleReforge](https://github.com/Kanadeforever/castlereforge)**：本项目的配置标量核心基于其 Runtime TOML 核心改编，所需代码已纳入 EDSlash。
 - **[cnc-ddraw](https://github.com/FunkyFr3sh/cnc-ddraw)**：项目显示兼容研究与实机测试涉及的 DirectDraw 兼容层，其使用与许可由上游项目说明。
 
-具体版权、配置核心、SDL、HIDAPI、YUV、SunPro与手柄图示CC0声明见 [第三方声明](docs/第三方许可/第三方声明.txt)。自动发行中的中文说明为 `第三方声明.txt`；项目自身 MIT 许可为 `LICENSE.txt`；各组件原件分别位于 `licenses/`。许可证与说明分开存放，均须保留。
+具体版权和组件许可见 [第三方声明](docs/第三方许可/第三方声明.txt)。自动 ZIP 中项目 MIT、组件许可原件及中文声明统一放在 `Third_Party_Licenses/`；着色器自身的作者与许可头也必须保留。
 
 参考、使用或测试这些项目，不代表其作者参与、认可或为 EDSlash 提供技术支持。
 

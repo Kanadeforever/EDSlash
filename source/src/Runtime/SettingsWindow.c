@@ -387,13 +387,13 @@ static void about_scroll(int delta)
     if(value>maximum)value=maximum;
     model.scroll[SETTINGS_PAGE_ABOUT]=(unsigned)value;
 }
-enum {KEYMAP_STATE_COUNT=5,KEYMAP_KEY_COUNT=18};
+enum {KEYMAP_STATE_COUNT=RUNTIME_KEYMAP_STATE_COUNT,KEYMAP_KEY_COUNT=18};
 static struct {int selector,icon;char name[128];} keymap_finishers[4];
 static char keymap_jump_name[128];
 static const int keymap_world_buttons[18]={-1,-1,-1,6,4,-1,-1,-1,-1,7,5,-1,-1,-1,0,1,2,3};
 static const int keymap_skill_slots[18]={-1,8,-1,12,10,4,-1,9,-1,13,11,5,6,7,0,1,2,3};
 static COLORREF keymap_color(void)
-{static const COLORREF colors[KEYMAP_STATE_COUNT]={RGB(231,206,154),RGB(132,186,255),RGB(212,154,255),RGB(255,143,150),RGB(104,218,202)};return colors[keymap_state];}
+{if(keymap_state>=RUNTIME_KEYMAP_MENU_FIRST)return RGB(158,214,190);static const COLORREF colors[5]={RGB(231,206,154),RGB(132,186,255),RGB(212,154,255),RGB(255,143,150),RGB(104,218,202)};return colors[keymap_state];}
 static RECT keymap_cell(unsigned i)
 {
     int x,y,w=144;
@@ -427,6 +427,17 @@ static void keymap_effect(unsigned key,char *output,size_t capacity,int *selecto
 {
     *selector=*icon=-1;snprintf(output,capacity,"%s",RuntimeText_KeymapNoEffect);
     if(key>=KEYMAP_KEY_COUNT)return;
+    if(keymap_state>=RUNTIME_KEYMAP_MENU_FIRST){
+        /* 菜单映射不使用世界改键。只将逻辑确认/取消转换为当前草稿的物理A/B。
+         * 说明页本身只读，不打开所述菜单，也不改变实际选项或焦点。 */
+        unsigned guide=keymap_state-RUNTIME_KEYMAP_MENU_FIRST;
+        if((key==14 || key==15) && model.draft.values[CONFIG_MENU_SWAP_AB])key^=1;
+        const char *effect=RuntimeText_KeymapMenuEffects[guide][key];
+        /* 原菜单中R3仍可操作已载入世界的小地图，插件设置则隔离该世界操作。 */
+        if(key==9 && guide!=17 && model.role)effect="小地图（游戏内）";
+        if(effect)snprintf(output,capacity,"%s",effect);
+        return;
+    }
     if(keymap_state==4){
         /* 救援说明取真实鼠标模式固定映射，不受世界改键、技能绑定或角色加载影响。 */
         const char *effect=key==0 ? RuntimeText_KeymapRescueRightClick:key==6 ? RuntimeText_KeymapRescueLeftClick:
@@ -487,6 +498,7 @@ static void keymap_effect(unsigned key,char *output,size_t capacity,int *selecto
 /* 操作条件放在两行说明中，技能格仍保留真实名称和图标；内容读取当前草稿。 */
 static const char *keymap_hint(void)
 {
+    if(keymap_state>=RUNTIME_KEYMAP_MENU_FIRST)return RuntimeText_KeymapMenuHints[keymap_state-RUNTIME_KEYMAP_MENU_FIRST];
     if(keymap_state==0)return RuntimeText_KeymapNormalHint;
     if(keymap_state==1)return model.draft.values[CONFIG_LEGACY_ULTIMATE] ? RuntimeText_KeymapLtLegacyHint:
         model.draft.values[CONFIG_COMBO_SWITCH] ? RuntimeText_KeymapLtDpadHint:RuntimeText_KeymapLtFaceHint;

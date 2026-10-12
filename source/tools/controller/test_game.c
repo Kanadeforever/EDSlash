@@ -38,7 +38,7 @@ static void *last_target;
 static bool page_visible, physical_mouse, busy_gate;
 static int test_omni_setting=1;
 #ifndef EDSLASH_REAL_CONFIG
-static int test_inspect_distance=160;
+static int test_inspect_distance=160,test_rumble_setting=1;
 static int test_single_trigger=1,test_combo_switch=0,test_action_menu_nav=2;
 #endif
 static int test_dodge_setting=1,test_dodge_distance=128,test_aim_ms=1000;
@@ -74,6 +74,8 @@ void Log_Write(const char *format, ...)
         last_right_style=!strcmp(style,"右手");va_end(args);
     }
 }
+static unsigned hit_rumble_calls,hit_rumble_ms;
+void Input_Rumble(unsigned ms) { ++hit_rumble_calls;hit_rumble_ms=ms; }
 bool Input_PhysicalDown(int key) { return key==VK_LBUTTON && physical_mouse; }
 #ifndef EDSLASH_REAL_CONFIG
 static ConfigSnapshot test_snapshot={.generation=1};
@@ -83,6 +85,7 @@ const ConfigSnapshot *RuntimeConfig_Current(void) {return &test_snapshot;}
 int RuntimeConfig_GetInt(ConfigId id)
 {
     switch (id) {
+    case CONFIG_RUMBLE:return test_rumble_setting;
     case CONFIG_INSPECT_DISTANCE:return test_inspect_distance;
     case CONFIG_LEGACY_ULTIMATE:return test_single_trigger;
     case CONFIG_COMBO_SWITCH:return test_combo_switch;
@@ -657,14 +660,20 @@ static int __fastcall native_dodge_install(void *role, void *unused_edx,int stat
 }
 static void make_call(BYTE *where,uintptr_t callee)
 { int32_t displacement=(int32_t)(callee-(uintptr_t)where-5);where[0]=0xE8;memcpy(where+1,&displacement,4); }
-static float damage_to_apply;static bool damage_from_npc;
+static float damage_to_apply;static bool damage_from_npc,damage_guard_check,damage_change_world;
+static void *damage_owner_override;
 static int __fastcall native_damage_owner(void *runtime, void *unused_edx)
-{ (void)unused_edx; CHECK(runtime==runtime_data);return (int)(uintptr_t)(damage_from_npc ? roles[1]:roles[0]); }
+{ (void)unused_edx; CHECK(runtime==runtime_data);return (int)(uintptr_t)(damage_owner_override ? damage_owner_override:(damage_from_npc ? roles[1]:roles[0])); }
 static int __fastcall native_damage_receiver(void *victim, void *unused_edx,void *runtime)
 { (void)unused_edx;
     CHECK(runtime==runtime_data);
     float health=read_float(victim,g_profile->health_offset);
-    write_float(victim,g_profile->health_offset,health-damage_to_apply);return 1;
+        /* 格挡替身执行真实体力门；格挡成功没有伤害，耗尽后由本次原受击扣生命。 */
+    float damage=damage_to_apply;
+    if(damage_guard_check && Guard_Hit(victim,0x6A))damage=0;
+    write_float(victim,g_profile->health_offset,health-damage);
+    if(damage_change_world)world_ptr=NULL;
+    return 1;
 }
 
 static void guard_regression(bool expansion)
@@ -746,6 +755,51 @@ static void guard_regression(bool expansion)
     CHECK(read_float(roles[0],profile.stamina_offset)==46);damage_from_npc=false;
     write_float(roles[0],profile.stamina_offset,98);((This1)profile.hit_receiver)(roles[1], NULL,(int)(uintptr_t)runtime_data);
     CHECK(read_float(roles[0],profile.stamina_offset)==100);
+    /* 两作使用真实受击网关回放敌人攻击玩家；震动取决于原回调后的实伤。 */
+    PadInput saved_input=g_input;g_input.connected=g_input.focused=true;
+    damage_owner_override=roles[1];damage_to_apply=5;hit_rumble_calls=0;
+    g_intent.layer=LAYER_GAME;write_float(roles[0],profile.health_offset,100);
+    ((This1)profile.hit_receiver)(roles[0],NULL,(int)(uintptr_t)runtime_data);
+    CHECK(hit_rumble_calls==1 && hit_rumble_ms==180 && read_float(roles[0],profile.health_offset)==95);
+    /* 防御成功不震，体力不足退出防御并受到这次攻击时震动，按着LT不屏蔽。 */
+    damage_guard_check=true;g_intent.layer=LAYER_GUARD;*((BYTE*)roles[0]+0x219)=1;
+    write_float(roles[0],profile.stamina_offset,50);
+    ((This1)profile.hit_receiver)(roles[0],NULL,(int)(uintptr_t)runtime_data);
+    CHECK(hit_rumble_calls==1 && read_float(roles[0],profile.health_offset)==95);
+    write_float(roles[0],profile.stamina_offset,5);
+    ((This1)profile.hit_receiver)(roles[0],NULL,(int)(uintptr_t)runtime_data);
+    CHECK(hit_rumble_calls==2 && !*((BYTE*)roles[0]+0x219) && read_float(roles[0],profile.health_offset)==90);
+    damage_guard_check=false;
+    /* 持续状态扣血直接改变生命，不经过攻击入口；零伤害与回血也不能发出反馈。 */
+    write_float(roles[0],profile.health_offset,80);CHECK(hit_rumble_calls==2);
+    for(int damage=0;damage>=-5;damage-=5){damage_to_apply=(float)damage;
+        ((This1)profile.hit_receiver)(roles[0],NULL,(int)(uintptr_t)runtime_data);CHECK(hit_rumble_calls==2);}
+    damage_to_apply=5;*((WORD*) (methods_data[0]+0x22))=1;
+    ((This1)profile.hit_receiver)(roles[0],NULL,(int)(uintptr_t)runtime_data);CHECK(hit_rumble_calls==2);
+    *((WORD*) (methods_data[0]+0x22))=0;
+    damage_owner_override=roles[0];((This1)profile.hit_receiver)(roles[0],NULL,(int)(uintptr_t)runtime_data);
+    CHECK(hit_rumble_calls==2);
+    damage_owner_override=roles[2];((This1)profile.hit_receiver)(roles[0],NULL,(int)(uintptr_t)runtime_data);
+    CHECK(hit_rumble_calls==2);damage_owner_override=roles[1];
+    g_input.focused=false;((This1)profile.hit_receiver)(roles[0],NULL,(int)(uintptr_t)runtime_data);CHECK(hit_rumble_calls==2);
+    g_input.focused=true;g_input.connected=false;
+    ((This1)profile.hit_receiver)(roles[0],NULL,(int)(uintptr_t)runtime_data);CHECK(hit_rumble_calls==2);g_input.connected=true;
+#ifndef EDSLASH_REAL_CONFIG
+    test_rumble_setting=0;((This1)profile.hit_receiver)(roles[0],NULL,(int)(uintptr_t)runtime_data);
+    CHECK(hit_rumble_calls==2);test_rumble_setting=1;
+#endif
+    damage_change_world=true;((This1)profile.hit_receiver)(roles[0],NULL,(int)(uintptr_t)runtime_data);
+    CHECK(hit_rumble_calls==2);world_ptr=world_data;damage_change_world=false;
+    write_float(roles[0],profile.health_offset,5);
+    ((This1)profile.hit_receiver)(roles[0],NULL,(int)(uintptr_t)runtime_data);CHECK(hit_rumble_calls==3);
+#ifndef EDSLASH_REAL_CONFIG
+    /* 关闭插件受击扣体力规则只恢复原防御算法，不关闭独立的命中震动。 */
+    test_guard_setting=0;CHECK(Guard_ApplySettings());write_float(roles[0],profile.health_offset,100);
+    ((This1)profile.hit_receiver)(roles[0],NULL,(int)(uintptr_t)runtime_data);CHECK(hit_rumble_calls==4);
+    test_guard_setting=1;CHECK(Guard_ApplySettings());
+#endif
+    /* 测试结束恢复输入、攻击来源和生命，后续动作回放仍使用独立初始状态。 */
+    g_input=saved_input;damage_owner_override=NULL;write_float(roles[0],profile.health_offset,100);
     /* 免费奔跑不再依赖敌人的追击目标，战斗和非战斗都免支出。 */
     write_float(roles[0],profile.stamina_offset,50);Guard_RunCost(roles[0],-3);CHECK(read_float(roles[0],profile.stamina_offset)==50);
     Write32(roles[1],0x143,1);Guard_RunCost(roles[0],-3);CHECK(read_float(roles[0],profile.stamina_offset)==50);

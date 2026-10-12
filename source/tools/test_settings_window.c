@@ -237,7 +237,9 @@ int wmain(void)
     for(unsigned state=0;state<KEYMAP_STATE_COUNT;++state){keymap_state=state;
         for(unsigned key=0;key<18;++key){keymap_effect(key,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(keymap_description[0]);}
         FillRect(fixture_dc,&about_canvas,(HBRUSH)GetStockObject(WHITE_BRUSH));paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
-        const char *paths[]={"keymap_normal.bmp","keymap_lt.bmp","keymap_rt.bmp","keymap_dual.bmp","keymap_rescue.bmp"};snapshot_path=paths[state];CHECK(snapshot(&info.bmiHeader,pixels));
+        const char *paths[]={"keymap_normal.bmp","keymap_lt.bmp","keymap_rt.bmp","keymap_dual.bmp","keymap_rescue.bmp"};
+        char guide_path[64];snprintf(guide_path,sizeof guide_path,"keymap_menu_%u.bmp",state);
+        snapshot_path=state<5 ? paths[state]:guide_path;CHECK(snapshot(&info.bmiHeader,pixels));
     }
     /* 直接核对路由对应的文字，不把旧显示常量作为正确答案。 */
     keymap_state=0;
@@ -268,8 +270,30 @@ int wmain(void)
         CHECK(!strcmp(keymap_description,expected) && keymap_selection==-1 && keymap_icon==-1);
     }
     model.role=saved_role;CHECK(!memcmp(&model,&rescue_before,sizeof model));
-    move(4);CHECK(keymap_state==0);move(3);CHECK(keymap_state==4);
-    mouse_click(410,100);CHECK(keymap_state==0);mouse_click(195,100);CHECK(keymap_state==4);
+    keymap_state=KEYMAP_STATE_COUNT-1;move(4);CHECK(keymap_state==0);move(3);CHECK(keymap_state==KEYMAP_STATE_COUNT-1);
+    mouse_click(410,100);CHECK(keymap_state==0);mouse_click(195,100);CHECK(keymap_state==KEYMAP_STATE_COUNT-1);
+    /* 菜单表保持各自操作，物理A/B随草稿互换；世界改绑不污染菜单说明。 */
+    for(unsigned guide=0;guide<RUNTIME_KEYMAP_MENU_COUNT;++guide){
+        keymap_state=RUNTIME_KEYMAP_MENU_FIRST+guide;
+        for(unsigned swap=0;swap<2;++swap){model.draft.values[CONFIG_MENU_SWAP_AB]=(int)swap;
+            for(unsigned key=0;key<KEYMAP_KEY_COUNT;++key){
+                unsigned mapped=(key==14 || key==15) && swap ? key^1:key;
+                const char *expected=RuntimeText_KeymapMenuEffects[guide][mapped];
+                if(key==9 && guide!=17 && model.role)expected="小地图（游戏内）";
+                keymap_effect(key,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);
+                CHECK(!strcmp(keymap_description,expected ? expected:"无效果") && keymap_selection==-1 && keymap_icon==-1);
+            }
+        }
+        CHECK(keymap_hint()[0]);
+    }
+    model.draft.values[CONFIG_MENU_SWAP_AB]=0;
+    keymap_state=9;keymap_effect(1,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"上一分类"));
+    keymap_effect(12,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"上一屏"));
+    keymap_state=11;keymap_effect(16,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"候选／连招区"));
+    keymap_state=12;keymap_effect(4,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"丢弃物品"));
+    keymap_state=13;keymap_effect(4,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"无效果"));
+    keymap_state=21;keymap_effect(17,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"随机名字／生日"));
+    keymap_state=22;keymap_effect(10,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"保存设置"));
     /* 键位图即时反映草稿的导航模式；非负责摇杆明确显示无效果。 */
     keymap_state=3;
     for(int mode=0;mode<3;++mode){

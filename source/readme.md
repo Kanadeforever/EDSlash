@@ -61,9 +61,9 @@ python source/tools/build.py --upx
 
 仓库的`.github/workflows/build.yml`在main推送或手动触发时运行。Windows runner安装Python 3.13、使用runner自带的MSVC/Windows SDK、原生CMake/Ninja及UPX 5.2.1，再调用同一个`source/tools/build.py`；SDL直接使用thirdparty完整源码，不额外下载SDL。只有main成功构建更新dev-auto标签与开发版，其它分支手动构建仅保存Actions附件。构建任务只读仓库，发布任务单独取得contents: write。
 
-自动构建内部仍验证同次优化链接的正式/debug双产物，但不发布debug版。tools/package_release.py输出的EDSlash-dev-auto.zip包含正式ASI、默认TOML、LICENSE.txt、第三方声明.txt与licenses目录。各组件许可证直接复制仓库原件；SunPro单独原样提取源码注释声明。说明不插入许可证，原件编码、换行、空格均保留。
+自动构建内部仍验证同次优化链接的正式/debug双产物，但不发布debug版。tools/package_release.py输出的EDSlash-dev-auto.zip将正式ASI与默认TOML放入plugins，根目录附带cnc-ddraw 7.1及Ultimate ASI Loader 9.0的官方32位发行件，Shaders包含展开的内嵌着色器，全部许可和声明集中于Third_Party_Licenses。各组件许可证直接复制仓库原件；SunPro单独原样提取源码注释声明。说明不插入许可证，原件编码、换行、空格均保留。
 
-在项目根运行`python source/tools/package_release.py --output release/EDSlash-dev-auto.zip`可生成本地包。须先完成正式构建；ASI、默认配置、源码摘要和许可副本均须匹配。工具逐字节核对许可证，并回读ZIP检查清单、CRC和输入字节；不上传文件。test_package_release.py覆盖缺失许可、仅空白改动、错误产物、个人配置、旧源码、SunPro片段与旧汇总清理。
+在项目根运行`python source/tools/package_release.py --output release/EDSlash-dev-auto.zip`可生成本地包。须先完成正式构建，再运行`python source/tools/release_dependencies.py --directory .build/release-dependencies`下载并验证固定依赖；ASI、默认配置、源码摘要和许可副本均须匹配。工具逐字节核对许可证，并回读ZIP检查清单、CRC和输入字节；不上传文件。内嵌Shaders/shader-package.zip合并到包根，同名覆盖并保留原ZIP；着色器许可头保持原样，GPLv2与CC BY-NC-SA 3.0全文随包，完整包包含限非商业使用的着色器。test_release_dependencies.py覆盖嵌套覆盖、危险路径和损坏缓存拒绝。test_package_release.py覆盖缺失许可、仅空白改动、错误产物、个人配置、旧源码、SunPro片段与旧汇总清理。
 
 CI不携带原游戏EXE，真实四样本复核明确跳过，不能记录成通过。Actions成功仍不代表真实设备、Steam DLL或游戏实机验收。首次远程构建及发布状态以Actions运行记录为准。
 
