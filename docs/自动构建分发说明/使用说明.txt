@@ -28,7 +28,7 @@ https://github.com/Kanadeforever/EDSlash/releases/tag/dev-auto
 6. 按平常方式启动游戏。Steam 版继续通过 Steam 启动。进入游戏场景后检查画面、键盘鼠标和手
   柄操作，再调整设置。
 7. Linux/SteamDeck 用户，需要在游戏的“管理 → 通用 → 启动选项”里填入以下内容：
-  HOST_LC_ALL=zh_CN.UTF-8 WINEDLLOVERRIDES="ddraw,dinput8=n,b" %command%
+  HOST_LC_ALL=zh_CN.UTF-8 WINEDLLOVERRIDES="ddraw,dsound=n,b" %command%
   注意：Steam版需要将Proton设置为9以上，并且在不安装解码器的情况下无法播放视频。
 
 安装后的主要文件如下；其它随包文件也应保留：
