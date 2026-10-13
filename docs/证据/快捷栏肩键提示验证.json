@@ -1,0 +1,201 @@
+{
+  "构建日期": "2026-10-13 23:46:57",
+  "发行ASI_SHA256": "b66e6e436fe1be097b71a4b099dc0500d85a69680c847b33379191ee7dbf1cf3",
+  "构建身份": {
+    "源码与构建输入SHA256": "13027ea9c37a30e0e716d51d326f2b54eab1c9aa1041f40263ddc0a2f0ca1f38",
+    "架构": "单ASI、统一TOML及日志、官方静态SDL3.4.16"
+  },
+  "四程序核验": [
+    {
+      "游戏": "DaoJian",
+      "发行": "NonSteam",
+      "原程序SHA256": "c8d1aa33272a2c28e94f0d18eda2d6a8fcb14796644d8f8bed467b744ddc94b5",
+      "黄字入口": {
+        "quick_label_call": "0x4c34a5",
+        "quick_label_draw": "0x4b25a0"
+      },
+      "黄字与数量分离": {
+        "draw": 4993504,
+        "label_call": 4994213,
+        "quantity_draw_call": 4994087,
+        "slots": 12,
+        "slot_stride": 228,
+        "formats": [
+          "%c",
+          "F%c"
+        ],
+        "stack_arguments": 5
+      },
+      "原调用指令": [
+        "004C3484 push 0x545c4c",
+        "004C3489 mov ecx, esi",
+        "004C348B call 0x4b23b0",
+        "004C3490 mov ecx, dword ptr [esp + 0x50]",
+        "004C3494 mov eax, dword ptr [edi - 4]",
+        "004C3497 mov edx, dword ptr [edi]",
+        "004C3499 push 0",
+        "004C349B push ecx",
+        "004C349C lea ecx, [eax + ebx + 0x15]",
+        "004C34A0 push edx",
+        "004C34A1 push ecx",
+        "004C34A2 push ebp",
+        "004C34A3 mov ecx, esi",
+        "004C34A5 call 0x4b25a0",
+        "004C34AA push 0x545c5c",
+        "004C34AF mov ecx, esi",
+        "004C34B1 call 0x4b23b0",
+        "004C34B6 lea ecx, [esp + 0x50]"
+      ]
+    },
+    {
+      "游戏": "WaiZhuan",
+      "发行": "NonSteam",
+      "原程序SHA256": "04e34dd68b373b9b2ddf300ca4bfcabb6e6b89ceb9d437af67cbad5e7286fbe4",
+      "黄字入口": {
+        "quick_label_call": "0x4d7a65",
+        "quick_label_draw": "0x4c58f0"
+      },
+      "黄字与数量分离": {
+        "draw": 5076896,
+        "label_call": 5077605,
+        "quantity_draw_call": 5077479,
+        "slots": 12,
+        "slot_stride": 228,
+        "formats": [
+          "%c",
+          "F%c"
+        ],
+        "stack_arguments": 5
+      },
+      "原调用指令": [
+        "004D7A44 push 0x5751dc",
+        "004D7A49 mov ecx, esi",
+        "004D7A4B call 0x4c5700",
+        "004D7A50 mov ecx, dword ptr [esp + 0x50]",
+        "004D7A54 mov eax, dword ptr [edi - 4]",
+        "004D7A57 mov edx, dword ptr [edi]",
+        "004D7A59 push 0",
+        "004D7A5B push ecx",
+        "004D7A5C lea ecx, [eax + ebx + 0x15]",
+        "004D7A60 push edx",
+        "004D7A61 push ecx",
+        "004D7A62 push ebp",
+        "004D7A63 mov ecx, esi",
+        "004D7A65 call 0x4c58f0",
+        "004D7A6A push 0x5751ec",
+        "004D7A6F mov ecx, esi",
+        "004D7A71 call 0x4c5700",
+        "004D7A76 lea ecx, [esp + 0x50]"
+      ]
+    },
+    {
+      "游戏": "DaoJian",
+      "发行": "Steam",
+      "原程序SHA256": "0887ceae7589999a389ec271d690e1c55204d59575f8f2adb5ef46a1e605b3f5",
+      "黄字入口": {
+        "quick_label_call": "0x4c34a5",
+        "quick_label_draw": "0x4b25a0"
+      },
+      "黄字与数量分离": {
+        "draw": 4993504,
+        "label_call": 4994213,
+        "quantity_draw_call": 4994087,
+        "slots": 12,
+        "slot_stride": 228,
+        "formats": [
+          "%c",
+          "F%c"
+        ],
+        "stack_arguments": 5
+      },
+      "原调用指令": [
+        "004C3484 push 0x545c4c",
+        "004C3489 mov ecx, esi",
+        "004C348B call 0x4b23b0",
+        "004C3490 mov ecx, dword ptr [esp + 0x50]",
+        "004C3494 mov eax, dword ptr [edi - 4]",
+        "004C3497 mov edx, dword ptr [edi]",
+        "004C3499 push 0",
+        "004C349B push ecx",
+        "004C349C lea ecx, [eax + ebx + 0x15]",
+        "004C34A0 push edx",
+        "004C34A1 push ecx",
+        "004C34A2 push ebp",
+        "004C34A3 mov ecx, esi",
+        "004C34A5 call 0x4b25a0",
+        "004C34AA push 0x545c5c",
+        "004C34AF mov ecx, esi",
+        "004C34B1 call 0x4b23b0",
+        "004C34B6 lea ecx, [esp + 0x50]"
+      ]
+    },
+    {
+      "游戏": "WaiZhuan",
+      "发行": "Steam",
+      "原程序SHA256": "97ae4c2350618f38a74c3d02bf315c749fc448f705e860129372ebd592ed66e5",
+      "黄字入口": {
+        "quick_label_call": "0x4d7a65",
+        "quick_label_draw": "0x4c58f0"
+      },
+      "黄字与数量分离": {
+        "draw": 5076896,
+        "label_call": 5077605,
+        "quantity_draw_call": 5077479,
+        "slots": 12,
+        "slot_stride": 228,
+        "formats": [
+          "%c",
+          "F%c"
+        ],
+        "stack_arguments": 5
+      },
+      "原调用指令": [
+        "004D7A44 push 0x5751dc",
+        "004D7A49 mov ecx, esi",
+        "004D7A4B call 0x4c5700",
+        "004D7A50 mov ecx, dword ptr [esp + 0x50]",
+        "004D7A54 mov eax, dword ptr [edi - 4]",
+        "004D7A57 mov edx, dword ptr [edi]",
+        "004D7A59 push 0",
+        "004D7A5B push ecx",
+        "004D7A5C lea ecx, [eax + ebx + 0x15]",
+        "004D7A60 push edx",
+        "004D7A61 push ecx",
+        "004D7A62 push ebp",
+        "004D7A63 mov ecx, esi",
+        "004D7A65 call 0x4c58f0",
+        "004D7A6A push 0x5751ec",
+        "004D7A6F mov ecx, esi",
+        "004D7A71 call 0x4c5700",
+        "004D7A76 lea ecx, [esp + 0x50]"
+      ]
+    }
+  ],
+  "证据来源": "PE只读指令；REA未定义HUD Draw过程，原声明不冒充反编译完成",
+  "CTest通过": 31,
+  "映射": [
+    "A",
+    "B",
+    "X",
+    "Y",
+    "←",
+    "→"
+  ],
+  "覆盖": [
+    "十二槽与原字符串不变",
+    "默认隐藏",
+    "LB左侧、RB右侧",
+    "另一栏隐藏",
+    "双肩键按原LB优先级",
+    "设置窗口隐藏",
+    "失焦及断开隐藏",
+    "救援模式隐藏",
+    "手柄功能关闭恢复原文字",
+    "未知格式传递",
+    "卸载恢复原CALL"
+  ],
+  "实机": "未运行或注入游戏；真实字体箭头和显示待用户验收",
+  "打包回归通过": 13,
+  "依赖回归通过": 3,
+  "发行包文件数": 161
+}

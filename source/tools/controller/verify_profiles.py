@@ -59,6 +59,13 @@ def verify_static_sources(pe, profile):
             assert struct.unpack('<I',pe.read(profile['addresses']['menu_teleport_vtable']+offset,4))[0]==profile['addresses'][key]
         call_address=profile['addresses']['menu_teleport_base_call'];call=pe.read(call_address,5)
         assert call[0]==0xE8 and call_address+5+struct.unpack('<i',call[1:])[0]==profile['addresses']['menu_message_base_tick']
+    # 黄字与数量使用不同调用点；仅黄字CALL连接原五参数文字绘制，数量入口保持原字节。
+    quick=profile.get('quick_label_evidence')
+    if quick:
+        label=profile['addresses']['quick_label_call'];call=pe.read(label,5)
+        assert call[0]==0xE8 and label+5+struct.unpack('<i',call[1:])[0]==profile['addresses']['quick_label_draw']
+        assert label!=quick['quantity_draw_call'] and pe.read(quick['quantity_draw_call'],1)==b'\xE8'
+        assert struct.unpack('<I',pe.read(profile['addresses']['menu_hud_vtable']+8,4))[0]==quick['draw']
     picker=profile['addresses']['inspect_static_picker']
     for offset,opcode,field in [(0,b'\x8b\x15','inspect_map_global'),
                                 (0xE4,b'\x8b\x35','inspect_map_global'),

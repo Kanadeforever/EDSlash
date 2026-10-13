@@ -1,10 +1,12 @@
 #include "ControllerText.h"
 #include "Feedback.h"
+#include "../../Runtime/SettingsWindow.h"
 #include <string.h>
 
 /* 原版图标入口有九个栈参数，游戏自己清理36字节；fast call 包装保留ECX中的对象。 */
 typedef int (__fastcall *NativeIconDraw)(void *, void *,int,int,int,int,int,int,int,int,int);
-static BYTE saved_icon_call[5];
+static BYTE saved_icon_call[5],saved_label_call[5];
+static bool label_installed;
 static bool installed,show_action,held_preview;
 static void *action_world,*action_animation;
 static bool runtime_ended;
@@ -123,6 +125,29 @@ void Feedback_Ultimate(unsigned slot)
     Log_Write(ControllerText_Finisher_SlotUnconfiguredLog,slot+1);
 }
 
+/* 只包装HUD十二槽的黄字调用，物品图标、数量和字体颜色设置仍由原绘制完成。
+ * 原入口为thiscall并清理五个栈参数；fastcall第二参数占EDX，不额外占用游戏栈。 */
+typedef int (__fastcall *NativeQuickText)(void *,void *,void *,int,int,const char *,int);
+static int __fastcall quick_label_hook(void *self,void *unused,void *surface,int x,int y,const char *label,int flags)
+{
+    (void)unused;
+    if(!RuntimeConfig_GetInt(CONFIG_CONTROLLER_ENABLED) || self!=hud())
+        return ((NativeQuickText)g_profile->quick_label_draw)(self,NULL,surface,x,y,label,flags);
+    /* 原代码仅在非空快捷格调用：左栏字符串1..6，右栏F1..F6。只读字符串确定栏及槽。
+     * 不写原绑定、不改变数量，未知格式保持原调用，避免误吞其它插件的自定义文字。 */
+    if(!Memory_Readable(label,3))return ((NativeQuickText)g_profile->quick_label_draw)(self,NULL,surface,x,y,label,flags);
+    bool right=label[0]=='F';unsigned offset=right ? 1u:0u;
+    if(label[offset]<'1' || label[offset]>'6' || label[offset+1])
+        return ((NativeQuickText)g_profile->quick_label_draw)(self,NULL,surface,x,y,label,flags);
+    unsigned slot=(unsigned)(label[offset]-'1');
+    bool active=g_input.connected && g_input.focused && !SettingsWindow_Active() &&
+        (right ? g_intent.layer==LAYER_ITEM && (g_input.buttons&KEY(PAD_RB)):
+                 g_intent.layer==LAYER_MEDICINE && (g_input.buttons&KEY(PAD_LB)));
+    if(!active)return 0;
+    /* 原游戏文字入口使用GBK；箭头用对应双字节编码，避免把UTF-8当原ANSI文字解析。 */
+    static const char *const buttons[]={"A","B","X","Y","\xA1\xFB","\xA1\xFA"};
+    return ((NativeQuickText)g_profile->quick_label_draw)(self,NULL,surface,x,y,buttons[slot],flags);
+}
 bool Feedback_Initialize(void)
 {
     if (installed) return true;
@@ -131,9 +156,17 @@ bool Feedback_Initialize(void)
     memcpy(saved_icon_call,(void *)target,5);
     int32_t relative;memcpy(&relative,saved_icon_call+1,4);
     if (saved_icon_call[0]!=0xE8 || target+5+relative!=g_profile->icon_draw) return false;
+    uintptr_t label_target=g_profile->quick_label_call;
+    if(!Memory_Readable((void *)label_target,5))return false;
+    memcpy(saved_label_call,(void *)label_target,5);int32_t label_relative;memcpy(&label_relative,saved_label_call+1,4);
+    if(saved_label_call[0]!=0xE8 || label_target+5+label_relative!=g_profile->quick_label_draw)return false;
     BYTE replacement[5]={0xE8};relative=(int32_t)((uintptr_t)right_icon_hook-target-5);
     memcpy(replacement+1,&relative,4);
-    installed=Memory_Patch((void *)target,replacement,5);return installed;
+    installed=Memory_Patch((void *)target,replacement,5);if(!installed)return false;
+    BYTE label_bytes[5]={0xE8};label_relative=(int32_t)((uintptr_t)quick_label_hook-label_target-5);
+    memcpy(label_bytes+1,&label_relative,4);label_installed=Memory_Patch((void *)label_target,label_bytes,5);
+    if(!label_installed){Feedback_Shutdown();return false;}
+    return true;
 }
 void Feedback_Shutdown(void)
 {
@@ -144,5 +177,10 @@ void Feedback_Shutdown(void)
     if (Memory_Readable((void *)g_profile->right_icon_call,5) &&
         !memcmp((void *)g_profile->right_icon_call,replacement,5))
         Memory_Patch((void *)g_profile->right_icon_call,saved_icon_call,5);
-    installed=false;Feedback_End();
+    if(label_installed){BYTE bytes[5]={0xE8};relative=(int32_t)((uintptr_t)quick_label_hook-g_profile->quick_label_call-5);
+        memcpy(bytes+1,&relative,4);
+        if(Memory_Readable((void *)g_profile->quick_label_call,5) && !memcmp((void *)g_profile->quick_label_call,bytes,5))
+            Memory_Patch((void *)g_profile->quick_label_call,saved_label_call,5);
+    }
+    label_installed=false;installed=false;Feedback_End();
 }

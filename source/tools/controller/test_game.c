@@ -38,7 +38,7 @@ static void *last_target;
 static bool page_visible, physical_mouse, busy_gate;
 static int test_omni_setting=1;
 #ifndef EDSLASH_REAL_CONFIG
-static int test_inspect_distance=160,test_rumble_setting=1;
+static int test_inspect_distance=160,test_rumble_setting=1,test_controller_setting=1;
 static int test_single_trigger=1,test_combo_switch=0,test_action_menu_nav=2;
 #endif
 static int test_dodge_setting=1,test_dodge_distance=128,test_aim_ms=500;
@@ -100,7 +100,7 @@ int RuntimeConfig_GetInt(ConfigId id)
     case CONFIG_GUARD_PERCENT:return test_cost>=0 ? test_cost:0;
     case CONFIG_RECOVERY_MODE:return test_recovery>=0;
     case CONFIG_RECOVERY_PERCENT:return test_recovery>=0 ? test_recovery:0;
-    case CONFIG_CONTROLLER_ENABLED:return 1;
+    case CONFIG_CONTROLLER_ENABLED:return test_controller_setting;
     case CONFIG_MOVE_LEAD:return 12;
     case CONFIG_AIM_EXPAND_MS:return test_aim_ms;
     default:return 0;
@@ -943,13 +943,48 @@ static int __fastcall native_icon_draw(void *self, void *unused_edx,int context,
     CHECK(self==hud_data && context==123 && x==456 && y==789 && bindings==1 && side==0);
     shade_seen=shade;alpha_seen=alpha;icon_seen=icon;selection_seen=selection;++icon_draw_calls;return 17;
 }
+static unsigned quick_text_calls;static char quick_text_seen[32];
+static int __fastcall native_quick_text(void *self,void *unused,void *surface,int x,int y,const char *label,int flags)
+{ (void)unused;CHECK(self==hud_data && surface==(void *)123 && x==40 && y==50 && flags==0);
+    ++quick_text_calls;snprintf(quick_text_seen,sizeof quick_text_seen,"%s",label);return 23;}
 static void feedback_regression(bool expansion)
 {
     Profile profile;configure(&profile,expansion);record_actions=true;engine_tick=100;
     Write32(groups_data[0],0x32,1000);Write32(groups_data[1],0x32,1001);
     BYTE *code=VirtualAlloc(NULL,16,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);CHECK(code!=NULL);
     make_call(code,(uintptr_t)native_icon_draw);profile.icon_draw=(uintptr_t)native_icon_draw;
-    profile.right_icon_call=(uintptr_t)code;CHECK(Feedback_Initialize());
+    profile.right_icon_call=(uintptr_t)code;make_call(code+8,(uintptr_t)native_quick_text);
+    profile.quick_label_call=(uintptr_t)(code+8);profile.quick_label_draw=(uintptr_t)native_quick_text;CHECK(Feedback_Initialize());
+    /* 执行真实包装后的CALL，默认和无对应肩键没有黄字；十二槽共用六个物理按键。 */
+    typedef int (__fastcall *QuickText)(void *,void *,void *,int,int,const char *,int);
+    QuickText label_hook=(QuickText)patched_callee(profile.quick_label_call);
+    static const char *const expected[]={"A","B","X","Y","\xA1\xFB","\xA1\xFA"};
+    g_input.connected=g_input.focused=true;quick_text_calls=0;
+    for(unsigned side=0;side<2;++side)for(unsigned slot=0;slot<6;++slot){char label[8];snprintf(label,sizeof label,side ? "F%u":"%u",slot+1);
+        g_intent.layer=LAYER_GAME;g_input.buttons=0;
+        CHECK(!label_hook(hud_data,NULL,(void *)123,40,50,label,0));unsigned before=quick_text_calls;
+        g_intent.layer=side ? LAYER_ITEM:LAYER_MEDICINE;g_input.buttons=KEY(side ? PAD_RB:PAD_LB);
+        CHECK(label_hook(hud_data,NULL,(void *)123,40,50,label,0)==23 && quick_text_calls==before+1 && !strcmp(quick_text_seen,expected[slot]));
+        g_intent.layer=side ? LAYER_MEDICINE:LAYER_ITEM;g_input.buttons=KEY(side ? PAD_LB:PAD_RB);
+        CHECK(!label_hook(hud_data,NULL,(void *)123,40,50,label,0));
+        CHECK(!strcmp(label,side ? (const char *const[]){"F1","F2","F3","F4","F5","F6"}[slot]:(const char *const[]){"1","2","3","4","5","6"}[slot]));
+    }
+    g_intent.layer=LAYER_MEDICINE;g_input.buttons=KEY(PAD_LB);test_settings_active=1;
+    CHECK(!label_hook(hud_data,NULL,(void *)123,40,50,"1",0));test_settings_active=0;
+    g_input.focused=false;CHECK(!label_hook(hud_data,NULL,(void *)123,40,50,"1",0));g_input.focused=true;
+    g_input.connected=false;CHECK(!label_hook(hud_data,NULL,(void *)123,40,50,"1",0));g_input.connected=true;
+    g_intent.layer=LAYER_MOUSE;CHECK(!label_hook(hud_data,NULL,(void *)123,40,50,"1",0));
+    CHECK(label_hook(hud_data,NULL,(void *)123,40,50,"自定义",0)==23 && !strcmp(quick_text_seen,"自定义"));
+    g_intent.layer=LAYER_MEDICINE;g_input.buttons=KEY(PAD_LB)|KEY(PAD_RB);
+    CHECK(label_hook(hud_data,NULL,(void *)123,40,50,"1",0)==23 && !strcmp(quick_text_seen,"A"));
+    CHECK(!label_hook(hud_data,NULL,(void *)123,40,50,"F1",0));
+#ifndef EDSLASH_REAL_CONFIG
+    test_controller_setting=0;g_intent.layer=LAYER_GAME;g_input.buttons=0;
+    CHECK(label_hook(hud_data,NULL,(void *)123,40,50,"F1",0)==23 && !strcmp(quick_text_seen,"F1"));
+    test_controller_setting=1;
+#endif
+    g_input.buttons=0;
+
     g_input.connected=g_input.focused=true;g_intent.layer=LAYER_GUARD;g_intent.held=g_intent.pressed=0;
     int selection,icon;releases=0;
     Feedback_Ultimate(0);CHECK(Read32(hud_data,0xBF4)==111 && releases==0);
@@ -981,6 +1016,7 @@ static void feedback_regression(bool expansion)
     Feedback_Start(10042,ACTION_THROW);CHECK(Feedback_Selection(&selection,&icon) && selection==222);
     engine_tick++;ptr(roles[0],profile.active_offset,NULL);CHECK(!Feedback_Selection(&selection,&icon));
     Feedback_Shutdown();CHECK(patched_callee(profile.right_icon_call)==(uintptr_t)native_icon_draw);
+    CHECK(patched_callee(profile.quick_label_call)==(uintptr_t)native_quick_text);
     CHECK(VirtualFree(code,0,MEM_RELEASE));Combat_Reset();record_actions=false;
     printf("%s图标包装、结束恢复、来源切换及必杀准备/换选/过期/确认回归通过\n",expansion?"外传":"本体");
 }

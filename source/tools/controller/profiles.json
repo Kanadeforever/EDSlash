@@ -275,7 +275,9 @@
         "menu_teleport_hover": 4857744,
         "menu_teleport_primary": 4910864,
         "menu_teleport_switch": 4911296,
-        "menu_teleport_base_call": 4911570
+        "menu_teleport_base_call": 4911570,
+        "quick_label_call": 4994213,
+        "quick_label_draw": 4924832
       },
       "offsets": {
         "invalid_offset": 1082,
@@ -493,7 +495,9 @@
         "menu_teleport_hover": "568bf1e8e81301008986a800",
         "menu_teleport_primary": "6aff68e852520064a1000000",
         "menu_teleport_switch": "5556578bf98b87c400000083",
-        "menu_teleport_base_call": "e8292a0000f605e3895400f0"
+        "menu_teleport_base_call": "e8292a0000f605e3895400f0",
+        "quick_label_call": "e8f6f0feff685c5c54008bce",
+        "quick_label_draw": "6aff68a054520064a1000000"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -523,6 +527,18 @@
         "destination_status_offset": 196,
         "current_location_offset": 192,
         "destination_available_status": 2
+      },
+      "quick_label_evidence": {
+        "draw": 4993504,
+        "label_call": 4994213,
+        "quantity_draw_call": 4994087,
+        "slots": 12,
+        "slot_stride": 228,
+        "formats": [
+          "%c",
+          "F%c"
+        ],
+        "stack_arguments": 5
       }
     },
     {
@@ -800,7 +816,9 @@
         "menu_teleport_hover": 5080640,
         "menu_teleport_primary": 4988800,
         "menu_teleport_switch": 4989232,
-        "menu_teleport_base_call": 4989506
+        "menu_teleport_base_call": 4989506,
+        "quick_label_call": 5077605,
+        "quick_label_draw": 5003504
       },
       "offsets": {
         "invalid_offset": 1094,
@@ -1018,7 +1036,9 @@
         "menu_teleport_hover": "568bf1e8b8e0feff8986a800",
         "menu_teleport_primary": "6aff6838c7540064a1000000",
         "menu_teleport_switch": "5556578bf98b87c400000083",
-        "menu_teleport_base_call": "e8092d0000f6059b8f5700f0"
+        "menu_teleport_base_call": "e8092d0000f6059b8f5700f0",
+        "quick_label_call": "e886defeff68ec5157008bce",
+        "quick_label_draw": "6aff68f0c8540064a1000000"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -1048,6 +1068,18 @@
         "destination_status_offset": 196,
         "current_location_offset": 192,
         "destination_available_status": 2
+      },
+      "quick_label_evidence": {
+        "draw": 5076896,
+        "label_call": 5077605,
+        "quantity_draw_call": 5077479,
+        "slots": 12,
+        "slot_stride": 228,
+        "formats": [
+          "%c",
+          "F%c"
+        ],
+        "stack_arguments": 5
       }
     },
     {
@@ -1325,7 +1357,9 @@
         "menu_teleport_hover": 4857744,
         "menu_teleport_primary": 4910864,
         "menu_teleport_switch": 4911296,
-        "menu_teleport_base_call": 4911570
+        "menu_teleport_base_call": 4911570,
+        "quick_label_call": 4994213,
+        "quick_label_draw": 4924832
       },
       "offsets": {
         "invalid_offset": 1082,
@@ -1543,7 +1577,9 @@
         "menu_teleport_hover": "568bf1e8e81301008986a800",
         "menu_teleport_primary": "6aff68e852520064a1000000",
         "menu_teleport_switch": "5556578bf98b87c400000083",
-        "menu_teleport_base_call": "e8292a0000f605e3895400f0"
+        "menu_teleport_base_call": "e8292a0000f605e3895400f0",
+        "quick_label_call": "e8f6f0feff685c5c54008bce",
+        "quick_label_draw": "6aff68a054520064a1000000"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -1573,6 +1609,18 @@
         "destination_status_offset": 196,
         "current_location_offset": 192,
         "destination_available_status": 2
+      },
+      "quick_label_evidence": {
+        "draw": 4993504,
+        "label_call": 4994213,
+        "quantity_draw_call": 4994087,
+        "slots": 12,
+        "slot_stride": 228,
+        "formats": [
+          "%c",
+          "F%c"
+        ],
+        "stack_arguments": 5
       }
     },
     {
@@ -1850,7 +1898,9 @@
         "menu_teleport_hover": 5080640,
         "menu_teleport_primary": 4988800,
         "menu_teleport_switch": 4989232,
-        "menu_teleport_base_call": 4989506
+        "menu_teleport_base_call": 4989506,
+        "quick_label_call": 5077605,
+        "quick_label_draw": 5003504
       },
       "offsets": {
         "invalid_offset": 1094,
@@ -2068,7 +2118,9 @@
         "menu_teleport_hover": "568bf1e8b8e0feff8986a800",
         "menu_teleport_primary": "6aff6838c7540064a1000000",
         "menu_teleport_switch": "5556578bf98b87c400000083",
-        "menu_teleport_base_call": "e8092d0000f6059b8f5700f0"
+        "menu_teleport_base_call": "e8092d0000f6059b8f5700f0",
+        "quick_label_call": "e886defeff68ec5157008bce",
+        "quick_label_draw": "6aff68f0c8540064a1000000"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -2098,6 +2150,18 @@
         "destination_status_offset": 196,
         "current_location_offset": 192,
         "destination_available_status": 2
+      },
+      "quick_label_evidence": {
+        "draw": 5076896,
+        "label_call": 5077605,
+        "quantity_draw_call": 5077479,
+        "slots": 12,
+        "slot_stride": 228,
+        "formats": [
+          "%c",
+          "F%c"
+        ],
+        "stack_arguments": 5
       }
     }
   ]
