@@ -125,6 +125,7 @@ bool Input_Initialize(void);
 void Input_Shutdown(void);
 bool Input_Poll(PadInput *input);
 void Input_Rumble(unsigned ms);
+void Input_RumbleHit(unsigned ms);
 void Input_Mouse(bool enabled);
 void Input_ReleaseMouse(void);
 bool Input_PhysicalDown(int key);

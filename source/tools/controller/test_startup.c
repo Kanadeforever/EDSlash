@@ -21,6 +21,7 @@ bool Input_Initialize(void) {return sdl_ok!=0;}
 void Input_Shutdown(void) {}
 bool Input_Poll(PadInput *p) {(void)p;return false;}
 void Input_Rumble(unsigned ms) {(void)ms;}
+void Input_RumbleHit(unsigned ms) {(void)ms;}
 void Input_Mouse(bool enabled) {(void)enabled;}
 void Input_ReleaseMouse(void) {}
 bool Input_PhysicalDown(int key) {(void)key;return false;}

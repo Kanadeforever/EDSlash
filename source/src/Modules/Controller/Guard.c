@@ -138,13 +138,13 @@ static int __fastcall receiver_hook(void *victim,void *unused,void *runtime)
         Guard_RecoverHit(victim,attacker,health_before,was_enemy);
         /* 原受击返回成功也可能是格挡或无敌，必须确认同一玩家生命实际减少。
          * 不因按着LT直接排除：体力不足或穿防时，原版确实造成伤害仍应反馈。
-         * 不监听全局生命变化，异常状态的周期扣血不会反复触发；每次命中短震动180毫秒。 */
+         * 不监听全局生命变化，异常状态的周期扣血不会反复触发；每次命中最大强度震动230毫秒。 */
         if(player_hit && controlled(victim) && Memory_Readable(victim,g_profile->health_offset+4) &&
            Game_Resolve(victim_handle)==victim && Read32(victim,0x14)==victim_handle &&
            g_input.connected && g_input.focused && RuntimeConfig_GetInt(CONFIG_RUMBLE)) {
             float health_after;uint32_t bits=Read32(victim,g_profile->health_offset);memcpy(&health_after,&bits,4);
             if(isfinite(health_before) && isfinite(health_after) && health_before>0 && health_after<health_before)
-                Input_Rumble(180);
+                Input_RumbleHit(230);
         }
         if (diagnose && controlled(victim) && Memory_Readable(victim,g_profile->health_offset+4)) {
             float after,stamina_after;uint32_t bits=Read32(victim,g_profile->health_offset);memcpy(&after,&bits,4);

@@ -99,13 +99,17 @@ bool Input_Poll(PadInput *input)
     RuntimePerf_End(PERF_SDL,perf);return connected;
 }
 
-void Input_Rumble(unsigned ms)
+static void rumble(unsigned ms,unsigned short strength)
 {
     if (pad && RuntimeConfig_GetInt(CONFIG_RUMBLE)) {
-        if (!SDL_RumbleGamepad(pad, ms ? 18000 : 0, ms ? 18000 : 0, ms))
+        if (!SDL_RumbleGamepad(pad, ms ? strength : 0, ms ? strength : 0, ms))
             Log_Write(ControllerText_Device_RumbleRejectedLog, SDL_GetError());
     }
 }
+
+/* 切模式保留轻提示；受击用两电机最大值，仍共同服从震动开关。 */
+void Input_Rumble(unsigned ms) { rumble(ms,18000); }
+void Input_RumbleHit(unsigned ms) { rumble(ms,65535); }
 
 static void mouse_button(bool *owned, bool wanted, DWORD down, DWORD up)
 {

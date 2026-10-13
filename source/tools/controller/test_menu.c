@@ -493,7 +493,7 @@ static void teleport_fixture(Profile *p)
 {
     memset(teleport_root,0,sizeof teleport_root);memset(teleport_children,0,sizeof teleport_children);
     memset(teleport_resources,0,sizeof teleport_resources);teleport_requests=teleport_switches=teleport_details=0;
-    ptr(teleport_root,0,menu_tables[19]);ptr(teleport_root,0x50,menu_resource);Write32(teleport_root,0x28,0x67);
+    ptr(teleport_root,0,menu_tables[19]);ptr(teleport_root,0x50,menu_resource);Write32(teleport_root,0x28,0x67);Write32(teleport_root,0x1C,640);Write32(teleport_root,0x20,480);
     ptr(teleport_root,0x9C,teleport_children[0]);Write32(roles[0],0x374,0);
     for(unsigned i=0;i<9;++i){void *c=teleport_children[i];ptr(c,0xA4,teleport_root);ptr(c,8,i<8 ? teleport_children[i+1]:NULL);
         ptr(c,0x50,teleport_resources[i]);Write32(teleport_resources[i],4,100+i);
@@ -501,6 +501,7 @@ static void teleport_fixture(Profile *p)
         Write32(c,0x14,i<4 ? 60+i*100:60+(i-4)*100);Write32(c,0x18,i<4 ? 50:160);
         Write32(c,0x1C,30);Write32(c,0x20,30);Write32(c,0xC4,i==6 ? 0:i==8 ? 1:2);
     }
+    Write32(teleport_children[3],0x14,600);Write32(teleport_children[3],0x18,430);
     Write32(teleport_children[4],0xC0,1);menu_tables[19][1]=(uintptr_t)menu_tick;
     menu_tables[19][0x1C/4]=(uintptr_t)menu_show;menu_tables[19][0x30/4]=(uintptr_t)menu_hover;
     menu_tables[19][0x24/4]=(uintptr_t)teleport_primary;
@@ -1513,6 +1514,19 @@ static void teleport_regression(bool expansion)
     g_input.swap_menu_ab=1;menu_step(KEY(PAD_B),0,0);CHECK(teleport_requests==2);neutral_menu();
     menu_step(KEY(PAD_A),0,0);CHECK(!Read32(teleport_root,0x64));g_input.swap_menu_ab=0;
     neutral_menu();((This2)menu_tables[19][0x1C/4])(teleport_root,NULL,1,0);ptr(ui_data,0x3C,teleport_root);
+    neutral_menu();menu_step(KEY(PAD_UP),0,0);neutral_menu();
+    CHECK(Read32(ReadPtr(teleport_root,0xA8),0x28)==0x71 && Read32(teleport_root,0xC4)==0x68);
+    /* 左杆产生连续指针，停杆不吸附；空白确认不使用上次地点，十字键恢复跳选。 */
+    POINT start,moved,stopped;CHECK(Menu_CursorAnchor(&start));unsigned before_pointer=teleport_requests;
+    menu_step(0,1,0);CHECK(Menu_CursorAnchor(&moved) && moved.x>start.x && moved.y==start.y && !ReadPtr(teleport_root,0xA8));
+    neutral_menu();CHECK(Menu_CursorAnchor(&stopped) && stopped.x==moved.x && stopped.y==moved.y);
+    menu_step(KEY(PAD_A),0,0);CHECK(teleport_requests==before_pointer);neutral_menu();
+    menu_step(0,-1,0);neutral_menu();CHECK(Read32(ReadPtr(teleport_root,0xA8),0x28)==0x71);
+    menu_step(KEY(PAD_A),0,0);CHECK(teleport_requests==before_pointer+1);neutral_menu();
+    for(unsigned i=0;i<30;++i)menu_step(0,0,-1);
+    CHECK(Menu_CursorAnchor(&moved) && moved.y==80 && !ReadPtr(teleport_root,0xA8));
+    neutral_menu();menu_step(KEY(PAD_RIGHT),0,0);neutral_menu();CHECK(Read32(ReadPtr(teleport_root,0xA8),0x28)==0x74);
+    menu_step(KEY(PAD_UP),0,0);neutral_menu();CHECK(Read32(ReadPtr(teleport_root,0xA8),0x28)==0x74);
     for(unsigned i=0;i<9;++i)Write32(teleport_children[i],0x64,0);
     neutral_menu();menu_step(KEY(PAD_B),0,0);CHECK(!Read32(teleport_root,0x64));
     neutral_menu();ptr(ui_data,0x3C,NULL);Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);

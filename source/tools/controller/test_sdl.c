@@ -73,7 +73,8 @@ int main(void)
     CHECK(Input_Poll(&sample));
     CHECK(sample.lx>0.7f && sample.ly<-0.7f && sample.rx==-1 && sample.ry==1 && sample.lt && sample.rt);
     Input_Rumble(200);CHECK(rumble_calls && last_low==18000 && last_high==18000);
-    Input_Rumble(0);CHECK(last_low==0 && last_high==0);
+    Input_RumbleHit(230);CHECK(last_low==65535 && last_high==65535);
+    Input_RumbleHit(0);CHECK(last_low==0 && last_high==0);
     SDL_CloseJoystick(joystick);CHECK(SDL_DetachVirtualJoystick(id));
     sample=(PadInput){.focused=true,.now=2200};CHECK(!Input_Poll(&sample));
     id=attach();CHECK(id!=0);

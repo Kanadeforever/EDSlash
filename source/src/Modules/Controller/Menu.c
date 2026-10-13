@@ -18,6 +18,10 @@ typedef struct {
     unsigned skill_region;
     unsigned grid_slot[7];
     bool grid_buttons;
+    /* 仅传送页使用连续指针；十字键操作后重新回到地点焦点导航。 */
+    bool teleport_pointer;
+    float pointer_x,pointer_y;
+    uint32_t pointer_tick;
 } MenuState;
 static MenuState state;
 /* 原角色提交会在打开第二层后继续读取第一层A8，调用完成前不能清空。 */
@@ -216,8 +220,8 @@ static unsigned buttons(void *root,int kind,MenuButton *out)
         int width=(int)Read32(node,0x1C),height=(int)Read32(node,0x20);
         /* 地区按钮与返回有固定ID；目的地图标由资源类型及原开启状态识别，不猜连续编号。
          * 未开启占位不聚焦；已显示但不可传送的地点仍可查看，由原确认函数拒绝传送。 */
-        bool teleport_allowed=kind==TELEPORT_KIND && id>=0x68 && id<=0x6B;
-        if(kind==TELEPORT_KIND && !teleport_allowed && Memory_Readable(node,0xC8)) {
+        bool teleport_allowed=kind==TELEPORT_KIND && id==0x6B;
+        if(kind==TELEPORT_KIND && !teleport_allowed && !(id>=0x68 && id<=0x6A) && Memory_Readable(node,0xC8)) {
             void *resource=ReadPtr(node,0x50);unsigned status=Read32(node,0xC4);
             teleport_allowed=Memory_Readable(resource,12) && status>0 && status<=2 &&
                 ((This1)g_profile->ui_property)(resource,NULL,2)==5 &&
@@ -388,10 +392,52 @@ static int direction(void)
     bool left=(mask & KEY(PAD_LEFT))!=0,right=(mask & KEY(PAD_RIGHT))!=0;
     if (up!=down) return up ? 1:2;
     if (left!=right) return left ? 3:4;
+    if(kind_of(state.root)==TELEPORT_KIND)return 0;
     /* 左摇杆只产生导航方向；右摇杆留给后续页面。小于阈值不会重复夺走焦点。 */
     float x=g_input.lx,y=g_input.ly;
     if (fabsf(x)<0.55f && fabsf(y)<0.55f) return 0;
     return fabsf(y)>=fabsf(x) ? (y<0 ? 1:2):(x<0 ? 3:4);
+}
+/* 使用原控件矩形限定传送图中的指针范围；顶部地区标签只接受肩键，不参与命中。 */
+static bool teleport_bounds(void *root,RECT *bounds)
+{
+    int w=(int)Read32(root,0x1C),h=(int)Read32(root,0x20);
+    if(w<=0 || h<=0 || w>16384 || h>16384)return false;
+    int x=(int)Read32(root,0x14),y=(int)Read32(root,0x18);
+    if(x<-16384 || x>16384 || y<-16384 || y>16384)return false;
+    *bounds=(RECT){x,y,x+w-1,y+h-1};void *node=ReadPtr(root,0x9C);
+    for(unsigned i=0;node && i<128;++i){if(!Memory_Readable(node,0xC0))break;
+        unsigned id=Read32(node,0x28);int bottom=(int)Read32(node,0x18)+(int)Read32(node,0x20);
+        if(id>=0x68 && id<=0x6A && ReadPtr(node,0xA4)==root && Read32(node,0x64) && bottom>bounds->top && bottom<=bounds->bottom)bounds->top=bottom;
+        void *next=ReadPtr(node,8);if(next==node)break;node=next;
+    }
+    return bounds->right>bounds->left && bounds->bottom>bounds->top;
+}
+static void teleport_pointer_update(void *root,MenuButton *list,unsigned count)
+{
+    uint32_t elapsed=state.pointer_tick ? g_input.now-state.pointer_tick:0;state.pointer_tick=g_input.now;
+    if(elapsed>50)elapsed=50;
+    unsigned dpad=KEY(PAD_UP)|KEY(PAD_DOWN)|KEY(PAD_LEFT)|KEY(PAD_RIGHT);
+    if(g_intent.held&dpad){state.teleport_pointer=false;return;}
+    if(!state.teleport_pointer && !g_input.lx && !g_input.ly)return;
+    RECT bounds;if(!teleport_bounds(root,&bounds))return;
+    if(!state.teleport_pointer){POINT start;
+        if(Menu_CursorAnchor(&start)){state.pointer_x=(float)start.x;state.pointer_y=(float)start.y;}
+        else {state.pointer_x=(bounds.left+bounds.right)/2.0f;state.pointer_y=(bounds.top+bounds.bottom)/2.0f;}
+        state.teleport_pointer=true;
+    }
+    /* 左杆沿用鼠标速度设置与原游戏逻辑坐标，不移动系统鼠标，不触发物理输入接管。
+     * 停杆后保持位置；空白处清悬停，确认不能使用上次经过的地点。 */
+    float speed=(float)RuntimeConfig_GetInt(CONFIG_MOUSE_SPEED)*elapsed/1000.0f;
+    state.pointer_x+=g_input.lx*speed;state.pointer_y+=g_input.ly*speed;
+    if(state.pointer_x<bounds.left)state.pointer_x=(float)bounds.left;if(state.pointer_x>bounds.right)state.pointer_x=(float)bounds.right;
+    if(state.pointer_y<bounds.top)state.pointer_y=(float)bounds.top;if(state.pointer_y>bounds.bottom)state.pointer_y=(float)bounds.bottom;
+    state.id=0;
+    for(unsigned i=0;i<count;++i){void *node=list[i].object;
+        int left=(int)Read32(node,0x14),top=(int)Read32(node,0x18);
+        if(state.pointer_x>=left && state.pointer_x<left+(int)Read32(node,0x1C) &&
+           state.pointer_y>=top && state.pointer_y<top+(int)Read32(node,0x20)){state.id=list[i].id;break;}
+    }
 }
 static unsigned navigate(MenuButton *list,unsigned count,unsigned current,int dir,bool aligned)
 {
@@ -707,6 +753,7 @@ bool Menu_CursorAnchor(POINT *point)
     if (!point || !owns() || !state.owned || !Read32(state.root,0x64)) return false;
     unsigned reason;if (Menu_Context(&reason)!=state.root) return false;
     int kind=kind_of(state.root);
+    if(kind==TELEPORT_KIND && state.teleport_pointer){point->x=(LONG)lroundf(state.pointer_x);point->y=(LONG)lroundf(state.pointer_y);return true;}
     if (kind==QUEST_KIND) {
         /* 和原列表当前位置同源，坐标只用于画焦点标记，不会写真实鼠标。 */
         void *list=(void *)(uintptr_t)((This1)g_profile->get_jm)((void *)g_profile->ui, NULL,0x66);
@@ -890,6 +937,7 @@ void Menu_Update(void)
         clear_focus();
         if (restore) {state=resume_grid;memset(&resume_grid,0,sizeof resume_grid);}
         state.root=root;if (!restore) state.id=kind==5 ? 0xFFFFFFFFu:0;state.direction=0;
+        state.teleport_pointer=false;state.pointer_tick=g_input.now;
         state.owned=true;state.barrier=true;frame_captured=true;
         Log_Write(ControllerText_Menu_RoutingChangedLog,(unsigned long)Read32(root,0x28),kind);
     }
@@ -946,11 +994,17 @@ void Menu_Update(void)
         bool left=(g_intent.pressed & KEY(PAD_LB))!=0,right=(g_intent.pressed & KEY(PAD_RB))!=0;
         unsigned current=Read32(root,0xC4);
         if(left!=right && current>=0x68 && current<=0x6A){
-            MenuButton tabs[64];unsigned n=buttons(root,kind,tabs);
+            /* 地区标签独立查询，不放回地点导航列表，避免十字键选到顶栏。 */
+            unsigned tabs[3],n=0;void *node=ReadPtr(root,0x9C);
+            for(unsigned i=0;node && i<128;++i){if(!Memory_Readable(node,0xC0))break;
+                unsigned id=Read32(node,0x28);
+                if(id>=0x68 && id<=0x6A && ReadPtr(node,0xA4)==root && Read32(node,0x64) && n<3)tabs[n++]=id;
+                void *next=ReadPtr(node,8);if(next==node)break;node=next;
+            }
             for(unsigned step=1;step<3;++step){unsigned wanted=0x68+((current-0x68+(left ? 3-step:step))%3);
-                bool found=false;for(unsigned i=0;i<n;++i)if(tabs[i].id==wanted)found=true;
+                bool found=false;for(unsigned i=0;i<n;++i)if(tabs[i]==wanted)found=true;
                 if(found){((This2)g_profile->menu_teleport_switch)(root,NULL,(int)wanted,0);
-                    state.id=0;state.direction=0;state.barrier=true;return;}
+                    state.id=0;state.direction=0;state.teleport_pointer=false;state.pointer_tick=g_input.now;state.barrier=true;return;}
             }
         }
     }
@@ -978,10 +1032,11 @@ void Menu_Update(void)
         }
     }
     MenuButton list[64];unsigned count=kind>=0 ? buttons(root,kind,list):0;
+    if(kind==TELEPORT_KIND && !state.barrier)teleport_pointer_update(root,list,count);
     if (!count || !Read32(root,0x64)) return;
     unsigned selected=0;bool found=false;
     for (unsigned i=0;i<count;++i) if (list[i].id==state.id) {selected=i;found=true;break;}
-    if (!found) {
+    if (!found && !(kind==TELEPORT_KIND && state.teleport_pointer)) {
         /* 默认项用业务ID而非鼠标位置，危险按钮不会因为光标停留而成为默认选择。 */
         unsigned preferred=kind==0 ? 0x22:kind==4 ? 0x200:kind==SKILL_KIND ? (Read32(root,0xC0)==0x7F ? list[0].id:0x84):
             grid_kind(kind) && !state.grid_buttons ? (kind<=SHOP_KIND ? GRID_CELL_BASE:slot_first[kind-BAG_KIND])+state.grid_slot[kind-BAG_KIND]:0x9A;
@@ -1040,6 +1095,7 @@ void Menu_Update(void)
         return;
     }
     if (!(g_intent.pressed & KEY(PAD_A))) return;
+    if(kind==TELEPORT_KIND && state.teleport_pointer && !ReadPtr(root,0xA8))return;
     Log_Write(ControllerText_Menu_ControlConfirmedLog,(unsigned long)Read32(root,0x28),state.id);
     if (kind==5) {
         /* 2C4是鼠标按下/释放配对标记，不是业务ready；手柄语义不能要求先伪造鼠标按下。

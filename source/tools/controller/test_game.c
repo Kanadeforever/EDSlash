@@ -77,6 +77,7 @@ void Log_Write(const char *format, ...)
 }
 static unsigned hit_rumble_calls,hit_rumble_ms;
 void Input_Rumble(unsigned ms) { ++hit_rumble_calls;hit_rumble_ms=ms; }
+void Input_RumbleHit(unsigned ms) { ++hit_rumble_calls;hit_rumble_ms=ms; }
 bool Input_PhysicalDown(int key) { return key==VK_LBUTTON && physical_mouse; }
 #ifndef EDSLASH_REAL_CONFIG
 static ConfigSnapshot test_snapshot={.generation=1};
@@ -100,6 +101,7 @@ int RuntimeConfig_GetInt(ConfigId id)
     case CONFIG_GUARD_PERCENT:return test_cost>=0 ? test_cost:0;
     case CONFIG_RECOVERY_MODE:return test_recovery>=0;
     case CONFIG_RECOVERY_PERCENT:return test_recovery>=0 ? test_recovery:0;
+    case CONFIG_MOUSE_SPEED:return 900;
     case CONFIG_CONTROLLER_ENABLED:return test_controller_setting;
     case CONFIG_MOVE_LEAD:return 12;
     case CONFIG_AIM_EXPAND_MS:return test_aim_ms;
@@ -761,7 +763,7 @@ static void guard_regression(bool expansion)
     damage_owner_override=roles[1];damage_to_apply=5;hit_rumble_calls=0;
     g_intent.layer=LAYER_GAME;write_float(roles[0],profile.health_offset,100);
     ((This1)profile.hit_receiver)(roles[0],NULL,(int)(uintptr_t)runtime_data);
-    CHECK(hit_rumble_calls==1 && hit_rumble_ms==180 && read_float(roles[0],profile.health_offset)==95);
+    CHECK(hit_rumble_calls==1 && hit_rumble_ms==230 && read_float(roles[0],profile.health_offset)==95);
     /* 防御成功不震，体力不足退出防御并受到这次攻击时震动，按着LT不屏蔽。 */
     damage_guard_check=true;g_intent.layer=LAYER_GUARD;*((BYTE*)roles[0]+0x219)=1;
     write_float(roles[0],profile.stamina_offset,50);
