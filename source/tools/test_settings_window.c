@@ -273,7 +273,9 @@ int wmain(void)
     keymap_state=KEYMAP_STATE_COUNT-1;move(4);CHECK(keymap_state==0);move(3);CHECK(keymap_state==KEYMAP_STATE_COUNT-1);
     mouse_click(410,100);CHECK(keymap_state==0);mouse_click(195,100);CHECK(keymap_state==KEYMAP_STATE_COUNT-1);
     /* 文档按当前草稿解析物理确认/取消；世界改键和技能草稿不会混入菜单操作。 */
-    CHECK(KEYMAP_STATE_COUNT==6);keymap_state=RUNTIME_KEYMAP_DOCUMENT;footer=0;
+    /* 页数是编译期约束，使用静态断言，避免把常量比较交给运行时检查宏。 */
+    _Static_assert(KEYMAP_STATE_COUNT==6,"键位说明应包含六种状态");
+    keymap_state=RUNTIME_KEYMAP_DOCUMENT;footer=0;
     char document[8192];SettingsModel document_before=model;
     model.draft.values[CONFIG_MENU_SWAP_AB]=0;menu_document(document,sizeof document);
     CHECK(strstr(document,"A确认，B取消") && strstr(document,"X先询问删除") && strstr(document,"BACK丢弃"));
