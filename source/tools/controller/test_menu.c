@@ -1255,7 +1255,8 @@ static void shared_focus_regression(bool expansion)
         CHECK(focus_draws>0 && RuntimeFocus_WasDrawn(RUNTIME_MODULE_CONTROLLER));
         CHECK(focus_rectangle.left==r.left && focus_rectangle.top==r.top && focus_rectangle.right==r.right && focus_rectangle.bottom==r.bottom);
         CHECK(Menu_HidesCursor()); /* 格子页空手均不用鼠标箭头 */
-        Write32(grid_player,0x2C4,999);POINT point;CHECK(!Menu_HidesCursor() && Menu_CursorAnchor(&point));
+        /* 先设置无效输出；锚点函数若漏写坐标，后续位置断言必须失败。 */
+        Write32(grid_player,0x2C4,999);POINT point={-1,-1};CHECK(!Menu_HidesCursor() && Menu_CursorAnchor(&point));
         CHECK(point.x==(r.left+r.right)/2 && point.y==(r.top+r.bottom)/2);
         Write32(grid_player,0x2C4,UINT32_MAX);
     }

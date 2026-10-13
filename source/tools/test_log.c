@@ -7,7 +7,8 @@
 #include "../src/Runtime/FileIO.h"
 /* 真实并发日志测试，只写自有构建目录的日志，不接触游戏。 */
 static unsigned checks;
-#define CHECK(test) do {++checks;if(!(test)){printf("后台日志检查失败，第%d行\n",__LINE__);return 1;}}while(0)
+#include "TestAssert.h"
+#define CHECK(test) TEST_CHECK(checks, test, printf("后台日志检查失败，第%d行\n",__LINE__);return 1;)
 static DWORD WINAPI producer(void *arg)
 {
     unsigned id=(unsigned)(uintptr_t)arg;

@@ -10,7 +10,8 @@ static unsigned checks,calls,chunk_reads,header_reads;static unsigned long clock
 static unsigned char *slots,*second_slots;
 static unsigned long action_data[2][2],manager_pointer,table_pointer;
 static unsigned long frame_bytes;
-#define CHECK(e) do {++checks;if(!(e)){fprintf(stderr,"分帧拾取检查失败 行%d：%s\n",__LINE__,#e);exit(1);}}while(0)
+#include "../TestAssert.h"
+#define CHECK(e) TEST_CHECK(checks, e, fprintf(stderr,"分帧拾取检查失败 行%d：%s\n",__LINE__,#e);exit(1);)
 int RuntimeWin32_Read(unsigned long address,void *out,unsigned long size)
 {
     MEMORY_BASIC_INFORMATION info={0};

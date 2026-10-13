@@ -4,7 +4,8 @@
 #include "../../src/Modules/QOL/RandomName.c"
 /* 直接运行生产生成器，覆盖会话、过滤、长度和历史；不访问游戏进程。 */
 static unsigned checks;
-#define CHECK(e) do { ++checks; if (!(e)) { fprintf(stderr,"随机姓名检查失败：行%d %s\n",__LINE__,#e); exit(1); } } while (0)
+#include "../TestAssert.h"
+#define CHECK(e) TEST_CHECK(checks, e, fprintf(stderr,"随机姓名检查失败：行%d %s\n",__LINE__,#e); exit(1);)
 static int allow(const char *name, void *user)
 {
     /* 候选均是中文汉字；每字三个 UTF-8 字节，输出应保持完整终止。 */
@@ -44,7 +45,7 @@ static void check_category(const char *full, RandomNameGender gender)
                (gender==RANDOM_NAME_FEMALE && member(name,random_female,COUNT(random_female)))) return;
         }
     }
-    CHECK(0);
+    TEST_FAIL(checks, fprintf(stderr,"随机姓名检查失败：行%d 姓名不属于有效词库\n",__LINE__); exit(1));
 }
 int main(void)
 {

@@ -11,8 +11,8 @@ static int protect_calls, fail_protect_call, flush_ok = 1, frees, allocations, c
 static char log_output[512];
 static unsigned long log_size;
 
-#define CHECK(test) do { ++checks; if (!(test)) { \
-    printf("运行时回归失败：第 %d 行\n", __LINE__); return 1; } } while (0)
+#include "TestAssert.h"
+#define CHECK(test) TEST_CHECK(checks, test, printf("运行时回归失败：第 %d 行\n", __LINE__); return 1;)
 
 /* 每次先开放写保护、随后恢复。指定失败调用序号可分别模拟两个阶段。 */
 static int __stdcall protect_stub(void* address, unsigned long size,

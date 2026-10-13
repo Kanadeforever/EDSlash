@@ -5,7 +5,8 @@
 /* 使用真实输入提供者，替身只模拟物理安装与原函数，验证参数、阶段顺序和失败隔离。 */
 static unsigned checks;
 static int order[8],count,claimed,install_ok=1,bad_signature,controller_ready,last_idle;
-#define CHECK(test) do {++checks;if(!(test)){printf("公共输入帧检查失败，第%d行\n",__LINE__);return 1;}}while(0)
+#include "TestAssert.h"
+#define CHECK(test) TEST_CHECK(checks, test, printf("公共输入帧检查失败，第%d行\n",__LINE__);return 1;)
 static int __fastcall native_input(unsigned char *keys,void *unused)
 {(void)unused;order[count++]=2;keys[0]=42;return 7;}
 int RuntimeWin32_IsReady(void) {return 1;}

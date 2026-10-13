@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+import re
 # 构建不在源码旁生成Python字节缓存，子进程也遵循同一约束。
 sys.dont_write_bytecode = True
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -96,6 +97,7 @@ def main():
     # UTC+8显式计算北京时间，不依赖本机或GitHub runner的时区。
     build_date = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     cc, environment = compiler()
+    print(f"本次MSVC x86编译器：{cc}", flush=True)
     cmake = program("cmake", environment)
     ninja = program("ninja", environment)
     # MSVC同一个cl.exe编译C与SDL的C++单元；x86开发环境由探测器准备。
@@ -111,7 +113,16 @@ def main():
     run([sys.executable, SOURCE / "tools/controller/generate_profiles.py"], environment)
     metadata = json.loads((SOURCE / "tools/controller/profiles.json").read_text(encoding="utf-8"))
     samples = verify_baselines(metadata)
-    run([cmake, "--log-level=WARNING", "-S", SOURCE, "-B", BUILD, "-G", "Ninja",
+    # 更换编译器时主动重建CMake配置；自动重配会丢弃Release与构建身份参数。
+    # 同版本保留增量缓存；--fresh只清理配置缓存，不删除其他临时或发行文件。
+    fresh = []
+    cache = BUILD / "CMakeCache.txt"
+    if cache.is_file():
+        match = re.search(r"^CMAKE_C_COMPILER:[^=]+=(.+)$", cache.read_text(encoding="utf-8"), re.M)
+        if match and Path(match.group(1).strip()).resolve() != cc.resolve():
+            fresh = ["--fresh"]
+            print("编译器已切换，重新生成Release配置及构建身份。", flush=True)
+    run([cmake, *fresh, "--log-level=WARNING", "-S", SOURCE, "-B", BUILD, "-G", "Ninja",
          f"-DCMAKE_MAKE_PROGRAM={ninja}", f"-DCMAKE_C_COMPILER={cc}",
          f"-DCMAKE_CXX_COMPILER={cxx}", "-DCMAKE_BUILD_TYPE=Release", f"-DEDSLASH_BUILD_ID={build_id}", f"-DEDSLASH_BUILD_DATE={build_date}"], environment)
     run([cmake, "--build", BUILD, "--parallel", str(args.jobs), "--", "--quiet"], environment)

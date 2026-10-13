@@ -4,7 +4,7 @@
 
 ## 环境
 
-Windows、Python 3.11及以上、CMake 3.21及以上、Ninja、Visual Studio或Build Tools的桌面C++、x86编译工具和Windows SDK及UPX。主插件和SDL统一构建为Win32/x86，CMake/Ninja本身可为64位；不会读取个人编译器地址记录、下载依赖或使用64位SDL库。
+Windows、Python 3.11及以上、CMake 3.24及以上、Ninja、Visual Studio或Build Tools的桌面C++、x86编译工具和Windows SDK及UPX。主插件和SDL统一构建为Win32/x86，CMake/Ninja本身可为64位；不会读取个人编译器地址记录、下载依赖或使用64位SDL库。
 
 构建器复用x86开发者终端，或通过vswhere自动找到VS/Build Tools并调用vcvarsall x64_x86。可用EDSLASH_VS指定安装根；不会把本机绝对路径写进构建系统。必须安装完整Windows SDK/UCRT；SDK注册缺失时按实际头文件和x86库验证安装目录。CMake／Ninja在该开发环境中查找。
 
@@ -103,3 +103,11 @@ Guard设置应用测试使用真实TOML与双版本运动回放；test_menu链�
 关于页的版本与构建信息包含本次北京时间构建日期，格式YYYY-MM-DD HH:MM:SS。build.py按UTC+8生成一次时间，CMake将其编译进同次发行/debug；不使用玩家打开窗口时的时间。直接CMake配置时也通过Python显式计算UTC+8，报告记录同值。
 
 手柄键位包含第五个内部状态“鼠标救援模式”，使用固定鼠标控制说明并显示BACK+START切换与中立条件，不跟随世界改绑和角色技能变化。
+
+## 测试断言与编译器兼容验证
+
+测试共用source/tools/TestAssert.h：TEST_CHECK接收计数器、条件和失败动作，条件只计算一次，保留各宿主的错误信息及return/exit行为；TEST_FAIL用于确定失败的路径，编译期页数等约束使用_Static_assert。不要新增直接对常量做if判断的CHECK副本。未关闭C4127或/WX，业务代码的常量条件仍受检查。test_assert与test_assert_exit覆盖常量检查、单次求值、计数、失败返回以及准确的exit状态和诊断。
+
+本地执行`python source/tools/verify_compilers.py`，依次使用已安装MSVC14.44与本机默认MSVC完成checks-only构建和全部离线验证，不更新release、不安装编译器。可用`--versions 14.44 default`调整顺序或范围。手动指定编译器时设置进程环境变量EDSLASH_MSVC_VERSION，例如PowerShell中`$env:EDSLASH_MSVC_VERSION = "14.44"`，之后运行统一构建；恢复自动选择用`Remove-Item Env:EDSLASH_MSVC_VERSION`。指定版本缺失或与实际路径不符时停止，不静默回退。EDSLASH_VS仍可指定已有VS安装目录。CI固定选择14.44系列，并在构建日志打印实际x86编译器路径。双编译器入口每次重新探测环境，避免继承开发者终端导致重复验证同一编译器。所有中间文件位于根.build。
+
+切换编译器时使用CMake --fresh重建配置缓存，要求统一构建入口使用CMake3.24及以上；Release选项和源码身份仍显式传入。同一编译器保留增量缓存，临时文件继续位于根.build。

@@ -71,6 +71,11 @@ function(edslash_test name)
     target_compile_definitions(${name} PRIVATE _CRT_SECURE_NO_WARNINGS)
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
+edslash_test(test_assert tools/test_assert.c)
+# 单独核对失败子进程的准确返回值，不能把任意崩溃当成预期失败。
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_test(NAME test_assert_exit COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_assert_exit.py" "$<TARGET_FILE:test_assert>")
 edslash_test(test_crash tools/controller/test_crash.c)
 edslash_test(test_control src/Modules/Controller/Control.c tools/controller/test_control.c)
 edslash_test(test_motion src/Modules/Controller/Control.c tools/controller/test_motion.c)

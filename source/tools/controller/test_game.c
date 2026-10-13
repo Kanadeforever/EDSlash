@@ -56,7 +56,8 @@ static bool emulate_combo;
 static bool reject_qualification;
 static WorldPoint last_aim;
 static BYTE runtime_data[0x100];
-#define CHECK(e) do { ++checks; if (!(e)) { fprintf(stderr,"适配检查失败，行 %d：%s\n",__LINE__,#e); exit(1); } } while(0)
+#include "../TestAssert.h"
+#define CHECK(e) TEST_CHECK(checks, e, fprintf(stderr,"适配检查失败，行 %d：%s\n",__LINE__,#e); exit(1);)
 
 /* 自有宿主记录共享UI绘制订阅，菜单回归可主动发出同一事件。 */
 static RuntimeEventCallback cursor_draw_callback,cursor_begin_callback;

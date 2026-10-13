@@ -28,6 +28,8 @@ jobs:
     env:
       PYTHONUTF8: '1'
       PYTHONDONTWRITEBYTECODE: '1'
+      # 与本地兼容验证采用同一系列；缺少指定版本时失败，不静默切换编译器。
+      EDSLASH_MSVC_VERSION: '14.44'
     steps:
       - name: 检出完整项目（包含SDL源码）
         uses: actions/checkout@v7

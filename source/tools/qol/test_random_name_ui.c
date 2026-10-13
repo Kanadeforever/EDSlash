@@ -15,7 +15,8 @@ static SHORT fixture_async(int key){return key==VK_F1 && f1_down ? (SHORT)-32768
 static BYTE fake_ui[0x80],fake_page[0xC0],fake_input[0x100];
 static BYTE fake_month[0x100],fake_day[0x100];static char birth_month[4],birth_day[4];static unsigned birthday_writes;
 static HWND edit;static unsigned checks,writes;static char native_text[32];
-#define CHECK(x) do{++checks;if(!(x)){fprintf(stderr,"随机名称适配失败 行%d：%s\n",__LINE__,#x);exit(1);}}while(0)
+#include "../TestAssert.h"
+#define CHECK(x) TEST_CHECK(checks, x, fprintf(stderr,"随机名称适配失败 行%d：%s\n",__LINE__,#x);exit(1);)
 static void wr(void *p,unsigned off,uintptr_t value){DWORD n=(DWORD)value;memcpy((BYTE *)p+off,&n,4);}
 int RuntimeWin32_Read(unsigned long address,void *out,unsigned long bytes)
 {MEMORY_BASIC_INFORMATION i;if(!address || !VirtualQuery((void *)address,&i,sizeof i) || i.State!=MEM_COMMIT || (i.Protect&(PAGE_NOACCESS|PAGE_GUARD)) || address+bytes>(uintptr_t)i.BaseAddress+i.RegionSize)return 0;memcpy(out,(void *)address,bytes);return 1;}

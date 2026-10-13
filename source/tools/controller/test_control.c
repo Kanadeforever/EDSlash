@@ -8,7 +8,8 @@
 static PadInput in;
 static ControlState state;
 static unsigned checks;
-#define CHECK(expression) do { ++checks; if (!(expression)) { fprintf(stderr,"检查失败，行 %d：%s\n",__LINE__,#expression); return 1; } } while(0)
+#include "../TestAssert.h"
+#define CHECK(expression) TEST_CHECK(checks, expression, fprintf(stderr,"检查失败，行 %d：%s\n",__LINE__,#expression); return 1;)
 
 static Intent step(uint32_t buttons)
 {

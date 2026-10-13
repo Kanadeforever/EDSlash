@@ -11,7 +11,8 @@ static BYTE call_slots[4][5];
 static int select_ok,verify_ok,sdl_ok,patch_calls,fail_patch,display_runs,qol_runs;
 static unsigned checks,frame_callbacks;
 const RuntimeContext *Runtime_GetContext(void) {return 0;}
-#define CHECK(x) do {++checks;if(!(x)){printf("延后初始化集成失败：%d行\n",__LINE__);return 1;}}while(0)
+#include "../TestAssert.h"
+#define CHECK(x) TEST_CHECK(checks, x, printf("延后初始化集成失败：%d行\n",__LINE__);return 1;)
 
 bool Profile_Attach(GameId game) {(void)game;return true;}
 bool Profile_Select(void) {return select_ok!=0;}

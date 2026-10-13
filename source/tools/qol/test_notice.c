@@ -10,7 +10,8 @@ static unsigned char world_data[0x80],manager_data[0x80],role_data[0x300],bag_da
 static unsigned char item_data[0x40],ground_data[0xA0],definition_data[0x20],hud_data[0x100];
 static unsigned long world_pointer,hud_pointer,columns[4];static char item_name[200];
 static RuntimeEventCallback draw_callback;
-#define CHECK(e) do {++checks;if(!(e)){fprintf(stderr,"拾取提示检查失败 行%d：%s\n",__LINE__,#e);exit(1);}}while(0)
+#include "../TestAssert.h"
+#define CHECK(e) TEST_CHECK(checks, e, fprintf(stderr,"拾取提示检查失败 行%d：%s\n",__LINE__,#e);exit(1);)
 static void put(void *base,unsigned offset,unsigned long value){memcpy((unsigned char *)base+offset,&value,4);}
 int RuntimeWin32_Read(unsigned long address,void *out,unsigned long size)
 {

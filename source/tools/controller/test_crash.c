@@ -10,7 +10,8 @@ const char *RuntimeFocus_Stage(void){return NULL;}
 static const RuntimeContext runtime={.self_module=(void *)1};
 const RuntimeContext *Runtime_GetContext(void){return &runtime;}
 static WCHAR output_path[1024];static unsigned checks;
-#define CHECK(x) do {++checks;if(!(x)){fprintf(stderr,"异常诊断检查失败 行%d：%s\n",__LINE__,#x);exit(1);}}while(0)
+#include "../TestAssert.h"
+#define CHECK(x) TEST_CHECK(checks, x, fprintf(stderr,"异常诊断检查失败 行%d：%s\n",__LINE__,#x);exit(1);)
 int RuntimeFile_Sibling(void *module,const wchar_t *name,wchar_t *path,size_t capacity)
 {
     CHECK(module==(void *)1 && !wcscmp(name,L"EDSlash崩溃记录.txt"));

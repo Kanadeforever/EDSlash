@@ -12,7 +12,8 @@ HWND g_window;
 PadInput g_input;
 static unsigned checks,rumble_calls;
 static Uint16 last_low,last_high;
-#define CHECK(test) do {++checks;if(!(test)){fprintf(stderr,"静态SDL检查失败，第%d行：%s；%s\n",__LINE__,#test,SDL_GetError());return 1;}}while(0)
+#include "../TestAssert.h"
+#define CHECK(test) TEST_CHECK(checks, test, fprintf(stderr,"静态SDL检查失败，第%d行：%s；%s\n",__LINE__,#test,SDL_GetError());return 1;)
 void Log_Write(const char *format,...)
 {
     va_list args;va_start(args,format);vprintf(format,args);va_end(args);putchar('\n');

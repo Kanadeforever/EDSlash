@@ -3,11 +3,16 @@ from pathlib import Path
 import os
 import shutil
 import subprocess
+import re
 
 def compiler():
     # 已进入x86开发者终端时直接复用；普通终端用vswhere探测VS或Build Tools。
     environment = {key.upper(): value for key, value in os.environ.items()}
-    if environment.get("VSCMD_ARG_TGT_ARCH", "").lower() != "x86":
+    # 指定已安装版本时必须初始化对应环境，不能静默使用较新编译器冒充CI验证。
+    requested_version = environment.get("EDSLASH_MSVC_VERSION", "").strip()
+    if requested_version and not re.fullmatch(r"\d+\.\d+(?:\.\d+)?", requested_version):
+        raise RuntimeError("EDSLASH_MSVC_VERSION必须是已安装的数字版本，如14.44")
+    if requested_version or environment.get("VSCMD_ARG_TGT_ARCH", "").lower() != "x86":
         installation = environment.get("EDSLASH_VS")
         if not installation:
             base = Path(environment.get("PROGRAMFILES(X86)", "C:/Program Files (x86)"))
@@ -24,7 +29,8 @@ def compiler():
         # 环境只传给构建子进程，不修改系统PATH，也不把环境中的秘密输出到日志。
         shell = environment.get("COMSPEC", str(Path(environment.get("SYSTEMROOT", "C:/Windows")) / "System32/cmd.exe"))
         codepage = Path(environment.get("SYSTEMROOT", "C:/Windows")) / "System32/chcp.com"
-        command = f'"{codepage}" 65001 >nul && call "{script}" x64_x86 >nul && set'
+        selector = f" -vcvars_ver={requested_version}" if requested_version else ""
+        command = f'"{codepage}" 65001 >nul && call "{script}" x64_x86{selector} >nul && set'
         # cmd的/c参数使用它自己的整行引号规则，不能套用普通exe参数的反斜杠转义。
         result = subprocess.run(f'"{shell}" /d /s /c "{command}"', capture_output=True,
                                 encoding="utf-8", errors="replace")
@@ -57,6 +63,9 @@ def compiler():
     cc = shutil.which("cl.exe", path=environment["PATH"])
     if not cc or environment.get("VSCMD_ARG_TGT_ARCH", "").lower() != "x86":
         raise RuntimeError("未找到原生MSVC x86编译器；项目只构建Win32 ASI。")
+    if requested_version and not (Path(cc).resolve().parents[3].name == requested_version
+                        or Path(cc).resolve().parents[3].name.startswith(requested_version + ".")):
+        raise RuntimeError(f"指定MSVC {requested_version}与实际编译器不一致：{cc}")
     return Path(cc).resolve(), environment
 
 def program(name, environment):

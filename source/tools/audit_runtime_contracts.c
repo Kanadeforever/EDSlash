@@ -12,7 +12,8 @@ static void *expected_subject;
 static RuntimeEventId expected_event;
 static unsigned long expected_v1,expected_v2;
 static int payload_ok;
-#define CHECK(x) do {++checks;if(!(x)){printf("共享接口回归失败：%d行\n",__LINE__);return 1;}}while(0)
+#include "TestAssert.h"
+#define CHECK(x) TEST_CHECK(checks, x, printf("共享接口回归失败：%d行\n",__LINE__);return 1;)
 static void receive(RuntimeEventId event,void *subject,unsigned long v1,unsigned long v2,void *user)
 {
     ++callbacks;

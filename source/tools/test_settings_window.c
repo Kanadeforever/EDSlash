@@ -20,7 +20,8 @@ static DWORD __stdcall fake_pid(HWND w,LPDWORD pid){(void)w;*pid=GetCurrentProce
 #undef GetAsyncKeyState
 static unsigned checks,pauses,resumes,original_actions;
 static int fixture_write_result=1;
-#define CHECK(x) do{++checks;if(!(x)){fprintf(stderr,"设置窗口失败 行%d：%s\n",__LINE__,#x);return 1;}}while(0)
+#include "TestAssert.h"
+#define CHECK(x) TEST_CHECK(checks, x, fprintf(stderr,"设置窗口失败 行%d：%s\n",__LINE__,#x);return 1;)
 static BYTE native_settings_root[0x300];static uintptr_t native_settings_table[26];static unsigned native_captions;static unsigned expected_caption_color;
 static BYTE fake_world[0x100],fake_actor[0x500],fake_player[0x400],fake_root[0x300],fake_ui[0x80],fake_hud[0xD00],default_record[0x20];
 static void *world_ptr=fake_world,*hud_ptr=fake_hud;

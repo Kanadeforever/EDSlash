@@ -9,7 +9,8 @@
 #include "../src/Runtime/Toml.h"
 #include "../src/Runtime/FileIO.h"
 static unsigned checks;
-#define CHECK(test) do {++checks;if(!(test)){fprintf(stderr,"配置检查失败，第%d行：%s；%s\n",__LINE__,#test,RuntimeConfig_Error());return 1;}}while(0)
+#include "TestAssert.h"
+#define CHECK(test) TEST_CHECK(checks, test, fprintf(stderr,"配置检查失败，第%d行：%s；%s\n",__LINE__,#test,RuntimeConfig_Error());return 1;)
 static TomlDocument doc;
 static char text[TOML_CAPACITY],updated[TOML_CAPACITY],saved[TOML_CAPACITY];
 int wmain(void)
