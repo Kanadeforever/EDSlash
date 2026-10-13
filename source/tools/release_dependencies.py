@@ -4,6 +4,11 @@ import argparse
 import hashlib
 import io
 import urllib.request
+import urllib.error
+import http.client
+import time
+import tempfile
+import os
 import zipfile
 
 # 每份下载都固定版本及摘要；缓存损坏与上游替换均停止打包，不降级取最新版本。
@@ -72,20 +77,55 @@ def dependency_contents(directory):
     return files
 
 
+def fetch_verified(name, url, digest):
+    """只对临时网络故障重试；错误摘要和永久HTTP错误立即拒绝。"""
+    attempts = 4
+    for attempt in range(1, attempts + 1):
+        print(f"[依赖下载] {name}：第{attempt}/{attempts}次，{url}", flush=True)
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": "EDSlash-release"})
+            with urllib.request.urlopen(request, timeout=30) as response:
+                data = response.read(32 * 1024 * 1024 + 1)
+        except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.IncompleteRead) as error:
+            # HTTPError是URLError的子类；只重试超时、限流和服务端暂时故障。
+            transient = not isinstance(error, urllib.error.HTTPError) or error.code in (408, 429, 500, 502, 503, 504)
+            if not transient or attempt == attempts:
+                raise RuntimeError(f"依赖下载失败：{name}，地址={url}，尝试={attempt}/{attempts}，原因={error}") from error
+            delay = 2 ** attempt
+            print(f"[依赖重试] {name}：{error}；{delay}秒后重试", flush=True)
+            time.sleep(delay)
+            continue
+        if len(data) > 32 * 1024 * 1024:
+            raise RuntimeError(f"依赖下载体积异常：{name}")
+        if hashlib.sha256(data).hexdigest() != digest:
+            raise RuntimeError(f"依赖下载SHA-256不一致：{name}")
+        return data
+    raise AssertionError("下载重试未返回结果")
+
+
 def download(directory):
-    """仅填充专用缓存，已有文件仍须验证；网络失败不生成可用的半份缓存。"""
+    """复用经过摘要核验的缓存；下载完成并核验后才原子替换目标文件。"""
+    directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     for name, (url, digest) in DOWNLOADS.items():
         path = directory / name
         if path.exists():
             verified(directory, name)
+            print(f"[依赖缓存] {name}：SHA-256通过", flush=True)
             continue
-        request = urllib.request.Request(url, headers={"User-Agent": "EDSlash-release"})
-        with urllib.request.urlopen(request, timeout=60) as response:
-            data = response.read(32 * 1024 * 1024 + 1)
-        if hashlib.sha256(data).hexdigest() != digest:
-            raise RuntimeError(f"依赖下载SHA-256不一致：{name}")
-        path.write_bytes(data)
+        data = fetch_verified(name, url, digest)
+        # 网络重试期间不创建目标文件；写入临时文件失败也不会留下半份有效缓存。
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(prefix=".download-", dir=directory, delete=False) as output:
+                temporary = Path(output.name)
+                output.write(data)
+                output.flush()
+                os.fsync(output.fileno())
+            temporary.replace(path)
+        finally:
+            if temporary is not None and temporary.exists():
+                temporary.unlink()
     contents = dependency_contents(directory)
     print(f"固定依赖已验证，合并后共{len(contents)}个文件。")
 

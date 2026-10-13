@@ -69,8 +69,25 @@ jobs:
       - name: 验证依赖合并与危险压缩包拒绝规则
         run: python source/tools/test_release_dependencies.py
 
+      - name: 恢复固定发行依赖缓存
+        id: dependency-cache
+        uses: actions/cache/restore@v6
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/edslash-dependencies
+          key: ${{ runner.os }}-edslash-dependencies-v1-${{ hashFiles('source/tools/release_dependencies.py') }}
+
       - name: 下载并核对固定依赖（ASI加载器以dsound.dll分发）
+        timeout-minutes: 15
         run: python source/tools/release_dependencies.py --directory "$env:RUNNER_TEMP/edslash-dependencies"
+
+      - name: 保存已校验的固定依赖缓存
+        if: steps.dependency-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/edslash-dependencies
+          key: ${{ runner.os }}-edslash-dependencies-v1-${{ hashFiles('source/tools/release_dependencies.py') }}
 
       - name: 打包插件、依赖、展开着色器与原样许可证
         id: package

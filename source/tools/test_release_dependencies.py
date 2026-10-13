@@ -1,12 +1,14 @@
 """离线验证嵌套覆盖、下载摘要与危险ZIP拒绝，不访问网络。"""
 import io
+import hashlib
+import urllib.error
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 import zipfile
 
-from release_dependencies import dependency_contents, read_zip, verified
+from release_dependencies import dependency_contents, read_zip, verified, download
 
 
 def archive(files):
@@ -22,6 +24,73 @@ def archive(files):
 
 
 class DependencyTests(unittest.TestCase):
+    def test_timeout_then_success(self):
+        """真实下载入口遭遇WinError10060同类URLError后应再次请求，而不是终止工作流。"""
+        payload=b"verified download";digest=hashlib.sha256(payload).hexdigest()
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch("release_dependencies.DOWNLOADS",{"asset":("https://example.invalid/asset",digest)}), \
+             patch("release_dependencies.dependency_contents",return_value={}), \
+             patch("time.sleep"), \
+             patch("release_dependencies.urllib.request.urlopen",side_effect=[urllib.error.URLError(TimeoutError("WinError 10060")),io.BytesIO(payload)]) as request:
+            download(Path(temporary))
+            self.assertEqual(request.call_count,2)
+            self.assertEqual((Path(temporary)/"asset").read_bytes(),payload)
+
+    def test_exhausted_timeout_leaves_no_cache(self):
+        """连续超时只请求四次，失败信息包含依赖名，缓存目录没有半份文件。"""
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch("release_dependencies.DOWNLOADS",{"asset":("https://example.invalid/asset","unused")}), \
+             patch("time.sleep") as sleep, \
+             patch("release_dependencies.urllib.request.urlopen",side_effect=urllib.error.URLError(TimeoutError("WinError 10060"))) as request:
+            with self.assertRaisesRegex(RuntimeError,"依赖下载失败：asset"):
+                download(Path(temporary))
+            self.assertEqual(request.call_count,4)
+            self.assertEqual([call.args[0] for call in sleep.call_args_list],[2,4,8])
+            self.assertEqual(list(Path(temporary).iterdir()),[])
+
+    def test_http_and_integrity_failures(self):
+        """服务端暂时故障重试；404与摘要错误立即拒绝，不能发布错误内容。"""
+        payload=b"verified";digest=hashlib.sha256(payload).hexdigest()
+        for status,attempts in [(503,4),(429,4),(404,1)]:
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as temporary, \
+                 patch("release_dependencies.DOWNLOADS",{"asset":("https://example.invalid/asset",digest)}), \
+                 patch("time.sleep"), \
+                 patch("release_dependencies.urllib.request.urlopen",side_effect=urllib.error.HTTPError("https://example.invalid/asset",status,"HTTP failure",{},None)) as request:
+                with self.assertRaisesRegex(RuntimeError,"依赖下载失败：asset"):
+                    download(Path(temporary))
+                self.assertEqual(request.call_count,attempts)
+                self.assertEqual(list(Path(temporary).iterdir()),[])
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch("release_dependencies.DOWNLOADS",{"asset":("https://example.invalid/asset",digest)}), \
+             patch("release_dependencies.urllib.request.urlopen",return_value=io.BytesIO(b"wrong")) as request:
+            with self.assertRaisesRegex(RuntimeError,"SHA-256"):
+                download(Path(temporary))
+            self.assertEqual(request.call_count,1)
+            self.assertEqual(list(Path(temporary).iterdir()),[])
+
+    def test_verified_cache_skips_network(self):
+        """恢复的缓存也必须重新验摘要；有效缓存不请求网络。"""
+        payload=b"cached";digest=hashlib.sha256(payload).hexdigest()
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch("release_dependencies.DOWNLOADS",{"asset":("https://example.invalid/asset",digest)}), \
+             patch("release_dependencies.dependency_contents",return_value={}), \
+             patch("release_dependencies.urllib.request.urlopen") as request:
+            (Path(temporary)/"asset").write_bytes(payload)
+            download(Path(temporary))
+            request.assert_not_called()
+
+    def test_atomic_publish_failure_cleans_temporary(self):
+        """磁盘提交失败不会留下目标或临时文件，也不重试网络下载。"""
+        payload=b"verified";digest=hashlib.sha256(payload).hexdigest()
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch("release_dependencies.DOWNLOADS",{"asset":("https://example.invalid/asset",digest)}), \
+             patch("release_dependencies.urllib.request.urlopen",return_value=io.BytesIO(payload)) as request, \
+             patch("release_dependencies.Path.replace",side_effect=PermissionError("publish denied")):
+            with self.assertRaises(PermissionError):
+                download(Path(temporary))
+            self.assertEqual(request.call_count,1)
+            self.assertEqual(list(Path(temporary).iterdir()),[])
+
     def test_nested_shaders_override_at_parent(self):
         nested = archive({"Shaders/crt/test.glsl": b"new", "Shaders/extra.glsl": b"extra"})
         downloads = {"cnc.zip": archive({"ddraw.dll": b"ddraw", "ddraw.ini": b"ini",
