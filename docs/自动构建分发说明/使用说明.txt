@@ -19,7 +19,7 @@ https://github.com/Kanadeforever/EDSlash/releases/tag/dev-auto
   接安装的插件包。
 2. 完全退出游戏，打开实际游戏主程序所在目录。Steam 用户可以从游戏的“管理 → 浏览本地文件”
   进入，再确认游戏主程序的位置。
-3. 备份存档、已有插件配置，以及将要替换的同名文件。原有 dinput8.dll 可能属于其它模组；如
+3. 备份存档、已有插件配置，以及将要替换的同名文件。原有 dsound.dll 可能属于其它模组；如
   有同名文件，先确认用途，不能直接覆盖后假设其它模组仍能工作。
 4. 如果以前安装过 dgVoodoo2，或者是为Steam版《上古传说》安装本模组，先按下一节清理旧文件；
   同时删除旧的 EDSlash 插件。
@@ -35,7 +35,7 @@ https://github.com/Kanadeforever/EDSlash/releases/tag/dev-auto
 
 游戏主程序所在目录\
 ├─ 游戏原有文件
-├─ dinput8.dll                 ASI 加载器
+├─ dsound.dll                 ASI 加载器
 ├─ ddraw.dll                   cnc-ddraw 显示兼容层
 ├─ ddraw.ini                   cnc-ddraw 配置
 ├─ cnc-ddraw config.exe        cnc-ddraw 显示配置工具
@@ -126,7 +126,7 @@ dev-auto 下载页会随 main 的成功构建更新，不是固定不变的历�
 
 只停用 EDSlash 时，把 plugins\EDSlash.asi 移到游戏目录之外；配置可以保留。若要完整撤销本
   次安装，再根据安装前备份恢复显示组件和加载器。只有确认没有其它 ASI 插件依赖时，才移除
-  本包的 dinput8.dll。ddraw.dll、ddraw.ini、配置工具、Shaders 与许可目录也应按来源逐项处
+  本包的 dsound.dll。ddraw.dll、ddraw.ini、配置工具、Shaders 与许可目录也应按来源逐项处
   理，不删除原游戏文件和存档。
 
 ============================================================
@@ -134,7 +134,7 @@ dev-auto 下载页会随 main 的成功构建更新，不是固定不变的历�
 ============================================================
 
 【解压后插件没有效果】
-解决手段：确认 dinput8.dll 与实际游戏主程序同目录，plugins\EDSlash.asi 没有多套一层目录
+解决手段：确认 dsound.dll 与实际游戏主程序同目录，plugins\EDSlash.asi 没有多套一层目录
   ；检查是否被安全软件隔离，以及是否仍加载旧独立插件。
 
 【启动黑屏、闪退或显示初始化失败】

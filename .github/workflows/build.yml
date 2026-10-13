@@ -69,7 +69,7 @@ jobs:
       - name: 验证依赖合并与危险压缩包拒绝规则
         run: python source/tools/test_release_dependencies.py
 
-      - name: 下载并核对cnc-ddraw 7.1与Ultimate ASI Loader 9.0的官方发行件
+      - name: 下载并核对固定依赖（ASI加载器以dsound.dll分发）
         run: python source/tools/release_dependencies.py --directory "$env:RUNNER_TEMP/edslash-dependencies"
 
       - name: 打包插件、依赖、展开着色器与原样许可证

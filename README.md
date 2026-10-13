@@ -26,7 +26,7 @@ EDSlash 是一个面向这两款游戏 Windows 版的非官方开源项目。
 
 `main` 分支每次更新后，GitHub Actions 会自动构建、执行离线验证，并更新 [dev-auto 开发版](https://github.com/Kanadeforever/EDSlash/releases/tag/dev-auto)。也可以在 [Actions 页面](https://github.com/Kanadeforever/EDSlash/actions/workflows/build.yml) 手动运行构建；只有 `main` 的成功构建更新公开开发版，其它分支仅提供构建附件。
 
-自动发行附件为 `EDSlash-dev-auto.zip`，解压到游戏主程序所在目录。`plugins/` 放置 EDSlash.asi 与默认 EDSlash.toml；根目录附带 cnc-ddraw 7.1 的配置工具、ddraw.dll、ddraw.ini 和 Ultimate ASI Loader 9.0 的32位 dinput8.dll；`Shaders/` 已展开全部内嵌着色器；`Third_Party_Licenses/` 集中保留项目与依赖许可及第三方声明。完整着色器中含限非商业使用的 CC BY-NC-SA 3.0 文件，详见第三方声明。自动包不含 debug、游戏本体、构建源码和验证报告。
+自动发行附件为 `EDSlash-dev-auto.zip`，解压到游戏主程序所在目录。`plugins/` 放置 EDSlash.asi 与默认 EDSlash.toml；根目录附带 cnc-ddraw 7.1 的配置工具、ddraw.dll、ddraw.ini 和 Ultimate ASI Loader 9.0 的32位 dsound.dll；`Shaders/` 已展开全部内嵌着色器；`Third_Party_Licenses/` 集中保留项目与依赖许可及第三方声明。完整着色器中含限非商业使用的 CC BY-NC-SA 3.0 文件，详见第三方声明。自动包不含 debug、游戏本体、构建源码和验证报告。
 
 下载后保留 ZIP 的文件与目录结构安装，详细安装、dgVoodoo2 清理、更新与常见问题见[自动构建分发版使用说明](docs/自动构建分发说明/使用说明.txt)，基本步骤见下文。自动构建只验证构建与离线行为，不代表实机验收完成。源码仓库中的 `release/` 为本地构建输出目录，不纳入 Git；源码构建方法见下文。
 

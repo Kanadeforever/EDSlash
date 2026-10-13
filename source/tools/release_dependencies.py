@@ -60,7 +60,8 @@ def dependency_contents(directory):
     loader = read_zip(verified(directory, "asi.zip"))
     if set(loader) != {"dinput8.dll"}:
         raise RuntimeError("ASI加载器必须是官方32位dinput8包")
-    files.update(loader)
+    # 官方包使用dinput8名称；发行时仅改为游戏使用的dsound代理名，DLL字节保持原样。
+    files["dsound.dll"] = loader["dinput8.dll"]
     for name, source in {
         "cnc-ddraw-LICENSE.txt": "cnc-license", "Ultimate-ASI-Loader-LICENSE.txt": "asi-license",
         "Shaders-GPL-2.0.txt": "gpl2", "Shaders-CC-BY-NC-SA-3.0.txt": "cc-nc",

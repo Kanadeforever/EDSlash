@@ -32,6 +32,8 @@ class DependencyTests(unittest.TestCase):
             files = dependency_contents(Path("unused"))
         self.assertEqual(files["Shaders/crt/test.glsl"], b"new")
         self.assertEqual(files["Shaders/extra.glsl"], b"extra")
+        self.assertEqual(files["dsound.dll"], b"loader")
+        self.assertNotIn("dinput8.dll", files)
         self.assertEqual(files["Third_Party_Licenses/Shaders-NOTICE.txt"], b"authors\r\n")
         self.assertFalse(any("Shaders/Shaders/" in name for name in files))
 
