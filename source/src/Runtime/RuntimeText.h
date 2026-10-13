@@ -264,12 +264,11 @@ extern const char RuntimeText_KeymapRightStickFormat[];
 extern const char RuntimeText_KeymapMenuFormat[];
 extern const char RuntimeText_KeymapComboFormat[];
 extern const char RuntimeText_KeymapDpadLabel[];
-/* 世界状态与菜单说明共享翻页序列；菜单表仅描述操作，不修改输入路由。 */
-enum { RUNTIME_KEYMAP_MENU_FIRST=5,RUNTIME_KEYMAP_MENU_COUNT=18,
-       RUNTIME_KEYMAP_STATE_COUNT=RUNTIME_KEYMAP_MENU_FIRST+RUNTIME_KEYMAP_MENU_COUNT };
+/* 五页键位图后只保留一页可滚动菜单文档；正文键名由设置窗口按当前草稿解析。 */
+enum { RUNTIME_KEYMAP_DOCUMENT=5,RUNTIME_KEYMAP_STATE_COUNT=6 };
 extern const char *const RuntimeText_KeymapStates[RUNTIME_KEYMAP_STATE_COUNT];
-extern const char *const RuntimeText_KeymapMenuEffects[RUNTIME_KEYMAP_MENU_COUNT][18];
-extern const char *const RuntimeText_KeymapMenuHints[RUNTIME_KEYMAP_MENU_COUNT];
+extern const char RuntimeText_KeymapMenuDocument[];
+extern const char RuntimeText_KeymapDocumentHint[];
 extern const char *const RuntimeText_KeymapKeys[18];
 extern const char RuntimeText_KeymapNoEffect[];
 extern const char RuntimeText_KeymapStateHint[];

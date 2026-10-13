@@ -21,12 +21,15 @@ https://github.com/Kanadeforever/EDSlash/releases/tag/dev-auto
   进入，再确认游戏主程序的位置。
 3. 备份存档、已有插件配置，以及将要替换的同名文件。原有 dinput8.dll 可能属于其它模组；如
   有同名文件，先确认用途，不能直接覆盖后假设其它模组仍能工作。
-4. 如果以前安装过 dgVoodoo2，先按下一节清理旧文件；同时停用旧的独立 EDSlash 插件，避免与
-  统一版重复加载。
+4. 如果以前安装过 dgVoodoo2，或者是为Steam版《上古传说》安装本模组，先按下一节清理旧文件；
+  同时删除旧的 EDSlash 插件。
 5. 将压缩包中的全部内容解压到游戏主程序所在目录，保留目录结构。不要多套一层
   EDSlash-dev-auto 文件夹，也不要把 plugins 内的文件全部移到根目录。
 6. 按平常方式启动游戏。Steam 版继续通过 Steam 启动。进入游戏场景后检查画面、键盘鼠标和手
   柄操作，再调整设置。
+7. Linux/SteamDeck 用户，需要在游戏的“管理 → 通用 → 启动选项”里填入以下内容：
+  HOST_LC_ALL=zh_CN.UTF-8 WINEDLLOVERRIDES="ddraw,dinput8=n,b" %command%
+  注意：Steam版需要将Proton设置为9以上，并且在不安装解码器的情况下无法播放视频。
 
 安装后的主要文件如下；其它随包文件也应保留：
 
@@ -35,16 +38,16 @@ https://github.com/Kanadeforever/EDSlash/releases/tag/dev-auto
 ├─ dinput8.dll                 ASI 加载器
 ├─ ddraw.dll                   cnc-ddraw 显示兼容层
 ├─ ddraw.ini                   cnc-ddraw 配置
-├─ cnc-ddraw config.exe        显示配置工具
+├─ cnc-ddraw config.exe        cnc-ddraw 显示配置工具
 ├─ plugins\
 │  ├─ EDSlash.asi              EDSlash插件本体
 │  └─ EDSlash.toml             EDSlash插件配置文件
-├─ Shaders\                   着色器及内嵌原始压缩包
+├─ Shaders\                    cnc-ddraw 着色器及内嵌原始压缩包
 └─ Third_Party_Licenses\       第三方声明与许可
 
-包内已附带 cnc-ddraw 7.1 和 Ultimate ASI Loader 9.0 的 32 位发行件，无需再下载另一份加载
-  器，也不需要单独安装 SDL3.dll。游戏是 32 位程序，即使 Windows 是 64 位，也不能换成 64
-  位加载器。
+  包内已附带 cnc-ddraw 7.1 和 Ultimate ASI Loader 9.0 的 32 位发行件，无需再下载另一份
+  加载器，也不需要单独安装 SDL3.dll。游戏是 32 位程序，即使 Windows 是 64 位，也不能换成
+  64 位加载器。
 
 ============================================================
 二、安装前清理 dgVoodoo2
@@ -89,11 +92,10 @@ https://dege.freeweb.hu/dgVoodoo2/ReadmeGeneral/
 
 - 插件功能、手柄键位和宽屏设置：进入游戏场景后，按主键盘数字 1 左侧的物理反引号键打开模
   组设置；手柄可先按住 LT＋RT，再新按 Back。按界面说明修改并保存，键位显示可用于查看当前
-  绑定。
+  绑定，该入口在游戏的设置菜单内也有新增选项可进入。
 - 输出窗口、缩放和显示后端：退出游戏后运行同目录的 cnc-ddraw config.exe。这些设置属于
   cnc-ddraw，与插件配置分开保存。
 - 手工编辑插件配置：退出游戏后编辑 plugins\EDSlash.toml，保留 TOML 的引号、节名与键名。
-  当前插件不读取旧版 INI。
 - 宽屏与字体：第一次使用建议保持逻辑高度 480 和比例 auto。逻辑高度不是最终输出分辨率，调
   大可能使人物变小并增加负担。宽屏、逻辑高度、比例及字体 DPI 设置需重新启动游戏生效。
 - 手柄连接：连接后先松开摇杆和按键，再开始操作。若同时运行手柄映射软件，应检查是否产生重
@@ -114,7 +116,7 @@ https://dege.freeweb.hu/dgVoodoo2/ReadmeGeneral/
 2. 保存 plugins\EDSlash.toml、已有的 plugins\EDSlash.SkillContols.toml，以及自定义的
   ddraw.ini。新版 ZIP 中的主配置是默认值，直接覆盖会丢失个人设置。
 3. 用新版文件更新程序和配套文件。需要保留设置时，先把新版默认配置解压到临时目录，与旧配
-  置对照合并新增项；不要把两份完整 TOML 简单拼接，否则可能出现重复键。
+  置对照合并新增项；不要把两份完整 TOML 简单拼接，否则可能出现重复项目。
 4. 启动游戏检查。若出现问题，退出后恢复备份的同一套程序与配置，并保留故障日志供排查。
 
 dev-auto 下载页会随 main 的成功构建更新，不是固定不变的历史版本。需要回退时，应自行保留

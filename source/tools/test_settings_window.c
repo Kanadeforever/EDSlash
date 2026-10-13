@@ -238,7 +238,7 @@ int wmain(void)
         for(unsigned key=0;key<18;++key){keymap_effect(key,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(keymap_description[0]);}
         FillRect(fixture_dc,&about_canvas,(HBRUSH)GetStockObject(WHITE_BRUSH));paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
         const char *paths[]={"keymap_normal.bmp","keymap_lt.bmp","keymap_rt.bmp","keymap_dual.bmp","keymap_rescue.bmp"};
-        char guide_path[64];snprintf(guide_path,sizeof guide_path,"keymap_menu_%u.bmp",state);
+        const char *guide_path="keymap_menu_document_top.bmp";
         snapshot_path=state<5 ? paths[state]:guide_path;CHECK(snapshot(&info.bmiHeader,pixels));
     }
     /* 直接核对路由对应的文字，不把旧显示常量作为正确答案。 */
@@ -272,28 +272,24 @@ int wmain(void)
     model.role=saved_role;CHECK(!memcmp(&model,&rescue_before,sizeof model));
     keymap_state=KEYMAP_STATE_COUNT-1;move(4);CHECK(keymap_state==0);move(3);CHECK(keymap_state==KEYMAP_STATE_COUNT-1);
     mouse_click(410,100);CHECK(keymap_state==0);mouse_click(195,100);CHECK(keymap_state==KEYMAP_STATE_COUNT-1);
-    /* 菜单表保持各自操作，物理A/B随草稿互换；世界改绑不污染菜单说明。 */
-    for(unsigned guide=0;guide<RUNTIME_KEYMAP_MENU_COUNT;++guide){
-        keymap_state=RUNTIME_KEYMAP_MENU_FIRST+guide;
-        for(unsigned swap=0;swap<2;++swap){model.draft.values[CONFIG_MENU_SWAP_AB]=(int)swap;
-            for(unsigned key=0;key<KEYMAP_KEY_COUNT;++key){
-                unsigned mapped=(key==14 || key==15) && swap ? key^1:key;
-                const char *expected=RuntimeText_KeymapMenuEffects[guide][mapped];
-                if(key==9 && guide!=17 && model.role)expected="小地图（游戏内）";
-                keymap_effect(key,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);
-                CHECK(!strcmp(keymap_description,expected ? expected:"无效果") && keymap_selection==-1 && keymap_icon==-1);
-            }
-        }
-        CHECK(keymap_hint()[0]);
-    }
-    model.draft.values[CONFIG_MENU_SWAP_AB]=0;
-    keymap_state=9;keymap_effect(1,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"上一分类"));
-    keymap_effect(12,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"上一屏"));
-    keymap_state=11;keymap_effect(16,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"候选／连招区"));
-    keymap_state=12;keymap_effect(4,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"丢弃物品"));
-    keymap_state=13;keymap_effect(4,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"无效果"));
-    keymap_state=21;keymap_effect(17,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"随机名字／生日"));
-    keymap_state=22;keymap_effect(10,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"保存设置"));
+    /* 文档按当前草稿解析物理确认/取消；世界改键和技能草稿不会混入菜单操作。 */
+    CHECK(KEYMAP_STATE_COUNT==6);keymap_state=RUNTIME_KEYMAP_DOCUMENT;footer=0;
+    char document[8192];SettingsModel document_before=model;
+    model.draft.values[CONFIG_MENU_SWAP_AB]=0;menu_document(document,sizeof document);
+    CHECK(strstr(document,"A确认，B取消") && strstr(document,"X先询问删除") && strstr(document,"BACK丢弃"));
+    CHECK(!strchr(document,'{') && strstr(document,"F1") && strstr(document,"START保存"));
+    model.draft.values[CONFIG_MENU_SWAP_AB]=1;menu_document(document,sizeof document);
+    CHECK(strstr(document,"B确认，A取消") && strstr(document,"B在下方添加") && strstr(document,"按住B加快"));
+    menu_document_layout();CHECK(wcsstr(menu_doc_wide,L"B确认，A取消"));
+    model.draft.values[CONFIG_MENU_SWAP_AB]=0;menu_document_layout();CHECK(wcsstr(menu_doc_wide,L"A确认，B取消"));
+    CHECK(menu_document_max_scroll()>0 && !menu_doc_scroll);move(2);CHECK(menu_doc_scroll>0 && !footer);
+    SettingsWindow_Wheel(-120);CHECK(menu_doc_scroll>menu_doc_step);
+    scroll_at(362);CHECK(menu_doc_scroll==menu_document_max_scroll());move(2);CHECK(footer==1);
+    move(1);CHECK(!footer);move(1);CHECK(menu_doc_scroll<menu_document_max_scroll());
+    menu_document_scroll(100000);FillRect(fixture_dc,&about_canvas,(HBRUSH)GetStockObject(WHITE_BRUSH));
+    paint(RUNTIME_EVENT_UI_DRAW_END,fake_root,(unsigned long)(uintptr_t)surface,0,NULL);
+    snapshot_path="keymap_menu_document_bottom.bmp";CHECK(snapshot(&info.bmiHeader,pixels));
+    CHECK(!memcmp(&document_before,&model,sizeof model));
     /* 键位图即时反映草稿的导航模式；非负责摇杆明确显示无效果。 */
     keymap_state=3;
     for(int mode=0;mode<3;++mode){
