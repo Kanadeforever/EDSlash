@@ -34,8 +34,8 @@ EDSlash 是一个面向这两款游戏 Windows 版的非官方开源项目。
 
 | 游戏 | 版本基线 | 发行来源 |
 |---|---|---|
-| 《刀剑封魔录》 | 1.05 | Steam / 非 Steam |
-| 《刀剑封魔录外传：上古传说》 | 2.01 | Steam / 非 Steam |
+| 《[刀剑封魔录](https://store.steampowered.com/app/1792820)》 | 1.05 | Steam / 非 Steam |
+| 《[刀剑封魔录外传：上古传说](https://store.steampowered.com/app/2924510)》 | 2.01 | Steam / 非 Steam |
 
 手柄模块核对完整 SHA-256 与关键函数签名，不能仅凭版本号判断修改过的 EXE 是否兼容。未知样本不会套用已知版本的固定地址。
 
