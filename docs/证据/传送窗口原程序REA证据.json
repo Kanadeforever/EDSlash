@@ -1,0 +1,415 @@
+{
+  "说明": "只读原程序的REA反编译及PE指令核验；伪代码不是原始源码",
+  "条目": [
+    {
+      "主题": "窗口工厂",
+      "证据编号": "ev_52c6875f02e7807cd5d4ebed6561303baa24f087d478e62d3009aaea67e3aff9",
+      "程序": {
+        "name": "C:\\Project\\GameDecomp\\EDSlash\\参考资料\\刀剑封魔录系列反编译资料库_v0.31\\基线程序\\ComeOn-DaoJian-NonSteam.exe",
+        "digest": {
+          "sha256": "c8d1aa33272a2c28e94f0d18eda2d6a8fcb14796644d8f8bed467b744ddc94b5"
+        },
+        "format": "pe",
+        "architecture": "x86",
+        "local_path": "C:\\Project\\GameDecomp\\EDSlash\\参考资料\\刀剑封魔录系列反编译资料库_v0.31\\基线程序\\ComeOn-DaoJian-NonSteam.exe"
+      },
+      "提供者": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1"
+      },
+      "分析配置": {
+        "provider": {
+          "id": "ghidra",
+          "name": "Ghidra",
+          "version": "12.1"
+        },
+        "parameters": {
+          "target_kind": "executable",
+          "target_format": "pe",
+          "executable_role": "application",
+          "managed": false,
+          "native_aot_metadata": {
+            "contract_revision": "rtr-9.1-x64-pe-read-only-v3",
+            "source_bytes": 134217728,
+            "work_units": 67108864,
+            "working_memory_bytes": 67108864,
+            "report_bytes": 4194304
+          },
+          "architecture": "x86",
+          "available_architectures": [
+            "x86"
+          ],
+          "import_mode": "ephemeral-source-immutable",
+          "annotation_policy": "atomic-function-entry-metadata-v1",
+          "load_image_observations": "source-mappings-entry-context-v2",
+          "function_body_evidence": "complete-inclusive-ranges-v1",
+          "function_references": "complete-body-and-entry-reference-manager-v2",
+          "string_inventory_evidence": "defined-data-coverage-v1",
+          "location_resolution": "explicit-address-exact-entry-symbol-first-v3",
+          "instruction_flow_evidence": "decoded-return-pcode-v1",
+          "function_boundary_observations": "ghidra-terminal-call-limitations-v1",
+          "no_return_repair": "disabled-windows-p0",
+          "process_launch": "official-headless-script-v1",
+          "jump_table_evidence": "typed-case-default-blocks-v1",
+          "decompiler_jump_loads": true,
+          "loader": "auto-from-header",
+          "language_id": "auto-from-header",
+          "compiler_spec_id": "auto-default",
+          "analyzer_preset": "ghidra-default"
+        },
+        "digest": "71e21535084464017b38d298b179b8aeef2fa30c329465e0d7c8949176c331f0"
+      },
+      "伪代码": "\r\nundefined4 __fastcall FUN_004b37a0(void *param_1)\r\n\r\n{\r\n  char cVar1;\r\n  char *pcVar2;\r\n  undefined4 *puVar3;\r\n  int *piVar4;\r\n  uint uVar5;\r\n  uint uVar6;\r\n  int iVar7;\r\n  char *pcVar8;\r\n  char *pcVar9;\r\n  char local_10c [120];\r\n  void *pvStack_94;\r\n  undefined4 uStack_88;\r\n  undefined4 uStack_84;\r\n  undefined4 uStack_80;\r\n  undefined4 uStack_7c;\r\n  undefined4 uStack_78;\r\n  undefined4 uStack_74;\r\n  undefined4 uStack_70;\r\n  undefined4 uStack_6c;\r\n  undefined4 uStack_68;\r\n  undefined4 uStack_64;\r\n  undefined4 uStack_60;\r\n  undefined4 uStack_5c;\r\n  undefined4 uStack_58;\r\n  undefined4 uStack_54;\r\n  undefined4 uStack_50;\r\n  undefined4 uStack_4c;\r\n  undefined4 uStack_48;\r\n  undefined4 uStack_44;\r\n  undefined4 uStack_40;\r\n  undefined4 uStack_3c;\r\n  undefined4 uStack_38;\r\n  undefined4 uStack_34;\r\n  undefined4 uStack_30;\r\n  undefined4 uStack_2c;\r\n  undefined4 uStack_28;\r\n  undefined4 uStack_24;\r\n  undefined4 uStack_20;\r\n  undefined4 uStack_1c;\r\n  undefined4 uStack_18;\r\n  undefined4 uStack_14;\r\n  undefined4 uStack_10;\r\n  void *pvStack_c;\r\n  undefined1 *puStack_8;\r\n  undefined4 local_4;\r\n  \r\n  local_4 = 0xffffffff;\r\n  puStack_8 = &LAB_0052574c;\r\n  pvStack_c = ExceptionList;\r\n  ExceptionList = &pvStack_c;\r\n  pcVar2 = (char *)FUN_004eb9e0();\r\n  uVar5 = 0xffffffff;\r\n  do {\r\n    pcVar9 = pcVar2;\r\n    if (uVar5 == 0) break;\r\n    uVar5 = uVar5 - 1;\r\n    pcVar9 = pcVar2 + 1;\r\n    cVar1 = *pcVar2;\r\n    pcVar2 = pcVar9;\r\n  } while (cVar1 != '\\0');\r\n  uVar5 = ~uVar5;\r\n  pcVar2 = pcVar9 + -uVar5;\r\n  pcVar9 = local_10c;\r\n  for (uVar6 = uVar5 >> 2; uVar6 != 0; uVar6 = uVar6 - 1) {\r\n    *(undefined4 *)pcVar9 = *(undefined4 *)pcVar2;\r\n    pcVar2 = pcVar2 + 4;\r\n    pcVar9 = pcVar9 + 4;\r\n  }\r\n  for (uVar5 = uVar5 & 3; uVar5 != 0; uVar5 = uVar5 - 1) {\r\n    *pcVar9 = *pcVar2;\r\n    pcVar2 = pcVar2 + 1;\r\n    pcVar9 = pcVar9 + 1;\r\n  }\r\n  uVar5 = 0xffffffff;\r\n  pcVar2 = &DAT_00545ca8;\r\n  do {\r\n    pcVar9 = pcVar2;\r\n    if (uVar5 == 0) break;\r\n    uVar5 = uVar5 - 1;\r\n    pcVar9 = pcVar2 + 1;\r\n    cVar1 = *pcVar2;\r\n    pcVar2 = pcVar9;\r\n  } while (cVar1 != '\\0');\r\n  uVar5 = ~uVar5;\r\n  iVar7 = -1;\r\n  pcVar2 = local_10c;\r\n  do {\r\n    pcVar8 = pcVar2;\r\n    if (iVar7 == 0) break;\r\n    iVar7 = iVar7 + -1;\r\n    pcVar8 = pcVar2 + 1;\r\n    cVar1 = *pcVar2;\r\n    pcVar2 = pcVar8;\r\n  } while (cVar1 != '\\0');\r\n  pcVar2 = pcVar9 + -uVar5;\r\n  pcVar9 = pcVar8 + -1;\r\n  for (uVar6 = uVar5 >> 2; uVar6 != 0; uVar6 = uVar6 - 1) {\r\n    *(undefined4 *)pcVar9 = *(undefined4 *)pcVar2;\r\n    pcVar2 = pcVar2 + 4;\r\n    pcVar9 = pcVar9 + 4;\r\n  }\r\n  for (uVar5 = uVar5 & 3; uVar5 != 0; uVar5 = uVar5 - 1) {\r\n    *pcVar9 = *pcVar2;\r\n    pcVar2 = pcVar2 + 1;\r\n    pcVar9 = pcVar9 + 1;\r\n  }\r\n  FUN_004d0500();\r\n  FUN_004d24a0((void *)((int)param_1 + 0x24),1000);\r\n  FUN_004b4270();\r\n  FUN_004f1d50(&DAT_0055b028,0x20e);\r\n  puVar3 = FUN_0051ab4c(0x10c);\r\n  local_4 = 0;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_00492990(puVar3);\r\n  }\r\n  local_4 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0x11c);\r\n  puStack_8 = (undefined1 *)0x1;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004b0620(puVar3);\r\n  }\r\n  puStack_8 = (undefined1 *)0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(2);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0x104);\r\n  pvStack_c = (void *)0x2;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004a8ca0(puVar3);\r\n  }\r\n  pvStack_c = (void *)0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(1);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xc4);\r\n  uStack_10 = 3;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004c0470(puVar3);\r\n  }\r\n  uStack_10 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x12);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(200);\r\n  uStack_14 = 4;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_00495f10(puVar3);\r\n  }\r\n  uStack_14 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x5b);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xd4);\r\n  uStack_18 = 5;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_0049c940(puVar3);\r\n  }\r\n  uStack_18 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x56);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xc4);\r\n  uStack_1c = 6;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_00498980(puVar3);\r\n  }\r\n  uStack_1c = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0xb4);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0x2c0);\r\n  uStack_20 = 7;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004bec40(puVar3);\r\n  }\r\n  uStack_20 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x3d);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xf4);\r\n  uStack_24 = 8;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004bcdf0(puVar3);\r\n  }\r\n  uStack_24 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x3e);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0x100);\r\n  uStack_28 = 9;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004c6dc0(puVar3);\r\n  }\r\n  uStack_28 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x14);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xc0);\r\n  uStack_2c = 10;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_00494a00(puVar3);\r\n  }\r\n  uStack_2c = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x5c);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0x124);\r\n  uStack_30 = 0xb;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004aa680(puVar3);\r\n  }\r\n  uStack_30 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x7d);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xf0);\r\n  uStack_34 = 0xc;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004aedc0(puVar3);\r\n  }\r\n  uStack_34 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x67);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xc20);\r\n  uStack_38 = 0xd;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004c2a30(puVar3);\r\n  }\r\n  uStack_38 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(3);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xc4);\r\n  uStack_3c = 0xe;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_00497640(puVar3);\r\n  }\r\n  uStack_3c = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x19);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xd8);\r\n  uStack_40 = 0xf;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004a0140(puVar3);\r\n  }\r\n  uStack_40 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x94);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xcc);\r\n  uStack_44 = 0x10;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004a1bf0(puVar3);\r\n  }\r\n  uStack_44 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x98);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xe0);\r\n  uStack_48 = 0x11;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004a2d10(puVar3);\r\n  }\r\n  uStack_48 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x9c);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xc4);\r\n  uStack_4c = 0x12;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_00499cc0(puVar3);\r\n  }\r\n  uStack_4c = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x1a);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(200);\r\n  uStack_50 = 0x13;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_0049f220(puVar3);\r\n  }\r\n  uStack_50 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x1b);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0x120);\r\n  uStack_54 = 0x14;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004ba5d0(puVar3);\r\n  }\r\n  uStack_54 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x29);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0x2ec);\r\n  uStack_58 = 0x15;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004b8730(puVar3);\r\n  }\r\n  uStack_58 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x28);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xf0);\r\n  uStack_5c = 0x16;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004ca670(puVar3);\r\n  }\r\n  uStack_5c = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x2c);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xc0);\r\n  uStack_60 = 0x17;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_0049bad0(puVar3);\r\n  }\r\n  uStack_60 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x3c);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xcc);\r\n  uStack_64 = 0x18;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004adec0(puVar3);\r\n  }\r\n  uStack_64 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x39);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xc0);\r\n  uStack_68 = 0x19;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_00493c80(puVar3);\r\n  }\r\n  uStack_68 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x3a);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xcc);\r\n  uStack_6c = 0x1a;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_0049e0b0(puVar3);\r\n  }\r\n  uStack_6c = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0xdb);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xe4);\r\n  uStack_70 = 0x1b;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004a4230(puVar3);\r\n  }\r\n  uStack_70 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x55);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xe0);\r\n  uStack_74 = 0x1c;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004c5b00(puVar3);\r\n  }\r\n  uStack_74 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x13);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xd0);\r\n  uStack_78 = 0x1d;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004cc0c0(puVar3);\r\n  }\r\n  uStack_78 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x18);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xc0);\r\n  uStack_7c = 0x1e;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004a55b0(puVar3);\r\n  }\r\n  uStack_7c = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0xaa);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xc0);\r\n  uStack_80 = 0x1f;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004acf70(puVar3);\r\n  }\r\n  uStack_80 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x2d);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0x114);\r\n  uStack_84 = 0x20;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_004a6e20(puVar3);\r\n  }\r\n  uStack_84 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(99);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  puVar3 = FUN_0051ab4c(0xc4);\r\n  uStack_88 = 0x21;\r\n  if (puVar3 == (undefined4 *)0x0) {\r\n    piVar4 = (int *)0x0;\r\n  }\r\n  else {\r\n    piVar4 = FUN_0049ac00(puVar3);\r\n  }\r\n  uStack_88 = 0xffffffff;\r\n  (**(code **)(*piVar4 + 0x10))(0x1c);\r\n  FUN_004cf460(param_1,(int)piVar4);\r\n  ExceptionList = pvStack_94;\r\n  return 1;\r\n}\r\n\r\n",
+      "限制": [
+        "The session serves operations only after Ghidra reports default auto-analysis complete; incomplete analysis does not expose partial results.",
+        "The imported Program and temporary project are ephemeral and deleted on close. Annotation operations edit session database metadata; original executable bytes are never written.",
+        "Cancelling an active Ghidra request terminates its ephemeral database and discards session annotations. The selected target remains open; the next provider query imports the original artifact again.",
+        "Default-space addresses use lowercase 0x-prefixed hexadecimal; other address spaces use <percent-encoded-space>:0x<hex>.",
+        "Pseudocode is Ghidra decompiler output, not original source and not text-equivalent to Hopper output.",
+        "External functions and functions without an analyzable body return null; other decompiler failures remain explicit.",
+        "Windows Ghidra P0 accepts approved native x86 and x86-64 PE applications and DLLs; managed, hostile, sensitive, and mutable-path targets are unsupported.",
+        "The Windows bridge uses authenticated IPv4 loopback because Node path-based IPC does not expose Java AF_UNIX sockets; the endpoint file contains no bearer token.",
+        "Windows sessions require the matching packaged Windows x64 native addon, local NTFS targets and runtimes, and Windows 10 or later. Native handles enforce path admission, private DACLs, and Job Object ownership automatically.",
+        "This session uses Ghidra 12.1. The bridge is verified against 12.1.4; other 12.1.x builds are accepted and the observed version is reported."
+      ]
+    },
+    {
+      "主题": "地区切换",
+      "证据编号": "ev_07a24cea73c73d5a08aba305de896fb5632e778d0e2d9657540d558c06a69013",
+      "程序": {
+        "name": "C:\\Project\\GameDecomp\\EDSlash\\参考资料\\刀剑封魔录系列反编译资料库_v0.31\\基线程序\\ComeOn-DaoJian-NonSteam.exe",
+        "digest": {
+          "sha256": "c8d1aa33272a2c28e94f0d18eda2d6a8fcb14796644d8f8bed467b744ddc94b5"
+        },
+        "format": "pe",
+        "architecture": "x86",
+        "local_path": "C:\\Project\\GameDecomp\\EDSlash\\参考资料\\刀剑封魔录系列反编译资料库_v0.31\\基线程序\\ComeOn-DaoJian-NonSteam.exe"
+      },
+      "提供者": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1"
+      },
+      "分析配置": {
+        "provider": {
+          "id": "ghidra",
+          "name": "Ghidra",
+          "version": "12.1"
+        },
+        "parameters": {
+          "target_kind": "executable",
+          "target_format": "pe",
+          "executable_role": "application",
+          "managed": false,
+          "native_aot_metadata": {
+            "contract_revision": "rtr-9.1-x64-pe-read-only-v3",
+            "source_bytes": 134217728,
+            "work_units": 67108864,
+            "working_memory_bytes": 67108864,
+            "report_bytes": 4194304
+          },
+          "architecture": "x86",
+          "available_architectures": [
+            "x86"
+          ],
+          "import_mode": "ephemeral-source-immutable",
+          "annotation_policy": "atomic-function-entry-metadata-v1",
+          "load_image_observations": "source-mappings-entry-context-v2",
+          "function_body_evidence": "complete-inclusive-ranges-v1",
+          "function_references": "complete-body-and-entry-reference-manager-v2",
+          "string_inventory_evidence": "defined-data-coverage-v1",
+          "location_resolution": "explicit-address-exact-entry-symbol-first-v3",
+          "instruction_flow_evidence": "decoded-return-pcode-v1",
+          "function_boundary_observations": "ghidra-terminal-call-limitations-v1",
+          "no_return_repair": "disabled-windows-p0",
+          "process_launch": "official-headless-script-v1",
+          "jump_table_evidence": "typed-case-default-blocks-v1",
+          "decompiler_jump_loads": true,
+          "loader": "auto-from-header",
+          "language_id": "auto-from-header",
+          "compiler_spec_id": "auto-default",
+          "analyzer_preset": "ghidra-default"
+        },
+        "digest": "71e21535084464017b38d298b179b8aeef2fa30c329465e0d7c8949176c331f0"
+      },
+      "伪代码": "\r\nvoid __thiscall FUN_004af0c0(void *this,int param_1,int param_2)\r\n\r\n{\r\n  int *piVar1;\r\n  void *pvVar2;\r\n  int iVar3;\r\n  \r\n  if ((*(int *)((int)this + 0xc4) != -1) &&\r\n     (pvVar2 = (void *)FUN_004b35d0(*(int *)((int)this + 0xc4)), pvVar2 != (void *)0x0)) {\r\n    FUN_004b5790(pvVar2,0,0);\r\n  }\r\n  *(int *)((int)this + 0xc4) = param_1;\r\n  if (param_1 != -1) {\r\n    piVar1 = *(int **)((int)this + 0x9c);\r\n    *(int **)((int)this + 0xa0) = piVar1;\r\n    while (piVar1 != (int *)0x0) {\r\n      iVar3 = FUN_004d0210((void *)piVar1[0x14],2);\r\n      if (iVar3 == 5) {\r\n        iVar3 = FUN_004d0230((void *)piVar1[0x14],(undefined *)0x13,1);\r\n        if (iVar3 == param_1 + -0x68) {\r\n          *(undefined4 *)((int)this + 200) = 1;\r\n          (**(code **)(*piVar1 + 0x1c))(1,0);\r\n        }\r\n        else {\r\n          (**(code **)(*piVar1 + 0x1c))(0,0);\r\n        }\r\n      }\r\n      if (*(int *)((int)this + 0xa0) == 0) break;\r\n      piVar1 = *(int **)(*(int *)((int)this + 0xa0) + 8);\r\n      *(int **)((int)this + 0xa0) = piVar1;\r\n    }\r\n    pvVar2 = (void *)FUN_004b35d0(param_1);\r\n    if (((pvVar2 != (void *)0x0) && (FUN_004b5790(pvVar2,1,0), param_2 != 0)) &&\r\n       (iVar3 = FUN_004d0210(*(void **)((int)pvVar2 + 0x50),0x13), iVar3 != 0xffff)) {\r\n      FUN_004af3a0(this,*(undefined4 *)((int)this + 0xcc),iVar3);\r\n    }\r\n  }\r\n  return;\r\n}\r\n\r\n",
+      "限制": [
+        "The session serves operations only after Ghidra reports default auto-analysis complete; incomplete analysis does not expose partial results.",
+        "The imported Program and temporary project are ephemeral and deleted on close. Annotation operations edit session database metadata; original executable bytes are never written.",
+        "Cancelling an active Ghidra request terminates its ephemeral database and discards session annotations. The selected target remains open; the next provider query imports the original artifact again.",
+        "Default-space addresses use lowercase 0x-prefixed hexadecimal; other address spaces use <percent-encoded-space>:0x<hex>.",
+        "Pseudocode is Ghidra decompiler output, not original source and not text-equivalent to Hopper output.",
+        "External functions and functions without an analyzable body return null; other decompiler failures remain explicit.",
+        "Windows Ghidra P0 accepts approved native x86 and x86-64 PE applications and DLLs; managed, hostile, sensitive, and mutable-path targets are unsupported.",
+        "The Windows bridge uses authenticated IPv4 loopback because Node path-based IPC does not expose Java AF_UNIX sockets; the endpoint file contains no bearer token.",
+        "Windows sessions require the matching packaged Windows x64 native addon, local NTFS targets and runtimes, and Windows 10 or later. Native handles enforce path admission, private DACLs, and Job Object ownership automatically.",
+        "This session uses Ghidra 12.1. The bridge is verified against 12.1.4; other 12.1.x builds are accepted and the observed version is reported."
+      ]
+    },
+    {
+      "主题": "传送原Tick",
+      "证据编号": "ev_ad9dfab7a890d222e0605d5062bcc9f3717998c0be0e707251818058b20a1ad3",
+      "程序": {
+        "name": "C:\\Project\\GameDecomp\\EDSlash\\参考资料\\刀剑封魔录系列反编译资料库_v0.31\\基线程序\\ComeOn-DaoJian-NonSteam.exe",
+        "digest": {
+          "sha256": "c8d1aa33272a2c28e94f0d18eda2d6a8fcb14796644d8f8bed467b744ddc94b5"
+        },
+        "format": "pe",
+        "architecture": "x86",
+        "local_path": "C:\\Project\\GameDecomp\\EDSlash\\参考资料\\刀剑封魔录系列反编译资料库_v0.31\\基线程序\\ComeOn-DaoJian-NonSteam.exe"
+      },
+      "提供者": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1"
+      },
+      "分析配置": {
+        "provider": {
+          "id": "ghidra",
+          "name": "Ghidra",
+          "version": "12.1"
+        },
+        "parameters": {
+          "target_kind": "executable",
+          "target_format": "pe",
+          "executable_role": "application",
+          "managed": false,
+          "native_aot_metadata": {
+            "contract_revision": "rtr-9.1-x64-pe-read-only-v3",
+            "source_bytes": 134217728,
+            "work_units": 67108864,
+            "working_memory_bytes": 67108864,
+            "report_bytes": 4194304
+          },
+          "architecture": "x86",
+          "available_architectures": [
+            "x86"
+          ],
+          "import_mode": "ephemeral-source-immutable",
+          "annotation_policy": "atomic-function-entry-metadata-v1",
+          "load_image_observations": "source-mappings-entry-context-v2",
+          "function_body_evidence": "complete-inclusive-ranges-v1",
+          "function_references": "complete-body-and-entry-reference-manager-v2",
+          "string_inventory_evidence": "defined-data-coverage-v1",
+          "location_resolution": "explicit-address-exact-entry-symbol-first-v3",
+          "instruction_flow_evidence": "decoded-return-pcode-v1",
+          "function_boundary_observations": "ghidra-terminal-call-limitations-v1",
+          "no_return_repair": "disabled-windows-p0",
+          "process_launch": "official-headless-script-v1",
+          "jump_table_evidence": "typed-case-default-blocks-v1",
+          "decompiler_jump_loads": true,
+          "loader": "auto-from-header",
+          "language_id": "auto-from-header",
+          "compiler_spec_id": "auto-default",
+          "analyzer_preset": "ghidra-default"
+        },
+        "digest": "71e21535084464017b38d298b179b8aeef2fa30c329465e0d7c8949176c331f0"
+      },
+      "伪代码": "\r\nvoid __fastcall FUN_004af1c0(int *param_1)\r\n\r\n{\r\n  uint uVar1;\r\n  int iVar2;\r\n  void *this;\r\n  int iVar3;\r\n  LPCSTR pCVar4;\r\n  undefined4 uVar5;\r\n  undefined4 uVar6;\r\n  undefined4 uVar7;\r\n  undefined4 uVar8;\r\n  \r\n  param_1[0x30] = param_1[0x30] + -1;\r\n  FUN_004b1c00(param_1);\r\n  if (((DAT_005489e3 & 0xf0) != 0) && (DAT_00548ae3 == '\\0')) {\r\n    DAT_00548ae3 = '\\x01';\r\n    (**(code **)(*param_1 + 0x1c))(0,0);\r\n  }\r\n  if (param_1[0x31] != -1) {\r\n    if (param_1[0x32] == 0) {\r\n      uVar1 = FUN_004892d0();\r\n      if (uVar1 == 0) {\r\n        return;\r\n      }\r\n      FUN_004af0c0(param_1,*(int *)(uVar1 + 0x374) + 0x68,1);\r\n    }\r\n    iVar2 = FUN_004b35d0(param_1[0x31]);\r\n    if (((iVar2 != 0) && (iVar2 = FUN_004d0210(*(void **)(iVar2 + 0x50),0x13), iVar2 != 0xffff)) &&\r\n       (iVar3 = param_1[0x34], iVar3 != iVar2)) {\r\n      if (iVar3 < iVar2) {\r\n        iVar2 = (iVar2 - iVar3) / 3;\r\n        if (iVar2 < 1) {\r\n          iVar2 = 1;\r\n        }\r\n      }\r\n      else {\r\n        iVar2 = (iVar2 - iVar3) / 3;\r\n        if (-1 < iVar2) {\r\n          iVar2 = -1;\r\n        }\r\n      }\r\n      FUN_004af3a0(param_1,param_1[0x33],iVar3 + iVar2);\r\n    }\r\n  }\r\n  FUN_004f4eb0((int *)(param_1[0x39] * 0x20 + param_1[0x3b]));\r\n  if (10 < *(int *)(param_1[0x39] * 0x20 + 4 + param_1[0x3b])) {\r\n    FUN_004f4c60((void *)(param_1[0x39] * 0x20 + param_1[0x3b]),0);\r\n  }\r\n  if (((param_1[0x2a] != 0) &&\r\n      (iVar2 = FUN_004d0210(*(void **)(param_1[0x2a] + 0x50),2), iVar2 == 5)) &&\r\n     ((iVar2 = FUN_004b1db0(param_1[0x2a]), iVar2 != 0 && (*(int *)(param_1[0x2a] + 0xc4) != 0)))) {\r\n    iVar2 = FUN_004d0210(*(void **)(param_1[0x2a] + 0x50),0x13);\r\n    this = (void *)FUN_004d0a60(&DAT_005487b8,iVar2);\r\n    iVar2 = FUN_004d0210(this,0x13);\r\n    if (iVar2 != 0xffff) {\r\n      iVar3 = param_1[0x2a];\r\n      uVar8 = 0;\r\n      uVar7 = 0;\r\n      uVar6 = 0;\r\n      uVar5 = *(undefined4 *)(iVar3 + 0x18);\r\n      iVar3 = *(int *)(iVar3 + 0x1c) / 2 + *(int *)(iVar3 + 0x14);\r\n      pCVar4 = (LPCSTR)FUN_004d0a70(&DAT_005603a8,iVar2,1);\r\n      FUN_004cc4b0(DAT_0055c1f8,pCVar4,iVar3,uVar5,uVar6,uVar7,uVar8);\r\n    }\r\n  }\r\n  return;\r\n}\r\n\r\n",
+      "限制": [
+        "The session serves operations only after Ghidra reports default auto-analysis complete; incomplete analysis does not expose partial results.",
+        "The imported Program and temporary project are ephemeral and deleted on close. Annotation operations edit session database metadata; original executable bytes are never written.",
+        "Cancelling an active Ghidra request terminates its ephemeral database and discards session annotations. The selected target remains open; the next provider query imports the original artifact again.",
+        "Default-space addresses use lowercase 0x-prefixed hexadecimal; other address spaces use <percent-encoded-space>:0x<hex>.",
+        "Pseudocode is Ghidra decompiler output, not original source and not text-equivalent to Hopper output.",
+        "External functions and functions without an analyzable body return null; other decompiler failures remain explicit.",
+        "Windows Ghidra P0 accepts approved native x86 and x86-64 PE applications and DLLs; managed, hostile, sensitive, and mutable-path targets are unsupported.",
+        "The Windows bridge uses authenticated IPv4 loopback because Node path-based IPC does not expose Java AF_UNIX sockets; the endpoint file contains no bearer token.",
+        "Windows sessions require the matching packaged Windows x64 native addon, local NTFS targets and runtimes, and Windows 10 or later. Native handles enforce path admission, private DACLs, and Job Object ownership automatically.",
+        "This session uses Ghidra 12.1. The bridge is verified against 12.1.4; other 12.1.x builds are accepted and the observed version is reported."
+      ]
+    },
+    {
+      "主题": "传送原确认资格",
+      "证据编号": "ev_963230ccecb733335902204df794b34780780e625f07702a8960080dcfd736ce",
+      "程序": {
+        "name": "C:\\Project\\GameDecomp\\EDSlash\\参考资料\\刀剑封魔录系列反编译资料库_v0.31\\基线程序\\ComeOn-DaoJian-NonSteam.exe",
+        "digest": {
+          "sha256": "c8d1aa33272a2c28e94f0d18eda2d6a8fcb14796644d8f8bed467b744ddc94b5"
+        },
+        "format": "pe",
+        "architecture": "x86",
+        "local_path": "C:\\Project\\GameDecomp\\EDSlash\\参考资料\\刀剑封魔录系列反编译资料库_v0.31\\基线程序\\ComeOn-DaoJian-NonSteam.exe"
+      },
+      "提供者": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1"
+      },
+      "分析配置": {
+        "provider": {
+          "id": "ghidra",
+          "name": "Ghidra",
+          "version": "12.1"
+        },
+        "parameters": {
+          "target_kind": "executable",
+          "target_format": "pe",
+          "executable_role": "application",
+          "managed": false,
+          "native_aot_metadata": {
+            "contract_revision": "rtr-9.1-x64-pe-read-only-v3",
+            "source_bytes": 134217728,
+            "work_units": 67108864,
+            "working_memory_bytes": 67108864,
+            "report_bytes": 4194304
+          },
+          "architecture": "x86",
+          "available_architectures": [
+            "x86"
+          ],
+          "import_mode": "ephemeral-source-immutable",
+          "annotation_policy": "atomic-function-entry-metadata-v1",
+          "load_image_observations": "source-mappings-entry-context-v2",
+          "function_body_evidence": "complete-inclusive-ranges-v1",
+          "function_references": "complete-body-and-entry-reference-manager-v2",
+          "string_inventory_evidence": "defined-data-coverage-v1",
+          "location_resolution": "explicit-address-exact-entry-symbol-first-v3",
+          "instruction_flow_evidence": "decoded-return-pcode-v1",
+          "function_boundary_observations": "ghidra-terminal-call-limitations-v1",
+          "no_return_repair": "disabled-windows-p0",
+          "process_launch": "official-headless-script-v1",
+          "jump_table_evidence": "typed-case-default-blocks-v1",
+          "decompiler_jump_loads": true,
+          "loader": "auto-from-header",
+          "language_id": "auto-from-header",
+          "compiler_spec_id": "auto-default",
+          "analyzer_preset": "ghidra-default"
+        },
+        "digest": "71e21535084464017b38d298b179b8aeef2fa30c329465e0d7c8949176c331f0"
+      },
+      "伪代码": "\r\nvoid __fastcall FUN_004aef10(int *param_1)\r\n\r\n{\r\n  uint uVar1;\r\n  void *this;\r\n  int iVar2;\r\n  void *this_00;\r\n  void *unaff_ESI;\r\n  int *local_10;\r\n  void *local_c;\r\n  undefined1 *puStack_8;\r\n  undefined4 local_4;\r\n  \r\n  local_4 = 0xffffffff;\r\n  puStack_8 = &LAB_005252e8;\r\n  local_c = ExceptionList;\r\n  if (param_1[0x2a] != 0) {\r\n    iVar2 = *(int *)(param_1[0x2a] + 0x28);\r\n    local_10 = param_1;\r\n    if (iVar2 == 0x6b) {\r\n      ExceptionList = &local_c;\r\n      (**(code **)(*param_1 + 0x1c))(0,0);\r\n      ExceptionList = unaff_ESI;\r\n      return;\r\n    }\r\n    if (((iVar2 == 0x68) || (iVar2 == 0x69)) || (iVar2 == 0x6a)) {\r\n      ExceptionList = &local_c;\r\n      FUN_004af0c0(param_1,iVar2,0);\r\n    }\r\n    else {\r\n      ExceptionList = &local_c;\r\n      uVar1 = FUN_004892d0();\r\n      if (((uVar1 != 0) && (param_1[0x31] == *(int *)(uVar1 + 0x374) + 0x68)) &&\r\n         ((param_1[0x30] < 1 &&\r\n          ((*(int *)(param_1[0x2a] + 0xc4) == 2 && (*(int *)(param_1[0x2a] + 0xc0) != 1)))))) {\r\n        if (DAT_005585c4 == 0) {\r\n          this = (void *)0x0;\r\n        }\r\n        else {\r\n          this = (void *)FUN_00477790(*(int *)(DAT_005585c4 + 0x30));\r\n        }\r\n        iVar2 = FUN_004d0210(*(void **)(param_1[0x2a] + 0x50),0x13);\r\n        this_00 = (void *)FUN_004d0a60(&DAT_005487b8,iVar2);\r\n        if ((this != (void *)0x0) && (this_00 != (void *)0x0)) {\r\n          local_10 = (int *)PTR_DAT_00546988;\r\n          local_4 = 0;\r\n          FUN_004d00b0(this_00,0);\r\n          FUN_005196ae(&local_10,(byte *)s_go__s__1_00545c3c);\r\n          FUN_00438270(this,local_10);\r\n          local_4 = 0xffffffff;\r\n          FUN_0051d6e4((int *)&local_10);\r\n          ExceptionList = local_c;\r\n          return;\r\n        }\r\n      }\r\n    }\r\n  }\r\n  ExceptionList = local_c;\r\n  return;\r\n}\r\n\r\n",
+      "限制": [
+        "The session serves operations only after Ghidra reports default auto-analysis complete; incomplete analysis does not expose partial results.",
+        "The imported Program and temporary project are ephemeral and deleted on close. Annotation operations edit session database metadata; original executable bytes are never written.",
+        "Cancelling an active Ghidra request terminates its ephemeral database and discards session annotations. The selected target remains open; the next provider query imports the original artifact again.",
+        "Default-space addresses use lowercase 0x-prefixed hexadecimal; other address spaces use <percent-encoded-space>:0x<hex>.",
+        "Pseudocode is Ghidra decompiler output, not original source and not text-equivalent to Hopper output.",
+        "External functions and functions without an analyzable body return null; other decompiler failures remain explicit.",
+        "Windows Ghidra P0 accepts approved native x86 and x86-64 PE applications and DLLs; managed, hostile, sensitive, and mutable-path targets are unsupported.",
+        "The Windows bridge uses authenticated IPv4 loopback because Node path-based IPC does not expose Java AF_UNIX sockets; the endpoint file contains no bearer token.",
+        "Windows sessions require the matching packaged Windows x64 native addon, local NTFS targets and runtimes, and Windows 10 or later. Native handles enforce path admission, private DACLs, and Job Object ownership automatically.",
+        "This session uses Ghidra 12.1. The bridge is verified against 12.1.4; other 12.1.x builds are accepted and the observed version is reported."
+      ]
+    }
+  ],
+  "四版本入口核验": [
+    {
+      "游戏": "DaoJian",
+      "发行": "NonSteam",
+      "SHA256": "c8d1aa33272a2c28e94f0d18eda2d6a8fcb14796644d8f8bed467b744ddc94b5",
+      "入口": {
+        "menu_teleport_vtable": "0x52a268",
+        "menu_teleport_tick": "0x4af1c0",
+        "menu_teleport_show": "0x4af500",
+        "menu_teleport_hover": "0x4a1f90",
+        "menu_teleport_primary": "0x4aef10",
+        "menu_teleport_switch": "0x4af0c0",
+        "menu_teleport_base_call": "0x4af1d2"
+      },
+      "原程序证据": {
+        "constructor": 4910528,
+        "factory_id_push": 4930493,
+        "root_id": 103,
+        "tabs": [
+          104,
+          105,
+          106
+        ],
+        "close": 107,
+        "destination_resource_type": 5,
+        "destination_status_offset": 196,
+        "current_location_offset": 192,
+        "destination_available_status": 2
+      }
+    },
+    {
+      "游戏": "WaiZhuan",
+      "发行": "NonSteam",
+      "SHA256": "04e34dd68b373b9b2ddf300ca4bfcabb6e6b89ceb9d437af67cbad5e7286fbe4",
+      "入口": {
+        "menu_teleport_vtable": "0x553594",
+        "menu_teleport_tick": "0x4c2230",
+        "menu_teleport_show": "0x4c2570",
+        "menu_teleport_hover": "0x4d8640",
+        "menu_teleport_primary": "0x4c1f80",
+        "menu_teleport_switch": "0x4c2130",
+        "menu_teleport_base_call": "0x4c2242"
+      },
+      "原程序证据": {
+        "constructor": 4988464,
+        "factory_id_push": 5009214,
+        "root_id": 103,
+        "tabs": [
+          104,
+          105,
+          106
+        ],
+        "close": 107,
+        "destination_resource_type": 5,
+        "destination_status_offset": 196,
+        "current_location_offset": 192,
+        "destination_available_status": 2
+      }
+    },
+    {
+      "游戏": "DaoJian",
+      "发行": "Steam",
+      "SHA256": "0887ceae7589999a389ec271d690e1c55204d59575f8f2adb5ef46a1e605b3f5",
+      "入口": {
+        "menu_teleport_vtable": "0x52a268",
+        "menu_teleport_tick": "0x4af1c0",
+        "menu_teleport_show": "0x4af500",
+        "menu_teleport_hover": "0x4a1f90",
+        "menu_teleport_primary": "0x4aef10",
+        "menu_teleport_switch": "0x4af0c0",
+        "menu_teleport_base_call": "0x4af1d2"
+      },
+      "原程序证据": {
+        "constructor": 4910528,
+        "factory_id_push": 4930493,
+        "root_id": 103,
+        "tabs": [
+          104,
+          105,
+          106
+        ],
+        "close": 107,
+        "destination_resource_type": 5,
+        "destination_status_offset": 196,
+        "current_location_offset": 192,
+        "destination_available_status": 2
+      }
+    },
+    {
+      "游戏": "WaiZhuan",
+      "发行": "Steam",
+      "SHA256": "97ae4c2350618f38a74c3d02bf315c749fc448f705e860129372ebd592ed66e5",
+      "入口": {
+        "menu_teleport_vtable": "0x553594",
+        "menu_teleport_tick": "0x4c2230",
+        "menu_teleport_show": "0x4c2570",
+        "menu_teleport_hover": "0x4d8640",
+        "menu_teleport_primary": "0x4c1f80",
+        "menu_teleport_switch": "0x4c2130",
+        "menu_teleport_base_call": "0x4c2242"
+      },
+      "原程序证据": {
+        "constructor": 4988464,
+        "factory_id_push": 5009214,
+        "root_id": 103,
+        "tabs": [
+          104,
+          105,
+          106
+        ],
+        "close": 107,
+        "destination_resource_type": 5,
+        "destination_status_offset": 196,
+        "current_location_offset": 192,
+        "destination_available_status": 2
+      }
+    }
+  ]
+}

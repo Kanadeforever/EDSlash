@@ -356,6 +356,8 @@ static bool jump_update(void *role)
         Log_Write(ControllerText_Aim_JumpPreviewStartedLog,selector,method,tier,maximum,(unsigned long)jump.expand_ms);
     }
     if(!jump.active)return false;
+    /* 调查键的新按只取消本次预览，不再落到世界调查业务；再次预览必须重新新按预览键。 */
+    if((g_intent.held & KEY(PAD_B)) && (g_intent.pressed & KEY(PAD_A))){jump_cancel();return true;}
     /* 受击/原活动动作接管时取消预览，不能在硬直结束后自动补一个旧跳跃。 */
     if(Read32(role,g_profile->active_offset)){jump_cancel();return true;}
     /* 松键消费上次预览的缓存点，不能在这一帧根据新杆方向或新时钟重算落点。 */

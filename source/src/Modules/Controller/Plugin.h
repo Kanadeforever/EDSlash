@@ -100,6 +100,9 @@ typedef struct {
     unsigned health_offset;
     unsigned pending_offset;
     unsigned invalid_offset, interact_offset, active_offset;
+    /* 传送地图页只接入原控件生命周期、地区切换与确认，不改目的地资格。 */
+    uintptr_t menu_teleport_vtable,menu_teleport_tick,menu_teleport_show,menu_teleport_hover;
+    uintptr_t menu_teleport_primary,menu_teleport_switch,menu_teleport_base_call;
 } Profile;
 typedef struct { uintptr_t address; unsigned char bytes[12]; } Signature;
 extern const Profile *g_profile;

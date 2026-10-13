@@ -53,7 +53,7 @@ int wmain(void)
     CHECK(RuntimeConfig_OpenPath(path));
     CHECK(GetFileAttributesW(skill_file)==INVALID_FILE_ATTRIBUTES);
     CHECK(!RuntimeConfig_HasPending());
-    CHECK(RuntimeConfig_GetInt(CONFIG_AIM_EXPAND_MS)==1000);
+    CHECK(RuntimeConfig_GetInt(CONFIG_AIM_EXPAND_MS)==500);
     CHECK(RuntimeConfig_GetInt(CONFIG_MENU_SWAP_AB)==0);
     CHECK(RuntimeConfig_GetInt(CONFIG_ACTION_MENU_NAV)==2);
     const char *navigation_choices[]={"left","right","independent"};

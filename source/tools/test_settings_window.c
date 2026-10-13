@@ -283,7 +283,14 @@ int wmain(void)
     CHECK(!strchr(document,'{') && strstr(document,"F1") && strstr(document,"START保存"));
     model.draft.values[CONFIG_MENU_SWAP_AB]=1;menu_document(document,sizeof document);
     CHECK(strstr(document,"B确认，A取消") && strstr(document,"B在下方添加") && strstr(document,"按住B加快"));
+    CHECK(strstr(document,"按住B时按一下A取消"));
+    int saved_aim=model.draft.values[CONFIG_WORLD_AIM],saved_interact=model.draft.values[CONFIG_WORLD_INTERACT];
     menu_document_layout();CHECK(wcsstr(menu_doc_wide,L"B确认，A取消"));
+    model.draft.values[CONFIG_WORLD_AIM]=6;model.draft.values[CONFIG_WORLD_INTERACT]=3;
+    menu_document(document,sizeof document);CHECK(strstr(document,"按住L3时按一下Y取消") && strstr(document,"B确认，A取消"));
+    menu_document_layout();CHECK(wcsstr(menu_doc_wide,L"按住L3时按一下Y取消"));
+    model.draft.values[CONFIG_WORLD_AIM]=saved_aim;model.draft.values[CONFIG_WORLD_INTERACT]=saved_interact;
+
     model.draft.values[CONFIG_MENU_SWAP_AB]=0;menu_document_layout();CHECK(wcsstr(menu_doc_wide,L"A确认，B取消"));
     CHECK(menu_document_max_scroll()>0 && !menu_doc_scroll);move(2);CHECK(menu_doc_scroll>0 && !footer);
     SettingsWindow_Wheel(-120);CHECK(menu_doc_scroll>menu_doc_step);

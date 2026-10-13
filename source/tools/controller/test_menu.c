@@ -11,7 +11,9 @@
 
 static BYTE menu_roots[15][0x300],menu_children[15][16][0xE4],menu_sprites[15][16][4*32];
 static BYTE unknown_root[0xD0],menu_resource[16];
-static uintptr_t menu_tables[19][26];
+static uintptr_t menu_tables[20][26];
+static BYTE teleport_root[0xF0],teleport_children[9][0xD0],teleport_resources[9][16],teleport_base_code[8];
+static unsigned teleport_requests,teleport_switches,teleport_details;
 static BYTE new_roots[2][0x300],new_children[2][3][0xE4];
 static unsigned character_requests,newgame_requests,difficulty_requests;
 static BYTE settings_root[0x300],settings_children[8][0xF0];
@@ -66,6 +68,7 @@ bool Memory_Patch(void *target,const void *data,size_t bytes)
 
 static int root_kind(void *self)
 {
+    if(self==teleport_root)return 19;
     if(self==new_roots[0])return 17;
     if(self==new_roots[1])return 18;
     if (self==settings_root) return 16;
@@ -75,6 +78,7 @@ static int root_kind(void *self)
 }
 static int __fastcall menu_property(void *self, void *unused_edx,int field)
 { (void)unused_edx;
+    for(unsigned i=0;i<9;++i)if(self==teleport_resources[i])return field==2 ? 5:field==19 ? (int)Read32(self,4):0;
     if (self==nonroot_resource) return field==13 ? 0:field==2 ? 3:0;
     if (self!=menu_resource) return native_property(self, NULL,field);
     return field==19 ? 111:field==13 ? 1:field==2 ? 3:0;
@@ -85,12 +89,15 @@ static int __fastcall menu_show(void *self, void *unused_edx,int active,int mode
     Write32(self,0x64,active!=0);Write32(self,0x68,0);
     if (k==2 || k==4 || k==5 || k==6) ptr(ui_data,0x3C,active ? self:NULL);
     if (k==6 && active) {Write32(self,0xF0,1);Write32(self,0xF4,(unsigned)-20);}
+    if(k==19 && active){Write32(self,0xC4,0x68);Write32(self,0xC0,0);}
     if (k==3 && active) {Write32(self,0xD0,0);Write32(self,0xD4,0);}
     return 1;
 }
 static int __fastcall menu_tick(void *self, void *unused_edx)
 { (void)unused_edx;
     int k=root_kind(self);++tick_calls;
+    if(k==19){((This0)patched_callee((uintptr_t)teleport_base_code))(self,NULL);
+        if(ReadPtr(self,0xA8) && Read32(ReadPtr(self,0xA8),0xC4))++teleport_details;return 7;}
     if (k==8) {
         ((This0)patched_callee((uintptr_t)skill_calls[0]))(self, NULL);
         if (ReadPtr(self,0xA8)) ++skill_details;
@@ -116,10 +123,11 @@ static int __fastcall menu_tick(void *self, void *unused_edx)
     return 7;
 }
 static int __fastcall skill_base_tick(void *self, void *unused_edx)
-{ (void)unused_edx;int k=root_kind(self);if (k==4) return menu_tick(self, NULL);CHECK(k==8);ptr(self,0xA8,NULL);return 7;}
+{ (void)unused_edx;int k=root_kind(self);if (k==4) return menu_tick(self, NULL);CHECK(k==8 || k==19);ptr(self,0xA8,NULL);return 7;}
 static int __fastcall menu_get_jm(void *self, void *unused_edx,int id)
 { (void)unused_edx;
     CHECK(self==ui_data);
+    if(id==0x67)return (int)(uintptr_t)teleport_root;
     if(id==0x1A)return (int)(uintptr_t)new_roots[0];
     if(id==0x9C)return (int)(uintptr_t)new_roots[1];
     if(id==0x9F)return (int)(uintptr_t)new_children[1][0];
@@ -468,6 +476,39 @@ static void newgame_fixture(Profile *p)
     p->menu_newgame_vtable=(uintptr_t)menu_tables[18];p->menu_newgame_tick=(uintptr_t)menu_tick;p->menu_newgame_show=(uintptr_t)menu_show;
     p->menu_newgame_hover=(uintptr_t)menu_hover;p->menu_newgame_primary=(uintptr_t)newgame_primary;p->menu_newgame_cycle=(uintptr_t)difficulty_cycle;
 }
+static int __fastcall teleport_switch(void *root,void *unused,int tab,int sync)
+{ (void)unused;CHECK(root==teleport_root && tab>=0x68 && tab<=0x6A && !sync);
+    Write32(root,0xC4,(unsigned)tab);++teleport_switches;return 1;}
+static int __fastcall teleport_primary(void *root,void *unused,int e,int x,void *y)
+{ (void)unused;CHECK(root==teleport_root && !e && !x && !y);void *node=ReadPtr(root,0xA8);
+    CHECK(node && ReadPtr(node,0xA4)==root);unsigned id=Read32(node,0x28);
+    if(id>=0x68 && id<=0x6A)return teleport_switch(root,NULL,(int)id,0);
+    if(id==0x6B){((This2)menu_tables[19][0x1C/4])(root,NULL,0,0);return 1;}
+    /* 原传送资格由替身业务判定；生产导航不能把灰色、当前地点或冷却变成可传送。 */
+    if(Read32(root,0xC4)==Read32(roles[0],0x374)+0x68 && (int)Read32(root,0xC0)<1 &&
+       Read32(node,0xC4)==2 && Read32(node,0xC0)!=1)++teleport_requests;
+    return 1;
+}
+static void teleport_fixture(Profile *p)
+{
+    memset(teleport_root,0,sizeof teleport_root);memset(teleport_children,0,sizeof teleport_children);
+    memset(teleport_resources,0,sizeof teleport_resources);teleport_requests=teleport_switches=teleport_details=0;
+    ptr(teleport_root,0,menu_tables[19]);ptr(teleport_root,0x50,menu_resource);Write32(teleport_root,0x28,0x67);
+    ptr(teleport_root,0x9C,teleport_children[0]);Write32(roles[0],0x374,0);
+    for(unsigned i=0;i<9;++i){void *c=teleport_children[i];ptr(c,0xA4,teleport_root);ptr(c,8,i<8 ? teleport_children[i+1]:NULL);
+        ptr(c,0x50,teleport_resources[i]);Write32(teleport_resources[i],4,100+i);
+        Write32(c,0x28,i<4 ? 0x68+i:0x70+i-4);Write32(c,0x64,i==7 ? 0:1);
+        Write32(c,0x14,i<4 ? 60+i*100:60+(i-4)*100);Write32(c,0x18,i<4 ? 50:160);
+        Write32(c,0x1C,30);Write32(c,0x20,30);Write32(c,0xC4,i==6 ? 0:i==8 ? 1:2);
+    }
+    Write32(teleport_children[4],0xC0,1);menu_tables[19][1]=(uintptr_t)menu_tick;
+    menu_tables[19][0x1C/4]=(uintptr_t)menu_show;menu_tables[19][0x30/4]=(uintptr_t)menu_hover;
+    menu_tables[19][0x24/4]=(uintptr_t)teleport_primary;
+    p->menu_teleport_vtable=(uintptr_t)menu_tables[19];p->menu_teleport_tick=(uintptr_t)menu_tick;
+    p->menu_teleport_show=(uintptr_t)menu_show;p->menu_teleport_hover=(uintptr_t)menu_hover;
+    p->menu_teleport_primary=(uintptr_t)teleport_primary;p->menu_teleport_switch=(uintptr_t)teleport_switch;
+    make_call(teleport_base_code,(uintptr_t)skill_base_tick);p->menu_teleport_base_call=(uintptr_t)teleport_base_code;
+}
 static void menu_fixture(Profile *profile,bool expansion)
 {
     configure(profile,expansion);expansion_case=expansion;entry_enabled=0;entry_opened=0;
@@ -611,7 +652,7 @@ static void menu_fixture(Profile *profile,bool expansion)
         Write32(slot,0x14,10+(i<6 ? i:i+2)*24);Write32(slot,0x18,350);
         Write32(slot,0x1C,24);Write32(slot,0x20,24);Write32(slot,0xCC,50+i);
     }
-    settings_fixture(profile);newgame_fixture(profile);
+    settings_fixture(profile);newgame_fixture(profile);teleport_fixture(profile);
     patch_attempt=patch_fail_at=0;CHECK(Menu_Initialize());cursor_fixture(profile);
 }
 static void menu_regression(bool expansion)
@@ -1455,6 +1496,28 @@ static void newgame_regression(bool expansion)
     menu_step(KEY(PAD_B),0,0);CHECK(Read32(menu_roots[0],0x64) && !Read32(new_roots[0],0x64));
     ptr(ui_data,0x3C,NULL);Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
 }
+static void teleport_regression(bool expansion)
+{
+    Profile p;menu_fixture(&p,expansion);((This2)menu_tables[19][0x1C/4])(teleport_root,NULL,1,0);
+    ptr(ui_data,0x3C,teleport_root);neutral_menu();CHECK(Read32(ReadPtr(teleport_root,0xA8),0x28)==0x71);
+    CHECK(!Menu_FocusFrame(&(RECT){0}) && Menu_CursorAnchor(&(POINT){0}));
+    unsigned details=teleport_details;((This0)menu_tables[19][1])(teleport_root,NULL);CHECK(teleport_details==details+1);
+    menu_step(KEY(PAD_A),0,0);CHECK(teleport_requests==1);neutral_menu();
+    menu_step(KEY(PAD_RIGHT),0,0);neutral_menu();CHECK(Read32(ReadPtr(teleport_root,0xA8),0x28)==0x74);
+    menu_step(KEY(PAD_A),0,0);CHECK(teleport_requests==1);neutral_menu();
+    menu_step(KEY(PAD_LEFT),0,0);neutral_menu();CHECK(Read32(ReadPtr(teleport_root,0xA8),0x28)==0x71);
+    Write32(teleport_root,0xC0,3);menu_step(KEY(PAD_A),0,0);CHECK(teleport_requests==1);neutral_menu();Write32(teleport_root,0xC0,0);
+    menu_step(KEY(PAD_RB),0,0);neutral_menu();CHECK(Read32(teleport_root,0xC4)==0x69 && teleport_switches==1);
+    menu_step(KEY(PAD_A),0,0);CHECK(teleport_requests==1);neutral_menu();
+    menu_step(KEY(PAD_LB),0,0);neutral_menu();CHECK(Read32(teleport_root,0xC4)==0x68 && teleport_switches==2);
+    g_input.swap_menu_ab=1;menu_step(KEY(PAD_B),0,0);CHECK(teleport_requests==2);neutral_menu();
+    menu_step(KEY(PAD_A),0,0);CHECK(!Read32(teleport_root,0x64));g_input.swap_menu_ab=0;
+    neutral_menu();((This2)menu_tables[19][0x1C/4])(teleport_root,NULL,1,0);ptr(ui_data,0x3C,teleport_root);
+    for(unsigned i=0;i<9;++i)Write32(teleport_children[i],0x64,0);
+    neutral_menu();menu_step(KEY(PAD_B),0,0);CHECK(!Read32(teleport_root,0x64));
+    neutral_menu();ptr(ui_data,0x3C,NULL);Cursor_Shutdown();Menu_Shutdown();HookManager_ReleaseOwned(RUNTIME_MODULE_CONTROLLER);
+    CHECK(menu_tables[19][1]==(uintptr_t)menu_tick && patched_callee((uintptr_t)teleport_base_code)==(uintptr_t)skill_base_tick);
+}
 int main(int argc,char **argv)
 {
     if(argc>2 && !strcmp(argv[1],"--skill-focus")) {
@@ -1462,6 +1525,7 @@ int main(int argc,char **argv)
         printf("两作技能视觉导航/动作框/Y焦点场景通过：%s\n",argv[2]);return 0;
     }
     if(argc>1 && !strcmp(argv[1],"--containment")) {unsigned limit=argc>2 && !strcmp(argv[2],"bag") ? 9:15;containment_regression(false,limit);containment_regression(true,limit);printf("两作最终绘制边界格内、动画偏移与非格子指针回放通过\n");return 0;}
+    teleport_regression(false);teleport_regression(true);
     newgame_regression(false);newgame_regression(true);
     skill_description_regression(false);skill_description_regression(true);
     empty_skill_regression(false);empty_skill_regression(true);

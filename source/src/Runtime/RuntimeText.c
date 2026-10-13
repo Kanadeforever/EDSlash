@@ -68,8 +68,8 @@ const char RuntimeText_Config_LegacyFinisherInputLabel[] = "旧必杀输入模�
 const char RuntimeText_Config_LegacyFinisherInputDescription[] = "关闭时使用较安全的新方式：同时按住LT和RT，再按A/B/X/Y准备必杀；松开面键后再次按同一个键才释放。开启后只需LT加面键，较容易误触，连招切换也固定使用LT加方向键。";
 const char RuntimeText_Config_ComboSwitchInputLabel[] = "连招切换输入";
 const char RuntimeText_Config_ComboSwitchInputDescription[] = "选择四套连招的切换方法。面键方式为按住LT，再按Y/B/A/X选择第1/2/3/4套；方向键方式为LT加上/右/下/左。只有旧必杀输入模式关闭时可以选择；旧模式固定用方向键。";
-const char RuntimeText_Config_AimSpreadTimeLabel[] = "技能落点扩散耗时";
-const char RuntimeText_Config_AimSpreadTimeDescription[] = "按住跳跃预览键时，落点从近处扩到最远处需要多久。1000毫秒等于1秒。调小扩得更快，调大更方便慢慢选距离。松开按键后朝预览位置跳跃，长老使用瞬移。正在预览的这一次不受修改影响。";
+const char RuntimeText_Config_AimSpreadTimeLabel[] = "跳跃/瞬移落点拡散耗时";
+const char RuntimeText_Config_AimSpreadTimeDescription[] = "按住跳跃预览键时，落点从近处扩到最远处需要多久。默认500毫秒，即半秒。调小扩得更快，调大更方便慢慢选距离。松开按键后朝预览位置跳跃，长老使用瞬移。按住预览键时按调查键取消，松开后重新按下预览键才可再次预览。正在预览的这一次不受修改影响。";
 const char RuntimeText_Config_SwapMenuConfirmCancelLabel[] = "菜单确认取消交换";
 const char RuntimeText_Config_SwapMenuConfirmCancelDescription[] = "交换菜单里的确认和取消按钮。关闭为A确认、B取消；开启为B确认、A取消。不会交换战斗动作和组合键。当前插件设置窗口保持打开时的按法，下次打开才使用新按法。";
 const char RuntimeText_Config_InteractButtonLabel[] = "调查键";
@@ -321,6 +321,8 @@ const char *const RuntimeText_KeymapStates[RUNTIME_KEYMAP_STATE_COUNT]={
 /* 正文使用语义标记而非写死A/B。固定菜单键也统一从键名表解析，方便维护实际路由。
  * 共用导航只说明一次，后续段落保留各菜单的特殊行为，避免重复十八张按键图。 */
 const char RuntimeText_KeymapMenuDocument[]=
+    "跳跃／瞬移预览\n"
+    "按住{preview}选择落点，松开朝落点发动；按住{preview}时按一下{interact}取消。取消后持续按住不会再预览，须松开并重新按下{preview}。\n\n"
     "通用操作\n"
     "{stick}或方向键移动焦点，{confirm}确认，{cancel}取消或返回。标题页取消无效果；对话保留原冷却。"
     "过场文字按住{confirm}加快滚动，{cancel}收起。已进入游戏的原菜单中，松开LT/RT后{R3}可切小地图；EDSlash设置中不切地图。\n\n"
@@ -330,6 +332,8 @@ const char RuntimeText_KeymapMenuDocument[]=
     "技能与连招\n"
     "{LB}进入武技修炼，{RB}进入连招编辑。修炼页可聚焦类型说明和必杀图标，学习仍按原资格。"
     "编辑页{X}切下方候选与上方连招，{Y}切四套连招；{confirm}在下方添加、上方删除。\n\n"
+    "传送\n"
+    "{stick}或方向键选择可见地点和地区按钮，{LB}/{RB}切地区。{confirm}按原资格传送，{cancel}关闭；未开启或当前位置不会传送。\n\n"
     "物品界面\n"
     "背包、仓库与工坊用{confirm}拿取、放入或执行当前按钮；{cancel}先放回持有物，再关闭。"
     "{X}只在已打开区域间切换；{Y}切格子／槽位与按钮，在快捷物品栏无效果。"

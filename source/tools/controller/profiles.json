@@ -268,7 +268,14 @@
         "menu_name_set": 4964192,
         "menu_map_global": 5613868,
         "menu_map_vtable": 5415084,
-        "menu_map_show": 4886128
+        "menu_map_show": 4886128,
+        "menu_teleport_vtable": 5415528,
+        "menu_teleport_tick": 4911552,
+        "menu_teleport_show": 4912384,
+        "menu_teleport_hover": 4857744,
+        "menu_teleport_primary": 4910864,
+        "menu_teleport_switch": 4911296,
+        "menu_teleport_base_call": 4911570
       },
       "offsets": {
         "invalid_offset": 1082,
@@ -480,7 +487,13 @@
         "menu_newgame_primary": "568bf18b86a800000085c074",
         "menu_newgame_cycle": "568bf1689f000000b998af55",
         "menu_name_set": "8b4424045685c0578bf17426",
-        "menu_map_show": "8b44240856578b7c240c508b"
+        "menu_map_show": "8b44240856578b7c240c508b",
+        "menu_teleport_tick": "568bf18b8ec000000049898e",
+        "menu_teleport_show": "8b44240856578b7c240c508b",
+        "menu_teleport_hover": "568bf1e8e81301008986a800",
+        "menu_teleport_primary": "6aff68e852520064a1000000",
+        "menu_teleport_switch": "5556578bf98b87c400000083",
+        "menu_teleport_base_call": "e8292a0000f605e3895400f0"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -495,6 +508,21 @@
         "key": 9,
         "latch_delta": 256,
         "global_load_offset": 17
+      },
+      "teleport_evidence": {
+        "constructor": 4910528,
+        "factory_id_push": 4930493,
+        "root_id": 103,
+        "tabs": [
+          104,
+          105,
+          106
+        ],
+        "close": 107,
+        "destination_resource_type": 5,
+        "destination_status_offset": 196,
+        "current_location_offset": 192,
+        "destination_available_status": 2
       }
     },
     {
@@ -765,7 +793,14 @@
         "menu_name_set": 5045456,
         "menu_map_global": 5815484,
         "menu_map_vtable": 5583816,
-        "menu_map_show": 4962608
+        "menu_map_show": 4962608,
+        "menu_teleport_vtable": 5584276,
+        "menu_teleport_tick": 4989488,
+        "menu_teleport_show": 4990320,
+        "menu_teleport_hover": 5080640,
+        "menu_teleport_primary": 4988800,
+        "menu_teleport_switch": 4989232,
+        "menu_teleport_base_call": 4989506
       },
       "offsets": {
         "invalid_offset": 1094,
@@ -977,7 +1012,13 @@
         "menu_newgame_primary": "568bf18b86a800000085c00f",
         "menu_newgame_cycle": "568bf1689f000000b9e8c358",
         "menu_name_set": "8b4424045685c08bf1740c50",
-        "menu_map_show": "8b44240856578b7c240c508b"
+        "menu_map_show": "8b44240856578b7c240c508b",
+        "menu_teleport_tick": "568bf18b8ec000000049898e",
+        "menu_teleport_show": "8b44240856578b7c240c508b",
+        "menu_teleport_hover": "568bf1e8b8e0feff8986a800",
+        "menu_teleport_primary": "6aff6838c7540064a1000000",
+        "menu_teleport_switch": "5556578bf98b87c400000083",
+        "menu_teleport_base_call": "e8092d0000f6059b8f5700f0"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -992,6 +1033,21 @@
         "key": 9,
         "latch_delta": 256,
         "global_load_offset": 17
+      },
+      "teleport_evidence": {
+        "constructor": 4988464,
+        "factory_id_push": 5009214,
+        "root_id": 103,
+        "tabs": [
+          104,
+          105,
+          106
+        ],
+        "close": 107,
+        "destination_resource_type": 5,
+        "destination_status_offset": 196,
+        "current_location_offset": 192,
+        "destination_available_status": 2
       }
     },
     {
@@ -1262,7 +1318,14 @@
         "menu_name_set": 4964192,
         "menu_map_global": 5613868,
         "menu_map_vtable": 5415084,
-        "menu_map_show": 4886128
+        "menu_map_show": 4886128,
+        "menu_teleport_vtable": 5415528,
+        "menu_teleport_tick": 4911552,
+        "menu_teleport_show": 4912384,
+        "menu_teleport_hover": 4857744,
+        "menu_teleport_primary": 4910864,
+        "menu_teleport_switch": 4911296,
+        "menu_teleport_base_call": 4911570
       },
       "offsets": {
         "invalid_offset": 1082,
@@ -1474,7 +1537,13 @@
         "menu_newgame_primary": "568bf18b86a800000085c074",
         "menu_newgame_cycle": "568bf1689f000000b998af55",
         "menu_name_set": "8b4424045685c0578bf17426",
-        "menu_map_show": "8b44240856578b7c240c508b"
+        "menu_map_show": "8b44240856578b7c240c508b",
+        "menu_teleport_tick": "568bf18b8ec000000049898e",
+        "menu_teleport_show": "8b44240856578b7c240c508b",
+        "menu_teleport_hover": "568bf1e8e81301008986a800",
+        "menu_teleport_primary": "6aff68e852520064a1000000",
+        "menu_teleport_switch": "5556578bf98b87c400000083",
+        "menu_teleport_base_call": "e8292a0000f605e3895400f0"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -1489,6 +1558,21 @@
         "key": 9,
         "latch_delta": 256,
         "global_load_offset": 17
+      },
+      "teleport_evidence": {
+        "constructor": 4910528,
+        "factory_id_push": 4930493,
+        "root_id": 103,
+        "tabs": [
+          104,
+          105,
+          106
+        ],
+        "close": 107,
+        "destination_resource_type": 5,
+        "destination_status_offset": 196,
+        "current_location_offset": 192,
+        "destination_available_status": 2
       }
     },
     {
@@ -1759,7 +1843,14 @@
         "menu_name_set": 5045456,
         "menu_map_global": 5815484,
         "menu_map_vtable": 5583816,
-        "menu_map_show": 4962608
+        "menu_map_show": 4962608,
+        "menu_teleport_vtable": 5584276,
+        "menu_teleport_tick": 4989488,
+        "menu_teleport_show": 4990320,
+        "menu_teleport_hover": 5080640,
+        "menu_teleport_primary": 4988800,
+        "menu_teleport_switch": 4989232,
+        "menu_teleport_base_call": 4989506
       },
       "offsets": {
         "invalid_offset": 1094,
@@ -1971,7 +2062,13 @@
         "menu_newgame_primary": "568bf18b86a800000085c00f",
         "menu_newgame_cycle": "568bf1689f000000b9e8c358",
         "menu_name_set": "8b4424045685c08bf1740c50",
-        "menu_map_show": "8b44240856578b7c240c508b"
+        "menu_map_show": "8b44240856578b7c240c508b",
+        "menu_teleport_tick": "568bf18b8ec000000049898e",
+        "menu_teleport_show": "8b44240856578b7c240c508b",
+        "menu_teleport_hover": "568bf1e8b8e0feff8986a800",
+        "menu_teleport_primary": "6aff6838c7540064a1000000",
+        "menu_teleport_switch": "5556578bf98b87c400000083",
+        "menu_teleport_base_call": "e8092d0000f6059b8f5700f0"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -1986,6 +2083,21 @@
         "key": 9,
         "latch_delta": 256,
         "global_load_offset": 17
+      },
+      "teleport_evidence": {
+        "constructor": 4988464,
+        "factory_id_push": 5009214,
+        "root_id": 103,
+        "tabs": [
+          104,
+          105,
+          106
+        ],
+        "close": 107,
+        "destination_resource_type": 5,
+        "destination_status_offset": 196,
+        "current_location_offset": 192,
+        "destination_available_status": 2
       }
     }
   ]

@@ -34,7 +34,7 @@ static SettingsModel model;
 static unsigned game;
 static unsigned keymap_state;
 static unsigned menu_doc_scroll,menu_doc_total,menu_doc_step=14;
-static int menu_doc_swap=-1;
+static int menu_doc_swap=-1,menu_doc_aim=-1,menu_doc_interact=-1;
 static WCHAR menu_doc_wide[4096];
 static void keymap_collect_specials(void);
 static int ready,active,editing,footer,confirm_discard,picker,pick_focus,pick_scroll,barrier;
@@ -499,11 +499,16 @@ static const char *keymap_hint(void)
     if(keymap_state==3)return RuntimeText_KeymapDualHint;
     return RuntimeText_KeymapRescueHint;
 }
-/* 文档只使用菜单映射。世界改键与技能绑定不适用于原生菜单，不能混入确认提示。 */
+/* 菜单确认与世界预览各取自己的改键字段，技能快捷绑定不混入这些操作。 */
 static const char *menu_document_key(const char *name,size_t length)
 {
     static const char *names[]={"stick","LB","RB","X","Y","BACK","START","R3"};
     static const unsigned keys[]={2,1,7,16,17,4,10,9};
+    if((length==7 && !memcmp(name,"preview",7)) || (length==8 && !memcmp(name,"interact",8))){
+        static const unsigned cells[]={14,15,16,17,4,10,3,9};
+        int button=model.draft.values[length==7 ? CONFIG_WORLD_AIM:CONFIG_WORLD_INTERACT];
+        return button>=0 && button<8 ? RuntimeText_KeymapKeys[cells[button]]:RuntimeText_KeymapNoEffect;
+    }
     int swapped=model.draft.values[CONFIG_MENU_SWAP_AB]!=0;
     if(length==7 && !memcmp(name,"confirm",7))return RuntimeText_KeymapKeys[swapped ? 15:14];
     if(length==6 && !memcmp(name,"cancel",6))return RuntimeText_KeymapKeys[swapped ? 14:15];
@@ -528,8 +533,9 @@ enum {MENU_DOC_VIEW_HEIGHT=232};
 static void menu_document_layout(void)
 {
     int swap=model.draft.values[CONFIG_MENU_SWAP_AB]!=0;
-    if(menu_doc_total && menu_doc_swap==swap)return;
-    /* 只有影响正文的菜单设置变化才重新排版；读取草稿不写配置，也不改变正在使用的按键。 */
+    int aim=model.draft.values[CONFIG_WORLD_AIM],interact=model.draft.values[CONFIG_WORLD_INTERACT];
+    if(menu_doc_total && menu_doc_swap==swap && menu_doc_aim==aim && menu_doc_interact==interact)return;
+    /* 只有影响正文的设置字段变化才重新排版；读取草稿不写配置，也不改变正在使用的按键。 */
     char body[8192];menu_document(body,sizeof body);
     MultiByteToWideChar(CP_UTF8,0,body,-1,menu_doc_wide,4096);
     if(!help_font)help_font=CreateFontW(-14,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,GB2312_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,DEFAULT_QUALITY,DEFAULT_PITCH,RuntimeText_Settings_FontFace);
@@ -537,7 +543,7 @@ static void menu_document_layout(void)
     HGDIOBJ old=SelectObject(dc,help_font);TEXTMETRICW metrics;
     if(GetTextMetricsW(dc,&metrics) && metrics.tmHeight>0)menu_doc_step=(unsigned)metrics.tmHeight;
     RECT r={0,0,560,0};DrawTextW(dc,menu_doc_wide,-1,&r,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
-    menu_doc_total=(unsigned)r.bottom;menu_doc_swap=swap;SelectObject(dc,old);DeleteDC(dc);
+    menu_doc_total=(unsigned)r.bottom;menu_doc_swap=swap;menu_doc_aim=aim;menu_doc_interact=interact;SelectObject(dc,old);DeleteDC(dc);
     unsigned maximum=menu_doc_total>MENU_DOC_VIEW_HEIGHT ? menu_doc_total-MENU_DOC_VIEW_HEIGHT:0;
     if(menu_doc_scroll>maximum)menu_doc_scroll=maximum;
 }

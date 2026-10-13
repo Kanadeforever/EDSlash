@@ -26,8 +26,8 @@ static void *character_submission;
  * 返回时必须再次验证原登记对象与显示状态，不能复用已销毁的指针。 */
 static MenuState resume_grid;
 static bool installed,frame_captured;
-enum { MENU_KINDS=19, QUEST_KIND=7, SKILL_KIND=8, BAG_KIND=9, STORAGE_KIND=10,
-       SHOP_KIND=11,CRAFT_KIND=12,INLAY_KIND=13,CHARM_KIND=14,QUICK_KIND=15, SETTINGS_KIND=16, CHARACTER_KIND=17, NEWGAME_KIND=18,
+enum { MENU_KINDS=20, QUEST_KIND=7, SKILL_KIND=8, BAG_KIND=9, STORAGE_KIND=10,
+       SHOP_KIND=11,CRAFT_KIND=12,INLAY_KIND=13,CHARM_KIND=14,QUICK_KIND=15, SETTINGS_KIND=16, CHARACTER_KIND=17, NEWGAME_KIND=18, TELEPORT_KIND=19,
        COMBO_NODE_BASE=0x300, GRID_CELL_BASE=0x400, QUICK_CELL_BASE=0x500 };
 static struct {void *container;uint32_t item;int origin;} carried;
 static uintptr_t tables[MENU_KINDS],original[MENU_KINDS][3];
@@ -73,6 +73,7 @@ static int kind_of(void *root)
     if (table && table==g_profile->menu_settings_vtable && Read32(root,0x28)==0xAA) return SETTINGS_KIND;
     if(table && table==g_profile->menu_character_vtable && Read32(root,0x28)==0x1A)return CHARACTER_KIND;
     if(table && table==g_profile->menu_newgame_vtable && Read32(root,0x28)==0x9C)return NEWGAME_KIND;
+    if(table && table==g_profile->menu_teleport_vtable && Read32(root,0x28)==0x67)return TELEPORT_KIND;
     return -1;
 }
 static void *grid_root(unsigned index)
@@ -213,6 +214,15 @@ static unsigned buttons(void *root,int kind,MenuButton *out)
         if (kind==4 && id==0x2A && Read32(node,0xC4)<=1) id=0x200+Read32(node,0xC4);
         if (kind==5 && id==0x2A) id=Read32(node,0xC4);
         int width=(int)Read32(node,0x1C),height=(int)Read32(node,0x20);
+        /* 地区按钮与返回有固定ID；目的地图标由资源类型及原开启状态识别，不猜连续编号。
+         * 未开启占位不聚焦；已显示但不可传送的地点仍可查看，由原确认函数拒绝传送。 */
+        bool teleport_allowed=kind==TELEPORT_KIND && id>=0x68 && id<=0x6B;
+        if(kind==TELEPORT_KIND && !teleport_allowed && Memory_Readable(node,0xC8)) {
+            void *resource=ReadPtr(node,0x50);unsigned status=Read32(node,0xC4);
+            teleport_allowed=Memory_Readable(resource,12) && status>0 && status<=2 &&
+                ((This1)g_profile->ui_property)(resource,NULL,2)==5 &&
+                ((This1)g_profile->ui_property)(resource,NULL,19)!=0xFFFF;
+        }
         bool skill_allowed=kind!=SKILL_KIND ||
             (Read32(root,0xC0)==0x7F ? (id>=0x84 && id<=0x93) || skill_category(id):
              Read32(root,0xC0)==0x80 && !state.skill_region && id>=0x81 && id<=0x8F);
@@ -231,7 +241,7 @@ static unsigned buttons(void *root,int kind,MenuButton *out)
         bool special_slot=grid_kind(kind) && kind>=CRAFT_KIND && id>=slot_first[kind-BAG_KIND] &&
             id<slot_first[kind-BAG_KIND]+slot_count[kind-BAG_KIND] && !state.grid_buttons;
         if (special_slot) grid_allowed=true;
-        if (count<64 && skill_allowed && grid_allowed && (kind==5 ? Read32(node,0x28)==0x2A && id!=0xFFFFFFFFu:kind==4 ? id==0x200 || id==0x201:special_slot || allowed(kind,id)) && ReadPtr(node,0xA4)==root &&
+        if (count<64 && skill_allowed && grid_allowed && (kind==5 ? Read32(node,0x28)==0x2A && id!=0xFFFFFFFFu:kind==4 ? id==0x200 || id==0x201:special_slot || teleport_allowed || allowed(kind,id)) && ReadPtr(node,0xA4)==root &&
             Read32(node,0x64) && width>0 && height>0) {
             out[count++]=(MenuButton){node,id,(int)Read32(node,0x14)+width/2.0,
                                            (int)Read32(node,0x18)+height/2.0};
@@ -928,6 +938,22 @@ void Menu_Update(void)
             state.direction=0;state.barrier=true;return;
         }
     }
+    /* 没有目的地或按钮暂未创建时也能取消；关闭仍调用原Show处理捕获及地图状态。 */
+    if(kind==TELEPORT_KIND && !state.barrier && ((g_intent.pressed & KEY(PAD_B)) || g_intent.menu_toggle)){
+        hide(root);state.barrier=true;return;
+    }
+    if(kind==TELEPORT_KIND && !state.barrier && !(g_intent.pressed & KEY(PAD_B)) && !g_intent.menu_toggle){
+        bool left=(g_intent.pressed & KEY(PAD_LB))!=0,right=(g_intent.pressed & KEY(PAD_RB))!=0;
+        unsigned current=Read32(root,0xC4);
+        if(left!=right && current>=0x68 && current<=0x6A){
+            MenuButton tabs[64];unsigned n=buttons(root,kind,tabs);
+            for(unsigned step=1;step<3;++step){unsigned wanted=0x68+((current-0x68+(left ? 3-step:step))%3);
+                bool found=false;for(unsigned i=0;i<n;++i)if(tabs[i].id==wanted)found=true;
+                if(found){((This2)g_profile->menu_teleport_switch)(root,NULL,(int)wanted,0);
+                    state.id=0;state.direction=0;state.barrier=true;return;}
+            }
+        }
+    }
     if (kind==SKILL_KIND && !state.barrier && !(g_intent.pressed & KEY(PAD_B)) && !g_intent.menu_toggle) {
         bool left=(g_intent.pressed & KEY(PAD_LB))!=0,right=(g_intent.pressed & KEY(PAD_RB))!=0;
         if (left!=right) {
@@ -962,6 +988,12 @@ void Menu_Update(void)
         /* 类型说明栏可以查看，但学习页初始焦点仍取视觉左上的技能图标。 */
         if(kind==SKILL_KIND && Read32(root,0xC0)==0x7F)
             for(unsigned i=0;i<count;++i)if(list[i].id>=0x84 && list[i].id<=0x93){preferred=list[i].id;break;}
+        if(kind==TELEPORT_KIND){
+            /* 优先可传送且不是当前位置的点；没有目的地时保留地区／返回按钮。 */
+            for(unsigned i=0;i<count;++i)if(list[i].id<0x68 || list[i].id>0x6B){
+                if(Read32(list[i].object,0xC4)==2 && Read32(list[i].object,0xC0)!=1){preferred=list[i].id;break;}
+            }
+        }
         if(kind==1){
             /* 系统项ID顺序不代表视觉顺序；最上方的可见有效按钮才是默认第一项。 */
             unsigned first=0;
@@ -1043,6 +1075,10 @@ void Menu_Update(void)
             if (after==UINT32_MAX) memset(&carried,0,sizeof carried);
             else if (cell && before!=after && origin>=0) {carried.container=container;carried.item=after;carried.origin=origin;}
         }
+    } else if(kind==TELEPORT_KIND){
+        /* 原确认仍检查冷却、当前地区、开启状态和当前位置，并调用原go脚本。
+         * 地区按钮及返回也交给同一原入口，插件不直接写地图或传送角色。 */
+        project();((This3)g_profile->menu_teleport_primary)(root,NULL,0,0,NULL);
     } else if (kind==SKILL_KIND) {
         /* 原入口检查技能点/已学状态/连招容量；这里只提供独立焦点，不改技能或列表数据。 */
         project();((This3)g_profile->menu_skill_primary)(root, NULL,0,0,NULL);
@@ -1141,12 +1177,13 @@ MENU_WRAPPERS(15)
 MENU_WRAPPERS(16)
 MENU_WRAPPERS(17)
 MENU_WRAPPERS(18)
+MENU_WRAPPERS(19)
 static uintptr_t replacement[MENU_KINDS][3];
 static BYTE saved_talk_picker[5];
 static bool picker_installed;
-static BYTE saved_skill_calls[3][5];
-static bool skill_calls_installed[3];
-static uintptr_t skill_call_address[3],skill_call_target[3],skill_call_hook[3];
+static BYTE saved_skill_calls[4][5];
+static bool skill_calls_installed[4];
+static uintptr_t skill_call_address[4],skill_call_target[4],skill_call_hook[4];
 static BYTE saved_shop_positions[3][6];static bool shop_positions_installed[3];
 static BOOL (WINAPI *original_menu_position)(LPPOINT);
 static BOOL WINAPI menu_position_hook(LPPOINT point)
@@ -1165,7 +1202,7 @@ static int __fastcall skill_base_hook(void *root,void *unused)
     (void)unused;
     int result=((This0)g_profile->menu_message_base_tick)(root, NULL);
     /* 原base更新可以清掉悬停；必须在原技能详情刷新之前重新投影手柄焦点。 */
-    if (owns() && state.root==root && kind_of(root)==SKILL_KIND) project();
+    if (owns() && state.root==root && (kind_of(root)==SKILL_KIND || kind_of(root)==TELEPORT_KIND)) project();
     return result;
 }
 static int __fastcall combo_hit_hook(void *root,void *unused)
@@ -1221,7 +1258,7 @@ void Menu_Shutdown(void)
         if (!memcmp((void *)g_profile->menu_talk_picker_call,bytes,5)) Memory_Patch((void *)g_profile->menu_talk_picker_call,saved_talk_picker,5);
         picker_installed=false;
     }
-    for (unsigned i=0;i<3;++i) if (skill_calls_installed[i]) {
+    for (unsigned i=0;i<4;++i) if (skill_calls_installed[i]) {
         BYTE bytes[5]={0xE8};int32_t rel=(int32_t)(skill_call_hook[i]-skill_call_address[i]-5);
         memcpy(bytes+1,&rel,4);
         if (Memory_Readable((void *)skill_call_address[i],5) && !memcmp((void *)skill_call_address[i],bytes,5))
@@ -1246,7 +1283,7 @@ bool Menu_Initialize(void)
     tables[7]=g_profile->menu_quest_vtable;tables[8]=g_profile->menu_skill_vtable;
     tables[9]=g_profile->menu_bag_vtable;tables[10]=g_profile->menu_storage_vtable;
     tables[11]=g_profile->menu_shop_vtable;tables[12]=g_profile->menu_craft_vtable;
-    tables[13]=g_profile->menu_inlay_vtable;tables[14]=g_profile->menu_charm_vtable;tables[15]=g_profile->menu_hud_vtable;tables[16]=g_profile->menu_settings_vtable;tables[17]=g_profile->menu_character_vtable;tables[18]=g_profile->menu_newgame_vtable;
+    tables[13]=g_profile->menu_inlay_vtable;tables[14]=g_profile->menu_charm_vtable;tables[15]=g_profile->menu_hud_vtable;tables[16]=g_profile->menu_settings_vtable;tables[17]=g_profile->menu_character_vtable;tables[18]=g_profile->menu_newgame_vtable;tables[19]=g_profile->menu_teleport_vtable;
     uintptr_t expected[MENU_KINDS][3]={
         {g_profile->menu_title_tick,g_profile->menu_title_show,g_profile->menu_title_hover},
         {g_profile->menu_system_tick,g_profile->menu_system_show,g_profile->menu_system_hover},
@@ -1266,7 +1303,8 @@ bool Menu_Initialize(void)
         {g_profile->menu_hud_tick,g_profile->menu_hud_show,g_profile->menu_hud_hover},
         {g_profile->menu_settings_tick,g_profile->menu_settings_show,g_profile->menu_settings_hover},
         {g_profile->menu_character_tick,g_profile->menu_character_show,g_profile->menu_character_hover},
-        {g_profile->menu_newgame_tick,g_profile->menu_newgame_show,g_profile->menu_newgame_hover}};
+        {g_profile->menu_newgame_tick,g_profile->menu_newgame_show,g_profile->menu_newgame_hover},
+        {g_profile->menu_teleport_tick,g_profile->menu_teleport_show,g_profile->menu_teleport_hover}};
     uintptr_t hooks[MENU_KINDS][3]={{(uintptr_t)tick0,(uintptr_t)show0,(uintptr_t)hover0},
         {(uintptr_t)tick1,(uintptr_t)show1,(uintptr_t)hover1},
         {(uintptr_t)tick2,(uintptr_t)show2,(uintptr_t)hover2},
@@ -1285,7 +1323,8 @@ bool Menu_Initialize(void)
         {(uintptr_t)tick15,(uintptr_t)show15,(uintptr_t)hover15},
         {(uintptr_t)tick16,(uintptr_t)show16,(uintptr_t)hover16},
         {(uintptr_t)tick17,(uintptr_t)show17,(uintptr_t)hover17},
-        {(uintptr_t)tick18,(uintptr_t)show18,(uintptr_t)hover18}};
+        {(uintptr_t)tick18,(uintptr_t)show18,(uintptr_t)hover18},
+        {(uintptr_t)tick19,(uintptr_t)show19,(uintptr_t)hover19}};
     memcpy(replacement,hooks,sizeof hooks);
     /* 全部槽先验证再写，拒绝被其它补丁替换的入口；不会占用DisplayFix的Draw/picker。 */
     for (unsigned i=0;i<MENU_KINDS;++i) for (unsigned j=0;j<3;++j) {
@@ -1308,6 +1347,7 @@ bool Menu_Initialize(void)
         !g_profile->menu_settings_close || !g_profile->menu_settings_apply || !g_profile->menu_settings_slider_set) return false;
     if(Read32((void *)tables[17],0x24)!=g_profile->menu_character_primary ||
         Read32((void *)tables[18],0x24)!=g_profile->menu_newgame_primary || !g_profile->menu_newgame_cycle)return false;
+    if(Read32((void *)tables[19],0x24)!=g_profile->menu_teleport_primary || !g_profile->menu_teleport_switch)return false;
     uintptr_t primaries[4]={g_profile->menu_shop_primary,g_profile->menu_craft_primary,g_profile->menu_inlay_primary,g_profile->menu_charm_primary};
     for (unsigned i=0;i<4;++i) if (!primaries[i] || Read32((void *)tables[i+11],0x24)!=primaries[i]) return false;
     if (!HookManager_Claim(SHARED_HOOK_CONTROLLER_MENU,RUNTIME_MODULE_CONTROLLER)) return false;
@@ -1329,7 +1369,9 @@ bool Menu_Initialize(void)
     skill_call_target[1]=skill_call_target[2]=g_profile->menu_skill_combo_hit;
     skill_call_hook[0]=(uintptr_t)skill_base_hook;
     skill_call_hook[1]=skill_call_hook[2]=(uintptr_t)combo_hit_hook;
-    for (unsigned i=0;i<3;++i) {
+    skill_call_address[3]=g_profile->menu_teleport_base_call;skill_call_target[3]=g_profile->menu_message_base_tick;
+    skill_call_hook[3]=(uintptr_t)skill_base_hook;
+    for (unsigned i=0;i<4;++i) {
         skill_calls_installed[i]=patch_menu_call(skill_call_address[i],skill_call_target[i],skill_call_hook[i],saved_skill_calls[i]);
         if (!skill_calls_installed[i]) {Menu_Shutdown();return false;}
     }

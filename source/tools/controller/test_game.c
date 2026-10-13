@@ -41,7 +41,7 @@ static int test_omni_setting=1;
 static int test_inspect_distance=160,test_rumble_setting=1;
 static int test_single_trigger=1,test_combo_switch=0,test_action_menu_nav=2;
 #endif
-static int test_dodge_setting=1,test_dodge_distance=128,test_aim_ms=1000;
+static int test_dodge_setting=1,test_dodge_distance=128,test_aim_ms=500;
 static int test_guard_setting=1,test_run_setting=1,test_cost=-1,test_recovery=-1;
 static unsigned checks,readiness_logs;
 static unsigned move_requests;
@@ -1126,7 +1126,17 @@ static void jump_regression(bool expansion)
         ptr(roles[0],profile.active_offset,NULL);Feedback_RuntimeEnded();animation_done=true;++engine_tick;
         CHECK(!Feedback_Selection(&selection,&icon));animation_done=false;
     }
-    jump_builtin=false;test_aim_ms=1000;
+    /* 每次取消立即清落点和反馈；持续按预览键、随后松开均不再发动作。 */
+    ptr(roles[0],profile.active_offset,NULL);Combat_Reset();Feedback_End();g_intent.layer=LAYER_GAME;
+    g_intent.pressed=g_intent.held=KEY(PAD_B);Game_Update();POINT cancel_point;CHECK(Game_JumpAnchor(&cancel_point));
+    int cancel_releases=releases;g_intent.pressed=KEY(PAD_A);g_intent.held=KEY(PAD_A)|KEY(PAD_B);Game_Update();
+    CHECK(!Game_JumpAnchor(&cancel_point) && releases==cancel_releases);
+    int cancel_selection,cancel_icon;CHECK(!Feedback_Selection(&cancel_selection,&cancel_icon));
+    g_intent.pressed=0;g_intent.held=KEY(PAD_B);Game_Update();CHECK(!Game_JumpAnchor(&cancel_point) && releases==cancel_releases);
+    g_intent.held=0;Game_Update();CHECK(releases==cancel_releases);
+    g_intent.pressed=g_intent.held=KEY(PAD_B);Game_Update();CHECK(Game_JumpAnchor(&cancel_point));
+    g_intent.pressed=KEY(PAD_A);Game_Update();CHECK(!Game_JumpAnchor(&cancel_point));
+    jump_builtin=false;test_aim_ms=500;
     /* 预览时切组合层、失焦或世界失效，取消而非自动补跳；B菜单用途不受影响。 */
     ptr(roles[0],profile.active_offset,NULL);g_intent.pressed=g_intent.held=KEY(PAD_B);g_input.now=5000;
     Game_Update();int before=releases;g_intent.layer=LAYER_DUAL;g_intent.pressed=0;Game_Update();

@@ -51,6 +51,14 @@ def verify_static_sources(pe, profile):
         assert pe.read(branch+8,5)==b'\xa0'+struct.pack('<I',keyboard+0x100+9)
         assert pe.read(branch+17,6)==b'\x8b\x0d'+struct.pack('<I',profile['addresses']['menu_map_global'])
         assert struct.unpack('<I',pe.read(profile['addresses']['menu_map_vtable']+0x1C,4))[0]==profile['addresses']['menu_map_show']
+    # 工厂以JM 0x67注册传送类；虚表和base Tick调用须与该类的精确入口一致。
+    teleport=profile.get('teleport_evidence')
+    if teleport:
+        assert pe.read(teleport['factory_id_push'],2)==bytes((0x6A,0x67))
+        for offset,key in [(4,'menu_teleport_tick'),(0x1C,'menu_teleport_show'),(0x30,'menu_teleport_hover'),(0x24,'menu_teleport_primary')]:
+            assert struct.unpack('<I',pe.read(profile['addresses']['menu_teleport_vtable']+offset,4))[0]==profile['addresses'][key]
+        call_address=profile['addresses']['menu_teleport_base_call'];call=pe.read(call_address,5)
+        assert call[0]==0xE8 and call_address+5+struct.unpack('<i',call[1:])[0]==profile['addresses']['menu_message_base_tick']
     picker=profile['addresses']['inspect_static_picker']
     for offset,opcode,field in [(0,b'\x8b\x15','inspect_map_global'),
                                 (0xE4,b'\x8b\x35','inspect_map_global'),

@@ -60,7 +60,7 @@ static const ConfigDescriptor fields[CONFIG_COUNT]={
      CONFIG_CHOICE,0,0,1,1,NULL,"face|dpad",CONFIG_APPLY_FRAME},
     N(CONFIG_AIM_EXPAND_MS,"controller.skill_aim","expand_time_ms",RuntimeText_Config_AimSpreadTimeLabel,
       RuntimeText_Config_AimSpreadTimeDescription,
-      1000,100,10000,50,CONFIG_APPLY_FRAME),
+      500,100,10000,50,CONFIG_APPLY_FRAME),
     {CONFIG_MENU_SWAP_AB,"controller.menu","swap_confirm_cancel",RuntimeText_Config_SwapMenuConfirmCancelLabel,
      RuntimeText_Config_SwapMenuConfirmCancelDescription,
      CONFIG_BOOL,0,0,1,1,NULL,NULL,CONFIG_APPLY_IDLE},
