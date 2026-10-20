@@ -101,11 +101,11 @@ static int snapshot(const BITMAPINFOHEADER *header,const void *pixels)
 static int wheel_last_row_regression(void)
 {
     SettingsModel before=model;int old_footer=footer;
-    model.page=1;model.scroll[1]=0;model.focus[1]=11;footer=editing=picker=0;
-    CHECK(SettingsModel_Field(1,11)==CONFIG_WORLD_MAP && SettingsModel_Field(1,12)==CONFIG_WORLD_SYSTEM);
+    model.page=1;model.scroll[1]=0;model.focus[1]=12;footer=editing=picker=0;
+    CHECK(SettingsModel_Field(1,12)==CONFIG_WORLD_MAP && SettingsModel_Field(1,13)==CONFIG_WORLD_SYSTEM);
     CHECK(SettingsWindow_Wheel(-60) && !model.scroll[1] && !footer);
     CHECK(SettingsWindow_Wheel(-60) && model.scroll[1]==1 && !footer);
-    mouse_click(24,342);CHECK(model.focus[1]==12 && editing && edit_id==CONFIG_WORLD_SYSTEM);
+    mouse_click(312,342);CHECK(model.focus[1]==13 && editing && edit_id==CONFIG_WORLD_SYSTEM);
     cancel();CHECK(SettingsWindow_Wheel(120) && !model.scroll[1]);
     CHECK(SettingsWindow_Wheel(-1200) && model.scroll[1]==1);
     CHECK(SettingsWindow_Wheel(1200) && !model.scroll[1]);
@@ -316,9 +316,9 @@ int wmain(void)
     model.draft_bindings[0]=(ConfigBinding){1,123,1};skill_count=1;skills[0].selector=123;skills[0].icon=2;strcpy(skills[0].name,"测试技能");
     keymap_effect(14,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,"测试技能") && keymap_selection==123 && keymap_icon==2);SettingsModel_Discard(&model);
     keymap_state=1;keymap_effect(14,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(!strcmp(keymap_description,RuntimeText_KeymapNoEffect));
-    static BYTE shown_combo_node[16];wr(fake_hud,(3+13)*16,1);wr(fake_hud,(3+13)*16+4,(uint32_t)(uintptr_t)shown_combo_node);
+    model.draft.values[CONFIG_COMBO_SWITCH]=0;static BYTE shown_combo_node[16];wr(fake_hud,(3+13)*16,1);wr(fake_hud,(3+13)*16+4,(uint32_t)(uintptr_t)shown_combo_node);
     keymap_effect(14,keymap_description,sizeof keymap_description,&keymap_selection,&keymap_icon);CHECK(strstr(keymap_description,"第3套"));
-    wr(fake_hud,(3+13)*16,0);keymap_state=0;move(4);CHECK(keymap_state==1);move(3);CHECK(keymap_state==0);mouse_click(410,100);CHECK(keymap_state==1);mouse_click(195,100);CHECK(keymap_state==0);
+    wr(fake_hud,(3+13)*16,0);SettingsModel_Discard(&model);keymap_state=0;move(4);CHECK(keymap_state==1);move(3);CHECK(keymap_state==0);mouse_click(410,100);CHECK(keymap_state==1);mouse_click(195,100);CHECK(keymap_state==0);
     move(2);CHECK(footer==1);move(4);CHECK(footer==2);move(4);CHECK(footer==2);
     mouse_click(16+TAB_STEP+20,50);CHECK(model.page==0);model.help=0;footer=0;
     /* 数值编辑取消只撤销当前字段；技能候选取消不改绑定，选中才写草稿。 */
@@ -345,6 +345,35 @@ int wmain(void)
     skills[1]=skills[0];skills[1].selector=124;skills[1].kind=0;skill_count=2;picker_rebuild(123);CHECK(skill_view_count==3 && skill_view[0]==UINT32_MAX);
     skill_count=1;
     /* 大写键位只改显示，不改变保存枚举；三个页面都有真实滚动位置。 */
+    /* 所有入口共用依赖规则，灰色项不能打开编辑器或被快捷重置。 */
+    SettingsModel dependency_snapshot=model;footer=picker=editing=0;
+    const ConfigId parents[]={CONFIG_DISPLAY_ENABLED,CONFIG_PICKUP_MODE,CONFIG_GUARD_MODE,CONFIG_RECOVERY_MODE,CONFIG_DIRECTIONAL_DODGE,CONFIG_CONTROLLER_ENABLED,CONFIG_COMBO_OFFSET,CONFIG_LEGACY_ULTIMATE,CONFIG_RUN_MODE,CONFIG_CENTER_HUD};
+    const ConfigId children[]={CONFIG_BASE_HEIGHT,CONFIG_PICKUP_INTERVAL,CONFIG_GUARD_PERCENT,CONFIG_RECOVERY_PERCENT,CONFIG_DODGE_DISTANCE,CONFIG_DEADZONE,CONFIG_OFFSET_GRACE_MS,CONFIG_COMBO_SWITCH,CONFIG_WORLD_RUN,CONFIG_AUXILIARY_UI};
+    for(unsigned n=0;n<sizeof parents/sizeof *parents;++n) {
+        model=dependency_snapshot;model.draft.values[CONFIG_DISPLAY_ENABLED]=1;model.draft.values[CONFIG_CONTROLLER_ENABLED]=1;
+        model.draft.values[parents[n]]=parents[n]==CONFIG_LEGACY_ULTIMATE ? 1:0;
+        ConfigId child=children[n];CHECK(!SettingsModel_FieldEnabled(&model,child));
+        int before=model.draft.values[child];CHECK(!SettingsModel_SetInt(&model,child,before));
+        for(unsigned page=0;page<2;++page)for(unsigned i=0;i<SettingsModel_Count(page);++i)if(SettingsModel_Field(page,i)==child) {
+            model.page=page;model.focus[page]=i;activate();CHECK(!editing);
+            SettingsModel_ResetItem(&model,i);CHECK(model.draft.values[child]==before);
+        }
+        model.draft.values[parents[n]]=parents[n]==CONFIG_LEGACY_ULTIMATE ? 0:1;
+        CHECK(SettingsModel_FieldEnabled(&model,child));
+    }
+    model=dependency_snapshot;model.draft.values[CONFIG_DISPLAY_ENABLED]=1;
+    CHECK(SettingsModel_FieldEnabled(&model,CONFIG_BASE_HEIGHT)); /* 重启项可编辑 */
+    model.role=0;CHECK(!SettingsModel_ItemEnabled(&model,2,0));model=dependency_snapshot;
+    model.draft.values[CONFIG_RUN_MODE]=0;model.draft.values[CONFIG_WORLD_RUN]=0;model.page=1;
+    SettingsModel_ResetPage(&model);CHECK(model.draft.values[CONFIG_RUN_MODE]==1 && model.draft.values[CONFIG_WORLD_RUN]==6);
+    model=dependency_snapshot;
+    char offset_text[64];
+    for(int mode=0;mode<3;++mode){model.draft.values[CONFIG_RUN_MODE]=mode;value_text(CONFIG_RUN_MODE,offset_text,sizeof offset_text);CHECK(!strcmp(offset_text,RuntimeText_RunModeValues[mode]));}
+    model.draft.values[CONFIG_OFFSET_GRACE_MS]=150;value_text(CONFIG_OFFSET_GRACE_MS,offset_text,sizeof offset_text);CHECK(!strcmp(offset_text,"150 ms"));
+    model=dependency_snapshot;
+    for(int mode=0;mode<2;++mode){model.draft.values[CONFIG_COMBO_OFFSET]=mode;value_text(CONFIG_COMBO_OFFSET,offset_text,sizeof offset_text);CHECK(!strcmp(offset_text,mode ? "闪避保留":"原版"));}
+    for(int mode=0;mode<2;++mode){model.draft.values[CONFIG_TARGET_MODE]=mode;value_text(CONFIG_TARGET_MODE,offset_text,sizeof offset_text);CHECK(!strcmp(offset_text,mode ? "重编":"原版"));}
+    CHECK(!strcmp(RuntimeConfig_Descriptor(CONFIG_TARGET_MODE)->label,"锁定模式"));
     char key_text[64];value_text(CONFIG_WORLD_INTERACT,key_text,sizeof key_text);CHECK(!strcmp(key_text,"A"));
     value_text(CONFIG_WORLD_SYSTEM,key_text,sizeof key_text);CHECK(!strcmp(key_text,"START"));
     picker=editing=0;model.page=0;model.scroll[0]=0;model.focus[0]=7;RECT h=help_rectangle();CHECK(h.left==16 && h.top==82);
@@ -420,7 +449,7 @@ int wmain(void)
     repeat_direction(4,2100,&old_dir,&started,&next);CHECK(next==2135);
     edit_id=CONFIG_GUARD_PERCENT;model.focus[1]=0; /* 改为该字段所在的真实页/焦点。 */
     model.page=0;for(unsigned i=0;i<SettingsModel_Count(0);++i)if(SettingsModel_Field(0,i)==CONFIG_GUARD_PERCENT)model.focus[0]=i;
-    model.draft.values[CONFIG_GUARD_PERCENT]=0;old_dir=0;repeat_direction(4,100,&old_dir,&started,&next);
+    model.draft.values[CONFIG_GUARD_MODE]=1;model.draft.values[CONFIG_GUARD_PERCENT]=0;old_dir=0;repeat_direction(4,100,&old_dir,&started,&next);
     CHECK(model.draft.values[CONFIG_GUARD_PERCENT]==1);repeat_direction(4,2100,&old_dir,&started,&next);CHECK(next==2104);
     model.draft.values[CONFIG_GUARD_PERCENT]=10000;move(1);CHECK(model.draft.values[CONFIG_GUARD_PERCENT]==10000);
     model.draft.values[CONFIG_GUARD_PERCENT]=0;move(2);CHECK(model.draft.values[CONFIG_GUARD_PERCENT]==0);

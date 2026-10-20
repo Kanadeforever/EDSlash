@@ -51,6 +51,8 @@ Intent Control_Step(ControlState *s, const PadInput *in)
 {
     Intent out;
     memset(&out, 0, sizeof out);
+    RunMode mode=(unsigned)in->run_mode<=RUN_TOGGLE ? in->run_mode:RUN_MODERN;
+    if (s->run_mode!=mode) {s->run_mode=mode;s->running=false;s->run_toggle=false;}
     bool neutral = !in->buttons && !in->lt && !in->rt &&
         in->lx == 0 && in->ly == 0 && in->rx == 0 && in->ry == 0;
     if (!in->connected || !in->focused) {
@@ -135,10 +137,20 @@ Intent Control_Step(ControlState *s, const PadInput *in)
         else out.rx=out.ry=0;
     }
     bool can_move = next == LAYER_GAME || next == LAYER_SKILL || next == LAYER_MEDICINE || next == LAYER_ITEM;
-    if (can_move && (in->lx != 0 || in->ly != 0)) {
-        if (next == LAYER_GAME && (out.pressed & KEY(PAD_L3))) s->running = true;
-    } else s->running = false;
-    out.run = s->running;
+    bool moving=can_move && (out.lx!=0 || out.ly!=0);
+    if (mode==RUN_SIMPLE) {
+        /* 用死区处理后的二维力度判断，斜推与横推使用同一90%阈值；L3不参与。 */
+        s->running=moving && hypotf(out.lx,out.ly)>0.9f;
+    } else if (mode==RUN_TOGGLE) {
+        /* 只有普通世界层的新按键切换偏好，菜单、技能组合与旧持键不能误切。 */
+        if (next==LAYER_GAME && (out.pressed&KEY(PAD_L3))) s->run_toggle=!s->run_toggle;
+        s->running=moving && s->run_toggle;
+    } else {
+        /* 现代方式只在移动中启动跑步，停止或进入不可移动层就恢复走路。 */
+        if (moving) {if(next==LAYER_GAME && (out.pressed&KEY(PAD_L3)))s->running=true;}
+        else s->running=false;
+    }
+    out.run=s->running;
     /* START 延迟一个短窗口，让依次按下 BACK+START 也不会先弹系统菜单。 */
     if ((next == LAYER_GAME || next == LAYER_MENU) && (out.pressed & KEY(PAD_START))) {
         s->start_pending = true; s->start_at = in->now;

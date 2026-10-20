@@ -20,7 +20,7 @@ static Intent step(uint32_t buttons)
 static void reset(void)
 {
     memset(&state,0,sizeof state); memset(&in,0,sizeof in);
-    in.connected=in.focused=true;
+    in.connected=in.focused=true;in.run_mode=RUN_MODERN;
     step(0); step(0);
 }
 
@@ -146,6 +146,20 @@ int main(void)
     old=current;current.rt=true;CHECK(Control_FreshInput(&current,&old));
     old=current;CHECK(!Control_FreshInput(&current,&old));
     current.focused=false;CHECK(!Control_FreshInput(&current,&old));
+    /* 三种跑步意图以实际时间线验证，切换偏好与当前是否移动分开。 */
+    reset();in.run_mode=RUN_SIMPLE;step(0);in.lx=0.9f;CHECK(!step(0).run);
+    in.lx=0.901f;CHECK(step(0).run);in.lx=0.7f;in.ly=0.7f;CHECK(step(0).run);
+    in.lx=0.3f;in.ly=0;CHECK(!step(KEY(PAD_L3)).run);
+    reset();in.run_mode=RUN_TOGGLE;step(0);CHECK(!step(KEY(PAD_L3)).run);
+    step(0);in.lx=0.5f;CHECK(step(0).run);in.lx=0;CHECK(!step(0).run);
+    in.lx=0.5f;CHECK(step(0).run);CHECK(!step(KEY(PAD_L3)).run);
+    step(0);in.rt=true;step(0);step(KEY(PAD_L3));step(0);in.rt=false;step(0);CHECK(!step(0).run);
+    step(KEY(PAD_L3));step(0);CHECK(step(0).run);in.focused=false;CHECK(!step(0).run);
+    in.focused=true;in.lx=0;step(0);step(0);in.lx=0.5f;CHECK(step(0).run);
+    in.run_mode=RUN_MODERN;CHECK(!step(0).run);
+    reset();in.run_mode=RUN_TOGGLE;in.world_remap=true;
+    for(unsigned i=0;i<7;++i)in.world_buttons[i]=world_map[i];
+    in.world_buttons[4]=PAD_BACK;step(0);step(KEY(PAD_BACK));step(0);in.lx=0.5f;CHECK(step(0).run);
     /* 百分比按十进制定点解析，不能把12.50截断成12或当作体力点数。 */
     printf("输入时间线与八方向检查通过：%u 项\n",checks);
     return 0;

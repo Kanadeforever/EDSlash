@@ -28,10 +28,14 @@ void Combat_RequestSkillPoint(int selection,bool left_style,const WorldPoint *po
 bool Combat_PreviewSkill(void *role,int selection,const WorldPoint *point,ResolvedSkill *out);
 
 bool Skill_Resolve(void *role,int selection,const WorldPoint *point,const ActionHistory *history,ResolvedSkill *out);
+/* 只由实际成功建立的玩家闪避通知；失败请求不得保留进度。 */
+void Combat_DodgeStarted(void *role);
+/* 原版归零分支的资格查询：非闪避保留状态完整调用原查询。 */
+int __fastcall Combat_ComboResetHook(void *hud,void *unused,int selection);
 void Combat_Reset(void);
 void Combat_Suspend(void);
 uint32_t Combat_Target(void);
-void Combat_Update(void *role,uint32_t candidate);
+void Combat_Update(void *role);
 bool Combat_OwnsHistory(void);
 bool Combat_AllowsMouseRetry(void);
 void Combat_Record(int selector,int direction);
@@ -40,4 +44,6 @@ void Combat_End(void);
 void Combat_ExportHistory(void);
 void Combat_ImportHistory(void);
 void Combat_RecordExtra(int selector,int direction,int extra);
+/* 创建通知携带真实Runtime，命中锁才可拒绝旧攻击会话的迟到弹道。 */
+void Combat_RecordRuntime(int selector,int direction,int extra,void *runtime);
 #endif

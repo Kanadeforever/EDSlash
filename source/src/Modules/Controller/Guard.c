@@ -2,6 +2,7 @@
 #include "Guard.h"
 #include "../../Runtime/Perf.h"
 #include "Combat.h"
+#include "Target.h"
 #include <math.h>
 #include <string.h>
 
@@ -20,7 +21,7 @@ static uintptr_t dodge_resume ,dodge_failure ;
 typedef int (__fastcall *Receiver)(void *, void *,void *);
 static Receiver original_receiver;
 static void *receiver_gateway;
-static BYTE saved[9][6];
+static BYTE saved[10][6];
 static bool omnidirectional_guard=true;
 static uintptr_t guard_angle_accept ,guard_angle_reject ;
 static bool modern_dodge=true;
@@ -130,11 +131,17 @@ static int __fastcall receiver_hook(void *victim,void *unused,void *runtime)
         victim_handle=Read32(victim,0x14);
         uint32_t bits=Read32(victim,g_profile->health_offset);memcpy(&health_before,&bits,4);
     }
+    TargetHit target_hit=Target_BeginHit(victim,attacker,runtime,was_enemy);
+    unsigned combat_state=player_hit ? Read32(victim,0x73):0;
+    void *combat_active=player_hit ? ReadPtr(victim,g_profile->active_offset):NULL;
     int64_t native_perf=RuntimePerf_Begin();
     int result=original_receiver(victim, NULL,runtime);
     RuntimePerf_End(PERF_NATIVE_HIT,native_perf);
     /* 原回调可能死亡/换图；不能把旧场景的命中奖励加给新角色。 */
     if (scope==ReadPtr((void *)g_profile->world_global,0)) {
+        Target_EndHit(&target_hit,health_before);
+        if(player_hit && controlled(victim) && (combat_state!=Read32(victim,0x73) ||
+            combat_active!=ReadPtr(victim,g_profile->active_offset))) Target_Interrupted();
         Guard_RecoverHit(victim,attacker,health_before,was_enemy);
         /* 原受击返回成功也可能是格挡或无敌，必须确认同一玩家生命实际减少。
          * 不因按着LT直接排除：体力不足或穿防时，原版确实造成伤害仍应反馈。
@@ -292,7 +299,9 @@ static int __fastcall dodge_init_hook(void *role,void *unused)
     (void)unused;
     if (!claim_dodge(role)) {
         if (controlled(role)) dash.active=false;
-        return ((This0)g_profile->dodge_init)(role, NULL);
+        int result=((This0)g_profile->dodge_init)(role, NULL);
+        if (result && controlled(role)) Combat_DodgeStarted(role);
+        return result;
     }
     memset(&dash,0,sizeof dash);
     dash.world=ReadPtr((void *)g_profile->world_global,0);dash.actor=Read32(role,0x14);
@@ -302,6 +311,7 @@ static int __fastcall dodge_init_hook(void *role,void *unused)
     ((This2)g_profile->facing_point)(role, NULL,(int)(uintptr_t)&probe,(int)(uintptr_t)&dash.start);
     /* 仍使用原版闪避状态和效果开关，只替换八个逻辑更新周期内的直线位移。 */
     Write32(role,g_profile->dodge_counter_offset,8);dash.active=true;
+    Combat_DodgeStarted(role);
     ((This4)g_profile->role_effect)(role, NULL,0x66,1,1,0);
     return 1;
 }
@@ -434,16 +444,16 @@ bool Guard_Initialize(void)
     else Log_Write(ControllerText_Guard_OriginalCostConfigLog );
     if (attack_hit_recovery>=0) Log_Write(ControllerText_Guard_PercentRecoveryConfigLog,attack_hit_recovery/100,attack_hit_recovery%100);
     else Log_Write(ControllerText_Guard_RecoveryMatchesCostConfigLog );
-    uintptr_t targets[9]={g_profile->guard_periodic_call,g_profile->guard_hit_call,
-                         g_profile->guard_input_release_call,g_profile->guard_run_call,g_profile->dodge_gate,g_profile->hit_receiver,g_profile->dodge_init_call,g_profile->dodge_motion_call,g_profile->guard_angle_gate};
-    uintptr_t replacements[9]={(uintptr_t)periodic_hook,(uintptr_t)hit_hook,
-                              (uintptr_t)input_release_hook,(uintptr_t)run_hook,(uintptr_t)dodge_hook,(uintptr_t)receiver_hook,(uintptr_t)dodge_init_hook,(uintptr_t)dodge_motion_hook,(uintptr_t)guard_angle_hook};
-    uintptr_t callees[9]={g_profile->stamina_adjust,g_profile->guard_get,g_profile->guard_get,g_profile->stamina_adjust,0,0,g_profile->dodge_init,g_profile->dodge_motion};
-    for (unsigned i=0;i<9;++i) {
+    uintptr_t targets[10]={g_profile->guard_periodic_call,g_profile->guard_hit_call,
+                         g_profile->guard_input_release_call,g_profile->guard_run_call,g_profile->dodge_gate,g_profile->hit_receiver,g_profile->dodge_init_call,g_profile->dodge_motion_call,g_profile->guard_angle_gate,g_profile->combo_reset_call};
+    uintptr_t replacements[10]={(uintptr_t)periodic_hook,(uintptr_t)hit_hook,
+                              (uintptr_t)input_release_hook,(uintptr_t)run_hook,(uintptr_t)dodge_hook,(uintptr_t)receiver_hook,(uintptr_t)dodge_init_hook,(uintptr_t)dodge_motion_hook,(uintptr_t)guard_angle_hook,(uintptr_t)Combat_ComboResetHook};
+    uintptr_t callees[10]={g_profile->stamina_adjust,g_profile->guard_get,g_profile->guard_get,g_profile->stamina_adjust,0,0,g_profile->dodge_init,g_profile->dodge_motion,0,g_profile->combo_reset_query};
+    for (unsigned i=0;i<10;++i) {
         unsigned size=(i==4 || i==5 || i==8) ? 6:5;
         if (!Memory_Readable((void *)targets[i],size)) return false;
         memcpy(saved[i],(void *)targets[i],size);
-        if (i<4 || i==6 || i==7) {
+        if (i<4 || i==6 || i==7 || i==9) {
             int32_t displacement;memcpy(&displacement,saved[i]+1,4);
             if (saved[i][0]!=0xE8 || targets[i]+5+displacement!=callees[i]) return false;
         } else if (i==4) {
@@ -467,7 +477,7 @@ bool Guard_Initialize(void)
     original_receiver=(Receiver)receiver_gateway;
     dodge_install=g_profile->install_state;dodge_legacy=g_profile->dodge_legacy;
     dodge_resume=g_profile->dodge_resume;dodge_failure=g_profile->dodge_failure;
-    for (unsigned i=0;i<9;++i) {
+    for (unsigned i=0;i<10;++i) {
         BYTE bytes[6]={(i==4 || i==5 || i==8) ? 0xE9:0xE8,0,0,0,0,0x90};
         int32_t displacement=(int32_t)(replacements[i]-targets[i]-5);
         memcpy(bytes+1,&displacement,4);
@@ -485,12 +495,12 @@ bool Guard_Initialize(void)
 void Guard_Shutdown(void)
 {
     if (!installed) return;
-    uintptr_t targets[9]={g_profile->guard_periodic_call,g_profile->guard_hit_call,
-                         g_profile->guard_input_release_call,g_profile->guard_run_call,g_profile->dodge_gate,g_profile->hit_receiver,g_profile->dodge_init_call,g_profile->dodge_motion_call,g_profile->guard_angle_gate};
-    uintptr_t replacements[9]={(uintptr_t)periodic_hook,(uintptr_t)hit_hook,
-                              (uintptr_t)input_release_hook,(uintptr_t)run_hook,(uintptr_t)dodge_hook,(uintptr_t)receiver_hook,(uintptr_t)dodge_init_hook,(uintptr_t)dodge_motion_hook,(uintptr_t)guard_angle_hook};
+    uintptr_t targets[10]={g_profile->guard_periodic_call,g_profile->guard_hit_call,
+                         g_profile->guard_input_release_call,g_profile->guard_run_call,g_profile->dodge_gate,g_profile->hit_receiver,g_profile->dodge_init_call,g_profile->dodge_motion_call,g_profile->guard_angle_gate,g_profile->combo_reset_call};
+    uintptr_t replacements[10]={(uintptr_t)periodic_hook,(uintptr_t)hit_hook,
+                              (uintptr_t)input_release_hook,(uintptr_t)run_hook,(uintptr_t)dodge_hook,(uintptr_t)receiver_hook,(uintptr_t)dodge_init_hook,(uintptr_t)dodge_motion_hook,(uintptr_t)guard_angle_hook,(uintptr_t)Combat_ComboResetHook};
     bool receiver_removed=false;
-    for (unsigned i=0;i<9;++i) {
+    for (unsigned i=0;i<10;++i) {
         BYTE expected[6]={(i==4 || i==5 || i==8) ? 0xE9:0xE8,0,0,0,0,0x90};
         int32_t displacement=(int32_t)(replacements[i]-targets[i]-5);
         memcpy(expected+1,&displacement,4);

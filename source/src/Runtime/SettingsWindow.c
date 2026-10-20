@@ -450,12 +450,14 @@ static void keymap_effect(unsigned key,char *output,size_t capacity,int *selecto
         int button=keymap_world_buttons[key];output[0]=0;
         if(button>=0)for(unsigned i=0;i<7;++i)if(model.draft.values[CONFIG_WORLD_INTERACT+i]==button){
             size_t used=strlen(output);char action[160];
-            if(i==1)snprintf(action,sizeof action,RuntimeText_KeymapPreviewFormat,keymap_jump_name);
+            if(i==4 && model.draft.values[CONFIG_RUN_MODE]==0)continue;
+            if(i==4 && model.draft.values[CONFIG_RUN_MODE]==2)snprintf(action,sizeof action,"%s",RuntimeText_KeymapRunToggle);
+            else if(i==1)snprintf(action,sizeof action,RuntimeText_KeymapPreviewFormat,keymap_jump_name);
             else snprintf(action,sizeof action,"%s",RuntimeText_KeymapActions[i]);
             snprintf(output+used,capacity-used,"%s%s",used ? "/":"",action);
         }
         if(output[0])return;
-        const char *fixed=key==0 ? RuntimeText_KeymapGuard:key==1 ? RuntimeText_KeymapItems:key==2 ? RuntimeText_KeymapMove:
+        const char *fixed=key==0 ? RuntimeText_KeymapGuard:key==1 ? RuntimeText_KeymapItems:key==2 ? (model.draft.values[CONFIG_RUN_MODE]==0 ? RuntimeText_KeymapSimpleMove:RuntimeText_KeymapMove):
             key==6 ? RuntimeText_KeymapSkills:key==7 ? RuntimeText_KeymapThrow:key==4 ? RuntimeText_KeymapRescueChord:
             key==5 ? RuntimeText_KeymapWorldMenus[0]:key==11 ? RuntimeText_KeymapWorldMenus[1]:
             key==12 ? RuntimeText_KeymapWorldMenus[2]:key==13 ? RuntimeText_KeymapWorldMenus[3]:RuntimeText_KeymapNoEffect;
@@ -492,7 +494,7 @@ static void keymap_effect(unsigned key,char *output,size_t capacity,int *selecto
 static const char *keymap_hint(void)
 {
     if(keymap_state==RUNTIME_KEYMAP_DOCUMENT)return RuntimeText_KeymapDocumentHint;
-    if(keymap_state==0)return RuntimeText_KeymapNormalHint;
+    if(keymap_state==0)return model.draft.values[CONFIG_RUN_MODE]==0 ? RuntimeText_KeymapSimpleHint:model.draft.values[CONFIG_RUN_MODE]==2 ? RuntimeText_KeymapToggleHint:RuntimeText_KeymapNormalHint;
     if(keymap_state==1)return model.draft.values[CONFIG_LEGACY_ULTIMATE] ? RuntimeText_KeymapLtLegacyHint:
         model.draft.values[CONFIG_COMBO_SWITCH] ? RuntimeText_KeymapLtDpadHint:RuntimeText_KeymapLtFaceHint;
     if(keymap_state==2)return RuntimeText_KeymapRtHint;
@@ -602,6 +604,9 @@ static void activate(void)
         return;
     }
     if(information_page())return;
+    if(!SettingsModel_ItemEnabled(&model,model.page,model.focus[model.page])) {
+        strcpy(message,RuntimeText_Settings_UnavailableValue);model.help=1;return;
+    }
     message[0]=0;
     if(model.page==2){if(!model.role){strcpy(message,RuntimeText_Settings_UnavailableValue);model.help=1;return;}picker=1;pick_focus=pick_scroll=picker_footer=0;model.help=0;
         ConfigBinding selected=effective_binding(model.focus[2]);picker_rebuild(selected.custom ? selected.selector:-1);
@@ -758,6 +763,10 @@ static void value_text(ConfigId id,char *out,size_t cap)
     if(id==CONFIG_GUARD_MODE)snprintf(out,cap,"%s",v ? RuntimeText_Settings_GuardCostMaximumStaminaPercentValue:RuntimeText_Settings_GuardCostOriginalValue);
     else if(id==CONFIG_RECOVERY_MODE)snprintf(out,cap,"%s",v ? RuntimeText_Settings_HitRecoveryMaximumStaminaPercentValue:RuntimeText_Settings_HitRecoveryMatchesGuardValue);
     else if(id==CONFIG_ACTION_MENU_NAV)snprintf(out,cap,"%s",RuntimeText_SkillMenuNavigationValues[v]);
+    else if(id==CONFIG_COMBO_OFFSET)snprintf(out,cap,"%s",RuntimeText_OffsetValues[v]);
+    else if(id==CONFIG_RUN_MODE)snprintf(out,cap,"%s",RuntimeText_RunModeValues[v]);
+    else if(id==CONFIG_OFFSET_GRACE_MS)snprintf(out,cap,"%d ms",v);
+    else if(id==CONFIG_TARGET_MODE)snprintf(out,cap,"%s",RuntimeText_TargetModeValues[v]);
     else if(id==CONFIG_COMBO_SWITCH)snprintf(out,cap,"%s",v ? RuntimeText_Settings_ComboSwitchDpadValue:RuntimeText_ComboFaceKeys);
     else if(id==CONFIG_PICKUP_MODE){const char *names[]={RuntimeText_PickupDisabled,RuntimeText_Settings_PickupMoneyValue,RuntimeText_Settings_PickupMoneyAndRecoveryValue,RuntimeText_Settings_PickupMoneyRecoveryAndStonesValue,RuntimeText_Settings_PickupAllDropsValue};snprintf(out,cap,"%s",names[v]);}
     else if(f->type==CONFIG_BOOL)snprintf(out,cap,"%s",v ? RuntimeText_Enabled:RuntimeText_Settings_DisabledValue);
@@ -866,8 +875,9 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
     for(unsigned i=0;i<SETTINGS_PAGE_COUNT;++i){box(dc,x+16+(int)i*TAB_STEP,y+38,TAB_WIDTH,30,RGB(40,32,23),SettingsModel_PageAtTab(i)==model.page ? RGB(218,168,80):RGB(104,78,38));button_text(dc,x+24+(int)i*TAB_STEP,y+38,TAB_WIDTH-16,30,pages[i],RGB(226,210,174),DT_LEFT);}
     unsigned start=model.scroll[model.page]*2,count=SettingsModel_Count(model.page);
     for(unsigned i=start;i<count && i<start+12;++i) {
-        int cx=x+16+(int)(i%2)*288,cy=y+82+(int)((i-start)/2)*48;int focused=!footer && model.focus[model.page]==i && (model.page!=2 || model.role);
-        box(dc,cx,cy,280,42,RGB(31,27,21),focused ? RGB(204,69,36):RGB(96,75,43));
+        int enabled=SettingsModel_ItemEnabled(&model,model.page,i);
+        int cx=x+16+(int)(i%2)*288,cy=y+82+(int)((i-start)/2)*48;int focused=enabled && !footer && model.focus[model.page]==i;
+        box(dc,cx,cy,280,42,RGB(31,27,21),!enabled ? RGB(64,64,64):focused ? RGB(204,69,36):RGB(96,75,43));
         char label[96],value_text_buffer[96];int dirty=0;
         if(model.page==2) {
             static const char *names[]={RuntimeText_Key_A,RuntimeText_Key_B,RuntimeText_Key_X,RuntimeText_Key_Y,RuntimeText_Key_Up,RuntimeText_Key_Down,RuntimeText_Key_Left,RuntimeText_Key_Right,RuntimeText_Key_LeftShoulder,RuntimeText_Key_RightShoulder,RuntimeText_Key_Back,RuntimeText_Key_Start,RuntimeText_Key_LeftStick,RuntimeText_Key_RightStick};
@@ -887,8 +897,8 @@ static void paint(RuntimeEventId event,void *subject,unsigned long context,unsig
         /* 双行设置按钮把名称与数值视为一组，按实际字体高度放在42像素框的正中。 */
         TEXTMETRICW metrics;int line=GetTextMetricsW(dc,&metrics) ? metrics.tmHeight:16;
         int group_y=cy+(42-line*2-2)/2;
-        button_text(dc,cx+(model.page==2 ? 54:8),group_y,model.page==2 ? 218:264,line,label,RGB(222,205,172),DT_LEFT);
-        button_text(dc,cx+(model.page==2 ? 54:8),group_y+line+2,model.page==2 ? 218:264,line,value_text_buffer,model.page==2 && !model.role ? RGB(112,112,112):dirty ? RGB(255,178,76):RGB(154,198,149),DT_LEFT);
+        button_text(dc,cx+(model.page==2 ? 54:8),group_y,model.page==2 ? 218:264,line,label,enabled ? RGB(222,205,172):RGB(112,112,112),DT_LEFT);
+        button_text(dc,cx+(model.page==2 ? 54:8),group_y+line+2,model.page==2 ? 218:264,line,value_text_buffer,!enabled ? RGB(112,112,112):dirty ? RGB(255,178,76):RGB(154,198,149),DT_LEFT);
     }
     if(model.page==SETTINGS_PAGE_KEYMAP && keymap_state==RUNTIME_KEYMAP_DOCUMENT){
         menu_document_layout();

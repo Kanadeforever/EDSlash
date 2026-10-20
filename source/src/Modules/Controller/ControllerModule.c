@@ -7,6 +7,7 @@
 #include "../../Runtime/SettingsWindow.h"
 #include "Combat.h"
 #include "Guard.h"
+#include "Target.h"
 #include "Feedback.h"
 #include "Menu.h"
 #include "Cursor.h"
@@ -157,6 +158,7 @@ static BOOL WINAPI keyboard_hook(PBYTE keys)
     /* 安全点及模块确认由同一个生产函数协调，Guard延后接收时保留代数，下帧再确认。 */
     static unsigned guard_generation;
     Guard_SyncSettings(&g_input,&guard_generation);
+    g_input.run_mode=(RunMode)RuntimeConfig_GetInt(CONFIG_RUN_MODE);
     g_input.swap_menu_ab=RuntimeConfig_GetInt(CONFIG_MENU_SWAP_AB)!=0;
     static const unsigned char physical[]={PAD_A,PAD_B,PAD_X,PAD_Y,PAD_BACK,PAD_START,PAD_L3,PAD_R3};
     g_input.world_remap=true;
@@ -186,6 +188,7 @@ static BOOL WINAPI keyboard_hook(PBYTE keys)
         /* 救援模式最后一条程序生成的鼠标移动可能还在消息队列中，重建位置基准。 */
         mouse_position_known=false;
     }
+    Target_SampleInput();
     bool settings_was_open=SettingsWindow_Active();
     if(SettingsWindow_Pad(g_input.buttons,settings_pressed,g_input.lt,g_input.rt,g_input.lx,g_input.ly,g_input.rx,g_input.ry,g_input.now)) {
         settings_capture_seen=true;
@@ -241,16 +244,30 @@ static void __fastcall resolver_hook(void *mouse, void *unused)
     RuntimePerf_End(PERF_GAME,perf);
 }
 
-static void __fastcall history_hook(void *original,void *unused,int selector,int direction,int extra)
+static void __fastcall history_dispatch(void *original,void *unused,int selector,int direction,int extra,void *runtime)
 {
     (void)unused;
     /* 调用点位于原生 Runtime 建立成功之后，已经保留自动续段历史门及受控角色检查。
        普通手柄只写自己的历史；鼠标来源继续走原记录函数，不伪造鼠标左右键标志。 */
-    if (Combat_OwnsHistory()) Combat_RecordExtra(selector,direction,extra);
+    if (Combat_OwnsHistory()) Combat_RecordRuntime(selector,direction,extra,runtime);
     else {
         /* 原生实际建立的新动作接管显示；单纯移动鼠标不撤掉尚在执行的手柄图标。 */
         Feedback_End();
         ((This3)g_profile->history_record)(original, NULL,selector,direction,(void *)(intptr_t)extra);
+    }
+}
+
+/* 两作此CALL的ESI都是真实Runtime。复制原三个栈参数，额外传入ESI；
+ * 分发器清理复制的16字节，本桥再清理原来的12字节，保持原调用点ABI。 */
+static __declspec(naked) void history_hook(void)
+{
+    __asm {
+        push esi
+        push dword ptr [esp+16]
+        push dword ptr [esp+16]
+        push dword ptr [esp+16]
+        call history_dispatch
+        ret 12
     }
 }
 
@@ -340,8 +357,8 @@ static void initialize_runtime(void)
         patch((void *)g_profile->keyboard_iat,&original_keyboard,4);
         patch((void *)g_profile->resolver_call,saved_call,5);Input_Shutdown();return;
     }
-    if (!Guard_Initialize() || !Feedback_Initialize() || !Menu_Initialize() || !ActionMenu_Initialize() || !Cursor_Initialize() || !Inspect_Initialize()) {
-        Inspect_Shutdown();Cursor_Shutdown();ActionMenu_Shutdown();Menu_Shutdown();Guard_Shutdown();Feedback_Shutdown();
+    if (!Guard_Initialize() || !Target_Initialize() || !Feedback_Initialize() || !Menu_Initialize() || !ActionMenu_Initialize() || !Cursor_Initialize() || !Inspect_Initialize()) {
+        Inspect_Shutdown();Cursor_Shutdown();ActionMenu_Shutdown();Menu_Shutdown();Target_Shutdown();Guard_Shutdown();Feedback_Shutdown();
         patch((void *)g_profile->end_call,saved_end_call,5);
         patch((void *)g_profile->retry_call,saved_retry_call,5);
         patch((void *)g_profile->history_call,saved_history_call,5);
@@ -385,7 +402,7 @@ void ControllerModule_Shutdown(void)
     SettingsWindow_Close();
     /* 仅在显式卸载时撤回仍归本模块的入口；进程终止不在Loader锁内关闭SDL线程。 */
     if (!g_profile || !original_keyboard) return;
-        Inspect_Shutdown();Cursor_Shutdown();ActionMenu_Shutdown();Menu_Shutdown();Feedback_Shutdown();Guard_Shutdown();
+        Inspect_Shutdown();Cursor_Shutdown();ActionMenu_Shutdown();Menu_Shutdown();Feedback_Shutdown();Target_Shutdown();Guard_Shutdown();
         if (hooked_window && (WNDPROC)GetWindowLongPtrW(hooked_window,GWLP_WNDPROC)==window_hook)
             SetWindowLongPtrW(hooked_window,GWLP_WNDPROC,(LONG_PTR)previous_window_proc);
         /* 不支持运行中反复热装卸；正常显式卸载时只撤销仍归本插件拥有的补丁。 */

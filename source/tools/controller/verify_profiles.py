@@ -42,6 +42,15 @@ class PE:
 
 def verify_static_sources(pe, profile):
     """从原指令交叉核对静态地图、句柄表及资格回调的来源。"""
+    # 圈的绘制资格与业务目标分离；四样本独立核对角色寄存器、脚下坐标和原精灵调用。
+    ring=profile['addresses'];gate=ring['target_ring_gate'];base=profile['game_id']==1
+    assert pe.read(gate,7)==bytes.fromhex('8b166880000000' if base else '8b176880000000')
+    assert ring['target_ring_resume']==gate+0x63
+    assert pe.read(gate+0x45,8)==bytes.fromhex('8b4c24448b542440')
+    for offset,key in [(0x37,'target_ring_get'),(0x40,'target_ring_clip'),(0x57,'target_ring_get'),(0x5e,'target_ring_draw')]:
+        call=pe.read(gate+offset,5)
+        assert call[0]==0xE8 and gate+offset+5+struct.unpack('<i',call[1:])[0]==ring[key]
+    assert pe.read(gate+0x4e,6)==bytes.fromhex('6aff6a025152')
     # 地址表可以语法正确但指向错误全局。原选择器两次读取同一地图，必须分别相符。
     # 独立地图接口必须与原Tab及其锁存分支读取的对象一致，不能只核函数首字节。
     map_evidence=profile.get('minimap_evidence')
@@ -197,6 +206,15 @@ def verify_baselines(data):
         verify_focus_sources(pe,profile)
         verify_native_settings(pe,profile)
         verify_newgame_sources(pe,profile)
+        # 新锁定桥的网关必须覆盖完整非相对指令，效果表还要从真实消费指令交叉核对。
+        addresses=profile['addresses']
+        assert pe.read(addresses['target_set'],5)==b'\x56\x8b\xf1\x8b\x0d'
+        assert pe.read(addresses['target_set']+0x82,6)==b'\x89\x86\x43\x01\x00\x00'
+        assert pe.read(addresses['target_clear']+2,6)==b'\x89\x81\x43\x01\x00\x00'
+        effect_load=0x46C143 if profile['tag']=='DaoJian' else 0x47A013
+        assert pe.read(effect_load,5)==b'\xb9'+struct.pack('<I',addresses['effects'])
+        # 两作创建通知都从ESI+6F取方向，因此桥可显式携带真实Runtime，而非事后猜活动指针。
+        assert pe.read(addresses['history_call']-0x13,3)==b'\x8b\x46\x6f'
         assert pe.read(profile['addresses']['resolver_call'], 5).hex() == profile['call_bytes']
         # 把调用点真正解码回目标，而不是只核对一串由同一数据源复制的字节。
         call = pe.read(profile['addresses']['resolver_call'], 5)
@@ -213,7 +231,7 @@ def verify_baselines(data):
         assert end_call.hex()==profile['end_call_bytes'] and end_call[0]==0xe8
         assert profile['addresses']['end_call']+5+struct.unpack_from('<i',end_call,1)[0]==profile['addresses']['end_record']
         # 新CALL包装也必须解码回真实目标；只验证函数头不能证明调用点选对。
-        for call_key,callee_key in [('icon_focus_call','cursor_sprite_draw'),('right_icon_call','icon_draw'),('dodge_init_call','dodge_init'),('dodge_motion_call','dodge_motion'),('inspect_hover_call','inspect_hover'),('menu_talk_picker_call','menu_talk_picker'),('cursor_sprite_call1','cursor_sprite_draw'),('cursor_sprite_call2','cursor_sprite_draw')]:
+        for call_key,callee_key in [('combo_reset_call','combo_reset_query'),('icon_focus_call','cursor_sprite_draw'),('right_icon_call','icon_draw'),('dodge_init_call','dodge_init'),('dodge_motion_call','dodge_motion'),('inspect_hover_call','inspect_hover'),('menu_talk_picker_call','menu_talk_picker'),('cursor_sprite_call1','cursor_sprite_draw'),('cursor_sprite_call2','cursor_sprite_draw')]:
             call=pe.read(profile['addresses'][call_key],5)
             assert call[0]==0xE8 and profile['addresses'][call_key]+5+struct.unpack_from('<i',call,1)[0]==profile['addresses'][callee_key]
         assert struct.unpack('<I',pe.read(profile['addresses']['menu_system_vtable']+0x24,4))[0]==profile['addresses']['menu_system_primary']

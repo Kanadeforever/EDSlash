@@ -26,6 +26,10 @@ typedef struct {
     uintptr_t retry_call;
     uintptr_t end_call,end_record;
     uintptr_t history_clear;
+    uintptr_t target_set,target_clear,native_target_get,pending_clear,effects;
+    /* 原角色绘制中的锁定圈分支；只替换视觉资格，不回写持续战斗目标。 */
+    uintptr_t target_ring_gate,target_ring_resume,target_ring_get,target_ring_draw,target_ring_clip;
+    uintptr_t combo_reset_call,combo_reset_query; /* 只接管预设超时归零查询，不修改其它HUD查询。 */
     uintptr_t guard_get,stamina_adjust,dodge_start,guard_check;
     uintptr_t hit_receiver,runtime_owner;
     uintptr_t combo_get,inventory_root,inventory_get,item_at;

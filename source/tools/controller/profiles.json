@@ -277,7 +277,19 @@
         "menu_teleport_switch": 4911296,
         "menu_teleport_base_call": 4911570,
         "quick_label_call": 4994213,
-        "quick_label_draw": 4924832
+        "quick_label_draw": 4924832,
+        "combo_reset_call": 4672507,
+        "combo_reset_query": 4999792,
+        "target_set": 4333536,
+        "target_clear": 4333472,
+        "native_target_get": 4311456,
+        "pending_clear": 4327456,
+        "effects": 5540840,
+        "target_ring_gate": 4323013,
+        "target_ring_resume": 4323112,
+        "target_ring_get": 4321216,
+        "target_ring_draw": 5196768,
+        "target_ring_clip": 4647024
       },
       "offsets": {
         "invalid_offset": 1082,
@@ -497,7 +509,14 @@
         "menu_teleport_switch": "5556578bf98b87c400000083",
         "menu_teleport_base_call": "e8292a0000f605e3895400f0",
         "quick_label_call": "e8f6f0feff685c5c54008bce",
-        "quick_label_draw": "6aff68a054520064a1000000"
+        "quick_label_draw": "6aff68a054520064a1000000",
+        "combo_reset_call": "e870fe040085c0740fa1b0bb",
+        "combo_reset_query": "8b44240483f8ff751e8b912c",
+        "target_set": "568bf18b0de4825500578b46",
+        "target_clear": "33c08981430100008b89d203",
+        "native_target_get": "e8dbe8000085c0740d8b4867",
+        "pending_clear": "c78146040000ffffffffc390",
+        "target_ring_gate": "8b1668800000008bceff523c"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -539,6 +558,17 @@
           "F%c"
         ],
         "stack_arguments": 5
+      },
+      "target_ring_evidence": {
+        "actor_register": "esi",
+        "surface_register": "ebx",
+        "screen_stack_offsets": [
+          64,
+          68
+        ],
+        "size": 99,
+        "style": 2,
+        "shade": -1
       }
     },
     {
@@ -818,7 +848,19 @@
         "menu_teleport_switch": 4989232,
         "menu_teleport_base_call": 4989506,
         "quick_label_call": 5077605,
-        "quick_label_draw": 5003504
+        "quick_label_draw": 5003504,
+        "combo_reset_call": 4732027,
+        "combo_reset_query": 5083216,
+        "target_set": 4368064,
+        "target_clear": 4368000,
+        "native_target_get": 4363072,
+        "pending_clear": 4361744,
+        "effects": 5738912,
+        "target_ring_gate": 4357415,
+        "target_ring_resume": 4357514,
+        "target_ring_get": 4355664,
+        "target_ring_draw": 5290688,
+        "target_ring_clip": 4704880
       },
       "offsets": {
         "invalid_offset": 1094,
@@ -1038,7 +1080,14 @@
         "menu_teleport_switch": "5556578bf98b87c400000083",
         "menu_teleport_base_call": "e8092d0000f6059b8f5700f0",
         "quick_label_call": "e886defeff68ec5157008bce",
-        "quick_label_draw": "6aff68f0c8540064a1000000"
+        "quick_label_draw": "6aff68f0c8540064a1000000",
+        "combo_reset_call": "e8d05b050085c0740fa164d1",
+        "combo_reset_query": "8b44240483f8ff751e8b912c",
+        "target_set": "568bf18b0d0c925800578b46",
+        "target_clear": "33c08981430100008b89de03",
+        "native_target_get": "8b15389e580085d274348b4c",
+        "pending_clear": "c78156040000ffffffffc390",
+        "target_ring_gate": "8b1768800000008bcfff523c"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -1080,6 +1129,17 @@
           "F%c"
         ],
         "stack_arguments": 5
+      },
+      "target_ring_evidence": {
+        "actor_register": "edi",
+        "surface_register": "ebx",
+        "screen_stack_offsets": [
+          64,
+          68
+        ],
+        "size": 99,
+        "style": 2,
+        "shade": -1
       }
     },
     {
@@ -1359,7 +1419,19 @@
         "menu_teleport_switch": 4911296,
         "menu_teleport_base_call": 4911570,
         "quick_label_call": 4994213,
-        "quick_label_draw": 4924832
+        "quick_label_draw": 4924832,
+        "combo_reset_call": 4672507,
+        "combo_reset_query": 4999792,
+        "target_set": 4333536,
+        "target_clear": 4333472,
+        "native_target_get": 4311456,
+        "pending_clear": 4327456,
+        "effects": 5540840,
+        "target_ring_gate": 4323013,
+        "target_ring_resume": 4323112,
+        "target_ring_get": 4321216,
+        "target_ring_draw": 5196768,
+        "target_ring_clip": 4647024
       },
       "offsets": {
         "invalid_offset": 1082,
@@ -1579,7 +1651,14 @@
         "menu_teleport_switch": "5556578bf98b87c400000083",
         "menu_teleport_base_call": "e8292a0000f605e3895400f0",
         "quick_label_call": "e8f6f0feff685c5c54008bce",
-        "quick_label_draw": "6aff68a054520064a1000000"
+        "quick_label_draw": "6aff68a054520064a1000000",
+        "combo_reset_call": "e870fe040085c0740fa1b0bb",
+        "combo_reset_query": "8b44240483f8ff751e8b912c",
+        "target_set": "568bf18b0de4825500578b46",
+        "target_clear": "33c08981430100008b89d203",
+        "native_target_get": "e8dbe8000085c0740d8b4867",
+        "pending_clear": "c78146040000ffffffffc390",
+        "target_ring_gate": "8b1668800000008bceff523c"
       },
       "call_bytes": "e87ae40600",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -1621,6 +1700,17 @@
           "F%c"
         ],
         "stack_arguments": 5
+      },
+      "target_ring_evidence": {
+        "actor_register": "esi",
+        "surface_register": "ebx",
+        "screen_stack_offsets": [
+          64,
+          68
+        ],
+        "size": 99,
+        "style": 2,
+        "shade": -1
       }
     },
     {
@@ -1900,7 +1990,19 @@
         "menu_teleport_switch": 4989232,
         "menu_teleport_base_call": 4989506,
         "quick_label_call": 5077605,
-        "quick_label_draw": 5003504
+        "quick_label_draw": 5003504,
+        "combo_reset_call": 4732027,
+        "combo_reset_query": 5083216,
+        "target_set": 4368064,
+        "target_clear": 4368000,
+        "native_target_get": 4363072,
+        "pending_clear": 4361744,
+        "effects": 5738912,
+        "target_ring_gate": 4357415,
+        "target_ring_resume": 4357514,
+        "target_ring_get": 4355664,
+        "target_ring_draw": 5290688,
+        "target_ring_clip": 4704880
       },
       "offsets": {
         "invalid_offset": 1094,
@@ -2120,7 +2222,14 @@
         "menu_teleport_switch": "5556578bf98b87c400000083",
         "menu_teleport_base_call": "e8092d0000f6059b8f5700f0",
         "quick_label_call": "e886defeff68ec5157008bce",
-        "quick_label_draw": "6aff68f0c8540064a1000000"
+        "quick_label_draw": "6aff68f0c8540064a1000000",
+        "combo_reset_call": "e8d05b050085c0740fa164d1",
+        "combo_reset_query": "8b44240483f8ff751e8b912c",
+        "target_set": "568bf18b0d0c925800578b46",
+        "target_clear": "33c08981430100008b89de03",
+        "native_target_get": "8b15389e580085d274348b4c",
+        "pending_clear": "c78156040000ffffffffc390",
+        "target_ring_gate": "8b1768800000008bcfff523c"
       },
       "call_bytes": "e8ea5d0700",
       "projection_bytes": "518b410c8b54240c56578d7410e08b41108b542418c74424080000000003c28b51048b490803c0c1e2068d3c302bc6c1e10603d703c88b4424105f5e891089480459c20c00",
@@ -2162,6 +2271,17 @@
           "F%c"
         ],
         "stack_arguments": 5
+      },
+      "target_ring_evidence": {
+        "actor_register": "edi",
+        "surface_register": "ebx",
+        "screen_stack_offsets": [
+          64,
+          68
+        ],
+        "size": 99,
+        "style": 2,
+        "shade": -1
       }
     }
   ]

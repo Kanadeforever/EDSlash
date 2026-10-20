@@ -3,8 +3,38 @@
 
 static int controls(ConfigId id)
 {
-    return id==CONFIG_DEADZONE || id==CONFIG_MOVE_LEAD || id==CONFIG_MOUSE_SPEED || id==CONFIG_RUMBLE ||
+    return id==CONFIG_RUN_MODE || id==CONFIG_DEADZONE || id==CONFIG_MOVE_LEAD || id==CONFIG_MOUSE_SPEED || id==CONFIG_RUMBLE ||
         id==CONFIG_MENU_SWAP_AB || id==CONFIG_ACTION_MENU_NAV || (id>=CONFIG_WORLD_INTERACT && id<=CONFIG_WORLD_SYSTEM);
+}
+int SettingsModel_FieldEnabled(const SettingsModel *m,ConfigId id)
+{
+    if(!m || (unsigned)id>=CONFIG_COUNT)return 0;
+    const int *v=m->draft.values;
+    /* 只禁用运行路径确实依赖父开关的项；等待重启或释放输入不代表不能编辑。 */
+    if(id==CONFIG_BASE_HEIGHT || id==CONFIG_ASPECT_RATIO || id==CONFIG_CENTER_HUD)
+        return v[CONFIG_DISPLAY_ENABLED]!=0;
+    if(id==CONFIG_AUXILIARY_UI)return v[CONFIG_DISPLAY_ENABLED] && v[CONFIG_CENTER_HUD];
+    if(id==CONFIG_PICKUP_INTERVAL || id==CONFIG_DROP_DELAY)return v[CONFIG_PICKUP_MODE]!=0;
+    if(id==CONFIG_GUARD_MODE)return v[CONFIG_CHARGE_GUARD] || v[CONFIG_RECOVERY_MODE]==0;
+    if(id==CONFIG_GUARD_PERCENT)return v[CONFIG_GUARD_MODE]==1 && (v[CONFIG_CHARGE_GUARD] || v[CONFIG_RECOVERY_MODE]==0);
+    if(id==CONFIG_RECOVERY_PERCENT)return v[CONFIG_RECOVERY_MODE]==1;
+    if(id==CONFIG_DIRECTIONAL_DODGE)return v[CONFIG_CONTROLLER_ENABLED]!=0;
+    if(id==CONFIG_DODGE_DISTANCE)return v[CONFIG_CONTROLLER_ENABLED] && v[CONFIG_DIRECTIONAL_DODGE];
+    if(controls(id) || id==CONFIG_INSPECT_DISTANCE || id==CONFIG_LEGACY_ULTIMATE ||
+        id==CONFIG_COMBO_SWITCH || id==CONFIG_COMBO_OFFSET || id==CONFIG_OFFSET_GRACE_MS ||
+        id==CONFIG_TARGET_MODE || id==CONFIG_AIM_EXPAND_MS) {
+        if(!v[CONFIG_CONTROLLER_ENABLED])return 0;
+    }
+    if(id==CONFIG_WORLD_RUN)return v[CONFIG_RUN_MODE]!=0;
+    if(id==CONFIG_COMBO_SWITCH)return !v[CONFIG_LEGACY_ULTIMATE];
+    if(id==CONFIG_OFFSET_GRACE_MS)return v[CONFIG_COMBO_OFFSET]==1;
+    return 1;
+}
+int SettingsModel_ItemEnabled(const SettingsModel *m,unsigned page,unsigned index)
+{
+    if(!m || index>=SettingsModel_Count(page))return 0;
+    if(page==2)return m->role && m->draft.values[CONFIG_CONTROLLER_ENABLED];
+    return SettingsModel_FieldEnabled(m,SettingsModel_Field(page,index));
 }
 ConfigId SettingsModel_Field(unsigned page,unsigned index)
 {
@@ -60,21 +90,21 @@ void SettingsModel_Move(SettingsModel *m,int direction,unsigned visible)
 int SettingsModel_SetInt(SettingsModel *m,ConfigId id,int value)
 {
     const ConfigDescriptor *f=RuntimeConfig_Descriptor(id);
-    if(!m || !f || f->type==CONFIG_TEXT || value<f->minimum || value>f->maximum)return 0;
+    if(!m || !f || !SettingsModel_FieldEnabled(m,id) || f->type==CONFIG_TEXT || value<f->minimum || value>f->maximum)return 0;
     m->draft.values[id]=value;return 1;
 }
 int SettingsModel_SetText(SettingsModel *m,const char *value)
 {
-    if(!m || !value || strlen(value)>=sizeof m->draft.aspect_ratio)return 0;
+    if(!m || !SettingsModel_FieldEnabled(m,CONFIG_ASPECT_RATIO) || !value || strlen(value)>=sizeof m->draft.aspect_ratio)return 0;
     strcpy(m->draft.aspect_ratio,value);return 1; /* 完整比例资格由同一原子保存服务校验 */
 }
 int SettingsModel_SetBinding(SettingsModel *m,unsigned slot,ConfigBinding b)
 {
-    if(!m || !m->role || slot<1 || slot>14 || b.selector<0 || b.selector>65535 ||
+    if(!m || !m->role || !m->draft.values[CONFIG_CONTROLLER_ENABLED] || slot<1 || slot>14 || b.selector<0 || b.selector>65535 ||
         (b.custom!=0 && b.custom!=1) || (b.right!=0 && b.right!=1))return 0;
     m->draft_bindings[slot-1]=b;return 1;
 }
-void SettingsModel_ResetItem(SettingsModel *m,unsigned index)
+static void reset_item(SettingsModel *m,unsigned index)
 {
     if(!m || index>=SettingsModel_Count(m->page))return;
     if(m->page==2){if(!m->role)return;m->draft_bindings[index]=(ConfigBinding){0,0,0};return;}
@@ -83,11 +113,16 @@ void SettingsModel_ResetItem(SettingsModel *m,unsigned index)
     if(f->type==CONFIG_TEXT)strcpy(m->draft.aspect_ratio,f->default_text);
     else m->draft.values[id]=f->default_value;
 }
+void SettingsModel_ResetItem(SettingsModel *m,unsigned index)
+{
+    if(SettingsModel_ItemEnabled(m,m ? m->page:0,index))reset_item(m,index);
+}
 void SettingsModel_ResetPage(SettingsModel *m)
 {
     if(!m)return;
     /* 范围限定当前分类；技能页只清当前角色的十四个RT位置。 */
-    for(unsigned i=0;i<SettingsModel_Count(m->page);++i)SettingsModel_ResetItem(m,i);
+    /* 整页恢复默认同时还原父项和子项，不受中途依赖变化影响。 */
+    for(unsigned i=0;i<SettingsModel_Count(m->page);++i)reset_item(m,i);
 }
 int SettingsModel_Dirty(const SettingsModel *m)
 {

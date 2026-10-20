@@ -11,10 +11,13 @@ enum { PAD_A, PAD_B, PAD_X, PAD_Y, PAD_BACK, PAD_GUIDE, PAD_START,
 typedef enum { LAYER_NONE, LAYER_GAME, LAYER_MENU, LAYER_MOUSE,
                LAYER_SKILL, LAYER_MEDICINE, LAYER_ITEM, LAYER_GUARD,
                LAYER_NATIVE, LAYER_DUAL, LAYER_ACTION_MENU } Layer;
+typedef enum { RUN_SIMPLE, RUN_MODERN, RUN_TOGGLE } RunMode;
+
 typedef struct {
     uint32_t buttons;
     float lx, ly, rx, ry;
     bool lt, rt, connected, focused, menu, action_menu;
+    RunMode run_mode; /* 跑步规则来自配置，纯输入状态机不读取磁盘或游戏对象。 */
     bool world_remap;
     unsigned char world_buttons[7]; /* 七个世界语义的物理来源，菜单／组合不使用它。 */
     bool swap_menu_ab; /* 只交换菜单语义；物理按键仍用于救援及组合优先级。 */
@@ -30,6 +33,8 @@ typedef struct {
 typedef struct {
     uint32_t previous, blocked, start_at;
     Layer previous_layer;
+    RunMode run_mode;
+    bool run_toggle; /* 选择的走/跑方式独立于本帧是否移动。 */
     bool mouse, running, ready, start_pending, chord, block_left_stick, block_right_stick;
 } ControlState;
 

@@ -67,6 +67,7 @@ static void settings_regression(bool expansion)
     memcpy(angle_code+16,"\xB8\x01\x00\x00\x00\x5E\xC2\x04\x00",9);
     memcpy(angle_code+26,"\x31\xC0\x5E\xC2\x04\x00",6);
     profile.guard_angle_gate=(uintptr_t)(angle_code+10);
+    make_call(code+112,(uintptr_t)native_combo_reset);profile.combo_reset_call=(uintptr_t)(code+112);
     CHECK(Guard_Initialize());
     unsigned applied=0;PadInput released={0};
     Guard_SyncSettings(&released,&applied);CHECK(applied==RuntimeConfig_Current()->generation);
@@ -123,6 +124,11 @@ static void settings_regression(bool expansion)
 
     /* 常态快照未变化时仍快速返回，确认序号不重复推进。 */
     previous=applied;Guard_SyncSettings(&released,&applied);CHECK(applied==previous);
+    CHECK(RuntimeConfig_GetInt(CONFIG_COMBO_OFFSET)==1);
+    start_settings_dash();CHECK(RuntimeConfig_SetText(CONFIG_COMBO_OFFSET,"original"));
+    Guard_SyncSettings(&released,&applied);CHECK(RuntimeConfig_GetInt(CONFIG_COMBO_OFFSET)==1);
+    finish_settings_dash();Guard_SyncSettings(&released,&applied);CHECK(RuntimeConfig_GetInt(CONFIG_COMBO_OFFSET)==0);
+    CHECK(RuntimeConfig_OpenPathForGame(path,expansion ? 2:1) && RuntimeConfig_GetInt(CONFIG_COMBO_OFFSET)==0);
     Guard_Shutdown();CHECK(VirtualFree(angle_code,0,MEM_RELEASE));CHECK(VirtualFree(code,0,MEM_RELEASE));
     Game_Release();
     /* 真实保存、应用和RT输入，Actor同偏移故意不是存档角色编号。 */

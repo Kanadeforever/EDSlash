@@ -24,6 +24,15 @@ int wmain(void)
     CHECK(Toml_Integer(&doc,Toml_Find(&doc,"controller.input","deadzone"),&value) && value==8000);
     CHECK(Toml_String(&doc,Toml_Find(&doc,"gameplay.stamina","guard_mode"),string,sizeof string) && !strcmp(string,"original"));
     CHECK(Toml_String(&doc,Toml_Find(&doc,"controller.menu","skill_menu_navigation"),string,sizeof string) && !strcmp(string,"independent"));
+    CHECK(Toml_String(&doc,Toml_Find(&doc,"controller.combat","offset"),string,sizeof string) && !strcmp(string,"dodge"));
+    CHECK(Toml_String(&doc,Toml_Find(&doc,"controller.movement","run_mode"),string,sizeof string) && !strcmp(string,"modern"));
+    CHECK(Toml_Integer(&doc,Toml_Find(&doc,"controller.combat","offset_grace_ms"),&value) && value==250);
+    const ConfigDescriptor *offset=RuntimeConfig_Descriptor(CONFIG_COMBO_OFFSET);
+    CHECK(offset && offset->default_value==1 && offset->maximum==1 && offset->apply==CONFIG_APPLY_IDLE);
+    CHECK(Toml_String(&doc,Toml_Find(&doc,"controller.combat","targeting"),string,sizeof string) && !strcmp(string,"rebuilt"));
+    const ConfigDescriptor *targeting=RuntimeConfig_Descriptor(CONFIG_TARGET_MODE);
+    CHECK(targeting && targeting->default_value==1 && targeting->maximum==1 && targeting->apply==CONFIG_APPLY_IDLE);
+    CHECK(!strcmp(targeting->label,"锁定模式") && !strcmp(targeting->choices,"original|rebuilt"));
     const ConfigDescriptor *navigation=RuntimeConfig_Descriptor(CONFIG_ACTION_MENU_NAV);
     CHECK(navigation && navigation->default_value==2 && navigation->maximum==2 && navigation->apply==CONFIG_APPLY_IDLE);
     unsigned navigation_fields=0;for(unsigned i=0;i<SettingsModel_Count(1);++i)if(SettingsModel_Field(1,i)==CONFIG_ACTION_MENU_NAV)++navigation_fields;
@@ -56,6 +65,24 @@ int wmain(void)
     CHECK(RuntimeConfig_GetInt(CONFIG_AIM_EXPAND_MS)==500);
     CHECK(RuntimeConfig_GetInt(CONFIG_MENU_SWAP_AB)==0);
     CHECK(RuntimeConfig_GetInt(CONFIG_ACTION_MENU_NAV)==2);
+    CHECK(RuntimeConfig_GetInt(CONFIG_COMBO_OFFSET)==1);
+    /* 锁定模式保存后等待安全点；重启必须保留明确选择的原版。 */
+    CHECK(RuntimeConfig_GetInt(CONFIG_TARGET_MODE)==1);
+    CHECK(RuntimeConfig_SetText(CONFIG_TARGET_MODE,"original"));
+    CHECK(!RuntimeConfig_ApplyFrame(0) && RuntimeConfig_GetInt(CONFIG_TARGET_MODE)==1);
+    CHECK(RuntimeConfig_ApplyFrame(1) && RuntimeConfig_GetInt(CONFIG_TARGET_MODE)==0);
+    CHECK(RuntimeConfig_OpenPath(path) && RuntimeConfig_GetInt(CONFIG_TARGET_MODE)==0);
+    CHECK(!RuntimeConfig_SetText(CONFIG_TARGET_MODE,"automatic") && !RuntimeConfig_SetInt(CONFIG_TARGET_MODE,2));
+    CHECK(RuntimeConfig_SetText(CONFIG_TARGET_MODE,"rebuilt"));
+    CHECK(!RuntimeConfig_ApplyFrame(0) && RuntimeConfig_GetInt(CONFIG_TARGET_MODE)==0);
+    CHECK(RuntimeConfig_ApplyFrame(1) && RuntimeConfig_GetInt(CONFIG_TARGET_MODE)==1);
+    CHECK(RuntimeConfig_SetText(CONFIG_COMBO_OFFSET,"original"));
+    CHECK(!RuntimeConfig_ApplyFrame(0) && RuntimeConfig_GetInt(CONFIG_COMBO_OFFSET)==1);
+    RuntimeConfig_ApplyFrame(1);CHECK(RuntimeConfig_GetInt(CONFIG_COMBO_OFFSET)==0);
+    CHECK(RuntimeConfig_OpenPath(path) && RuntimeConfig_GetInt(CONFIG_COMBO_OFFSET)==0);
+    CHECK(!RuntimeConfig_SetText(CONFIG_COMBO_OFFSET,"always"));
+    CHECK(RuntimeConfig_SetText(CONFIG_COMBO_OFFSET,"dodge"));RuntimeConfig_ApplyFrame(1);
+    CHECK(RuntimeConfig_GetInt(CONFIG_COMBO_OFFSET)==1);
     const char *navigation_choices[]={"left","right","independent"};
     for(int mode=0;mode<3;++mode){
         CHECK(RuntimeConfig_SetText(CONFIG_ACTION_MENU_NAV,navigation_choices[mode]));
@@ -75,9 +102,16 @@ int wmain(void)
     CHECK(RuntimeConfig_SetInt(CONFIG_AIM_EXPAND_MS,250));
     CHECK(!RuntimeConfig_SetInt(CONFIG_AIM_EXPAND_MS,99) && !RuntimeConfig_SetInt(CONFIG_AIM_EXPAND_MS,10001));
     CHECK(RuntimeConfig_ApplyFrame(0) && RuntimeConfig_GetInt(CONFIG_AIM_EXPAND_MS)==250);
+    CHECK(RuntimeConfig_GetInt(CONFIG_RUN_MODE)==1 && RuntimeConfig_GetInt(CONFIG_OFFSET_GRACE_MS)==250);
+    CHECK(!RuntimeConfig_SetInt(CONFIG_OFFSET_GRACE_MS,-1) && !RuntimeConfig_SetInt(CONFIG_OFFSET_GRACE_MS,501));
+    CHECK(RuntimeConfig_SetInt(CONFIG_OFFSET_GRACE_MS,500));RuntimeConfig_ApplyFrame(0);CHECK(RuntimeConfig_GetInt(CONFIG_OFFSET_GRACE_MS)==500);
+    CHECK(RuntimeConfig_SetInt(CONFIG_OFFSET_GRACE_MS,0));RuntimeConfig_ApplyFrame(0);CHECK(RuntimeConfig_GetInt(CONFIG_OFFSET_GRACE_MS)==0);
+    CHECK(RuntimeConfig_SetText(CONFIG_RUN_MODE,"toggle"));RuntimeConfig_ApplyFrame(0);CHECK(RuntimeConfig_GetInt(CONFIG_RUN_MODE)==1);
+    RuntimeConfig_ApplyFrame(1);CHECK(RuntimeConfig_GetInt(CONFIG_RUN_MODE)==2);
+    CHECK(RuntimeConfig_SetText(CONFIG_RUN_MODE,"modern"));RuntimeConfig_ApplyFrame(1);
     CHECK(RuntimeConfig_GetInt(CONFIG_PICKUP_MODE)==2 && RuntimeConfig_GetInt(CONFIG_DODGE_DISTANCE)==128);
-    /* 新模式缺项即false/face；真实配置保存服务校验二选一，并在输入边界应用。 */
-    CHECK(RuntimeConfig_GetInt(CONFIG_LEGACY_ULTIMATE)==0 && RuntimeConfig_GetInt(CONFIG_COMBO_SWITCH)==0);
+    /* 新模式缺项即false/dpad；真实配置保存服务校验二选一，并在输入边界应用。 */
+    CHECK(RuntimeConfig_GetInt(CONFIG_LEGACY_ULTIMATE)==0 && RuntimeConfig_GetInt(CONFIG_COMBO_SWITCH)==1);
     CHECK(RuntimeConfig_SetText(CONFIG_COMBO_SWITCH,"dpad"));
     CHECK(RuntimeConfig_SetInt(CONFIG_LEGACY_ULTIMATE,1));
     CHECK(!RuntimeConfig_SetText(CONFIG_COMBO_SWITCH,"both"));
@@ -182,6 +216,7 @@ int wmain(void)
     CHECK(RuntimeFile_Read(path,text,sizeof text,&size) && !strcmp(text,external));
     CHECK(RuntimeConfig_OpenPath(path));
     /* 禁止删除共享可模拟最后替换失败：正式文件和有效快照都应保持。 */
+    CHECK(RuntimeConfig_GetInt(CONFIG_TARGET_MODE)==1);
     HANDLE lock=CreateFileW(path,GENERIC_READ,FILE_SHARE_READ,NULL,OPEN_EXISTING,0,NULL);
     CHECK(lock!=INVALID_HANDLE_VALUE);
     CHECK(!RuntimeConfig_SetInt(CONFIG_DEADZONE,10000));

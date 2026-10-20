@@ -15,11 +15,9 @@
 static uint32_t movement_owner;
 static void *owned_world;
 static bool guard_owned;
-static float facing_x, facing_y = 1.0f;
 static unsigned context_reason, context_id;
 static uintptr_t context_object;
 static unsigned native_frames;
-static unsigned scan_count,eligible_count;
 static bool move_goal_valid,move_goal_run;
 static int move_goal_x,move_goal_y,move_lead;
 static DWORD last_move_submit;
@@ -192,45 +190,6 @@ static bool enemy(void *me, void *candidate)
 void *Game_Resolve(uint32_t handle) { return resolve(handle); }
 bool Game_Enemy(void *role,void *candidate) { return enemy(role,candidate); }
 
-static void *choose_target_impl(void *me)
-{
-    scan_count=eligible_count=0;
-    void *entities = global(g_profile->entities_global);
-    void *candidate = ReadPtr(entities, 0x1C), *best = NULL;
-    float limit = 640.0f, best_score = limit * limit;
-    float fx, fy;
-    Control_WorldDirection(facing_x, facing_y, &fx, &fy);
-    bool direction = g_intent.lx != 0 || g_intent.ly != 0;
-    /* 遍历数有上限，异常链或循环不能拖死游戏。距离用世界坐标，比较时也使用相同单位。 */
-    for (unsigned count = 0; candidate && count < 4096; ++count) {
-        if (!Memory_Readable(candidate, g_profile->invalid_offset + 4)) break;
-        ++scan_count;
-        void *next = ReadPtr(candidate, 8);
-        /* 距离/方向无资格的对象不应先调用模板和关系查询；选择结果与原规则相同。 */
-        bool nearby=Read32(candidate,0x67)==0x28;
-        if (nearby) {
-            float dx = (float)(int)Read32(candidate,0x2C) - (int)Read32(me,0x2C);
-            float dy = (float)(int)Read32(candidate,0x30) - (int)Read32(me,0x30);
-            float distance = dx*dx + dy*dy;
-            float dot = dx*fx + dy*fy;
-            /* 有明确方向时排除身后目标；无方向按距离选，不把远处 NPC 当成最近的目标。 */
-            if ((!direction || dot >= 0) && distance < best_score && enemy(me,candidate)) {
-                ++eligible_count;best=candidate;best_score=distance;
-            }
-        }
-        if (next == candidate) break;
-        candidate = next;
-    }
-    return best;
-}
-
-/* 一次完整遍历只读两次时钟，不在每个敌人资格判断里增加计时调用。 */
-static void *choose_target(void *me)
-{
-    int64_t perf=RuntimePerf_Begin();void *target=choose_target_impl(me);
-    RuntimePerf_End(PERF_TARGET,perf);return target;
-}
-
 /* 技能快捷和B落点预览共用选择码读取：只读原绑定，不注入Q等键盘事件。
  * user_binding用于RT的自定义槽；B固定动作取原第一槽，避免MOD改绑RT+A后改变B含义。 */
 #include "../../Runtime/DefaultSkills.h"
@@ -364,7 +323,7 @@ static bool jump_update(void *role)
     if(!(g_intent.held&KEY(PAD_B))) {
         int selector=jump.selector;bool left_style=jump.left_style;WorldPoint point=jump.point;
         unsigned elapsed=jump.preview_elapsed;jump_cancel();
-        Combat_RequestSkillPoint(selector,left_style,&point);Combat_Update(role,0);
+        Combat_RequestSkillPoint(selector,left_style,&point);Combat_Update(role);
         Log_Write(ControllerText_Aim_LandingRequestedLog,selector,point.x,point.y,elapsed);
         return true;
     }
@@ -420,7 +379,6 @@ void Game_Update(void)
         return;
     }
     if (owned_world && owned_world!=world()) Game_Release();
-    if (g_intent.lx!=0 || g_intent.ly!=0) { facing_x=g_intent.lx; facing_y=g_intent.ly; }
     owned_world=world();
     if(jump_update(me))return;
     shortcuts();
@@ -431,8 +389,7 @@ void Game_Update(void)
         return;
     }
     if (entering) return;
-    void *candidate=choose_target(me);
-    Combat_Update(me,candidate ? Read32(candidate,0x14):0);
+    Combat_Update(me);
     if (g_intent.layer==LAYER_GUARD || g_intent.layer==LAYER_DUAL || g_intent.layer==LAYER_ACTION_MENU) {
         guard_owned=true;Guard_Update(me);return;
     }

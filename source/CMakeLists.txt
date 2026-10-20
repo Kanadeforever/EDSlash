@@ -80,13 +80,18 @@ edslash_test(test_crash tools/controller/test_crash.c)
 edslash_test(test_control src/Modules/Controller/Control.c tools/controller/test_control.c)
 edslash_test(test_motion src/Modules/Controller/Control.c tools/controller/test_motion.c)
 edslash_test(test_game src/Modules/Controller/Control.c src/Modules/Controller/Game.c
-    src/Modules/Controller/Combat.c src/Modules/Controller/SkillResolver.c
+    src/Modules/Controller/Combat.c src/Modules/Controller/Target.c src/Modules/Controller/SkillResolver.c
     src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
     src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Inspect.c src/Runtime/HookManager.c tools/controller/test_game.c)
 target_link_libraries(test_game PRIVATE user32)
+edslash_test(test_target src/Modules/Controller/Control.c src/Modules/Controller/Game.c
+    src/Modules/Controller/Combat.c src/Modules/Controller/Target.c src/Modules/Controller/SkillResolver.c
+    src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
+    src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Inspect.c src/Runtime/HookManager.c tools/controller/test_target.c)
+target_link_libraries(test_target PRIVATE user32)
 # 菜单回放同时调用真实Control/Menu/Game，验证虚表清栈和关闭后不泄漏战斗输入。
 edslash_test(test_menu src/Modules/Controller/Control.c src/Modules/Controller/Game.c
-    src/Modules/Controller/Combat.c src/Modules/Controller/SkillResolver.c
+    src/Modules/Controller/Combat.c src/Modules/Controller/Target.c src/Modules/Controller/SkillResolver.c
     src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
     src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Inspect.c src/Modules/Controller/Cursor.c src/Modules/Controller/Crash.c src/Runtime/FileIO.c src/Runtime/HookManager.c tools/controller/test_menu.c)
 target_link_libraries(test_menu PRIVATE user32)
@@ -99,13 +104,13 @@ add_test(NAME test_jump COMMAND test_game --jump)
 add_test(NAME test_jump_zero_distance COMMAND test_game --jump-zero)
 # 调查回放使用真实地图格/句柄与原事件包装，不读取游戏进程或真实资源脚本。
 edslash_test(test_inspect src/Modules/Controller/Control.c src/Modules/Controller/Game.c
-    src/Modules/Controller/Combat.c src/Modules/Controller/SkillResolver.c
+    src/Modules/Controller/Combat.c src/Modules/Controller/Target.c src/Modules/Controller/SkillResolver.c
     src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
     src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Inspect.c src/Runtime/HookManager.c tools/controller/test_inspect.c)
 target_link_libraries(test_inspect PRIVATE user32)
 # 设置回归调用生产同步入口、Guard及真实配置保存，补足原先两个单元间的断点。
 edslash_test(test_guard_settings src/Modules/Controller/Control.c src/Modules/Controller/Game.c
-    src/Modules/Controller/Combat.c src/Modules/Controller/SkillResolver.c
+    src/Modules/Controller/Combat.c src/Modules/Controller/Target.c src/Modules/Controller/SkillResolver.c
     src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
     src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Inspect.c src/Runtime/HookManager.c
     src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c tools/controller/test_guard_settings.c)
@@ -114,7 +119,7 @@ target_link_libraries(test_guard_settings PRIVATE user32)
 # 启动故障回归链接生产Controller业务、Registry和配置，游戏地址仅使用宿主数组。
 edslash_test(test_startup tools/controller/test_startup.c src/Runtime/ModuleRegistry.c
     src/Runtime/HookManager.c src/Runtime/EventBus.c src/Runtime/Config.c src/Runtime/Toml.c src/Runtime/FileIO.c
-    src/Modules/Controller/Control.c src/Modules/Controller/Game.c src/Modules/Controller/Combat.c
+    src/Modules/Controller/Control.c src/Modules/Controller/Game.c src/Modules/Controller/Combat.c src/Modules/Controller/Target.c
     src/Modules/Controller/SkillResolver.c src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
     src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Cursor.c src/Modules/Controller/Crash.c src/Modules/Controller/Inspect.c src/Runtime/Focus.c)
 target_sources(test_startup PRIVATE src/Runtime/SettingsWindow.c src/Runtime/SettingsModel.c)

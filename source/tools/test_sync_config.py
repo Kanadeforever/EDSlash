@@ -40,17 +40,52 @@ class SyncConfigTests(unittest.TestCase):
         self.assertEqual(keys, ['controller.interaction.max_distance'])
         self.assertFalse(tomllib.loads(merged.decode())['gameplay']['combat']['free_run'])
 
+    def test_run_and_grace_upgrade(self):
+        template=(Path(__file__).resolve().parents[1]/'config/EDSlash.toml').read_bytes()
+        old=template.replace(b'run_mode = "modern"', b'# old movement mode').replace(b'offset_grace_ms = 250', b'# old offset')
+        merged,keys=merged_text(old,template)
+        doc=tomllib.loads(merged.decode())
+        self.assertEqual(doc['controller']['movement']['run_mode'],'modern')
+        self.assertEqual(doc['controller']['combat']['offset_grace_ms'],250)
+        self.assertEqual(len(keys),2)
+        explicit=template.replace(b'run_mode = "modern"',b'run_mode = "toggle"').replace(b'offset_grace_ms = 250',b'offset_grace_ms = 300')
+        merged,keys=merged_text(explicit,template)
+        self.assertEqual(merged,explicit)
+        self.assertEqual(keys,[])
+
     def test_actual_template_new_combat(self):
         template = (Path(__file__).resolve().parents[1] / 'config/EDSlash.toml').read_bytes()
         old = template.decode()
         start=old.index('[controller.combat]');end=old.index('\n[',start+1)
         old=(old[:start]+old[end:]).replace('max_distance = 160','max_distance = 80').encode()
         merged,keys=merged_text(old,template)
-        self.assertEqual(keys,['controller.combat.single_trigger_ultimate','controller.combat.combo_switch_input'])
+        self.assertEqual(keys,['controller.combat.single_trigger_ultimate','controller.combat.combo_switch_input','controller.combat.offset','controller.combat.offset_grace_ms','controller.combat.targeting'])
         doc=tomllib.loads(merged.decode())
         self.assertFalse(doc['controller']['combat']['single_trigger_ultimate'])
-        self.assertEqual(doc['controller']['combat']['combo_switch_input'],'face')
+        self.assertEqual(doc['controller']['combat']['combo_switch_input'],'dpad')
         self.assertEqual(doc['controller']['interaction']['max_distance'],80)
+        self.assertEqual(doc['controller']['combat']['offset'],'dodge')
+        self.assertEqual(doc['controller']['combat']['targeting'],'rebuilt')
+
+    def test_targeting_upgrade_and_explicit_original(self):
+        # 缺失锁定配置时补入重编；已有明确选择及注释不得被默认值覆盖。
+        template=(Path(__file__).resolve().parents[1] / 'config/EDSlash.toml').read_bytes()
+        old=template.decode().replace('targeting = "rebuilt"\r\n','').encode()
+        merged,keys=merged_text(old,template)
+        self.assertEqual(keys,['controller.combat.targeting'])
+        self.assertEqual(tomllib.loads(merged.decode())['controller']['combat']['targeting'],'rebuilt')
+        explicit=template.replace(b'targeting = "rebuilt"',b'targeting = "original" # keep')
+        self.assertEqual(merged_text(explicit,template),(explicit,[]))
+
+    def test_offset_upgrade_and_explicit_original(self):
+        # 旧文件只补默认档；已经选择原版的文件和注释必须保持原字节。
+        template=(Path(__file__).resolve().parents[1] / 'config/EDSlash.toml').read_bytes()
+        old=template.decode().replace('offset = "dodge"\r\n','').encode()
+        merged,keys=merged_text(old,template)
+        self.assertEqual(keys,['controller.combat.offset'])
+        self.assertEqual(tomllib.loads(merged.decode())['controller']['combat']['offset'],'dodge')
+        explicit=template.replace(b'offset = "dodge"',b'offset = "original" # keep')
+        self.assertEqual(merged_text(explicit,template),(explicit,[]))
 
     def test_files_and_concurrent_change(self):
         scratch = Path(__file__).resolve().parents[2] / '.build'

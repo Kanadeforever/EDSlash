@@ -59,6 +59,13 @@ static int __fastcall native_frame(unsigned char *keys,void *unused)
 static BOOL WINAPI native_keyboard(PBYTE keys) {(void)keys;return TRUE;}
 static SHORT WINAPI native_async(int key) {(void)key;return 0;}
 
+static int history_arguments[3];static void *history_owner;
+static int __fastcall native_history_capture(void *owner,void *unused,int selector,int direction,void *extra)
+{
+    (void)unused;history_owner=owner;history_arguments[0]=selector;history_arguments[1]=direction;
+    history_arguments[2]=(int)(intptr_t)extra;return 0;
+}
+
 static void reset_case(void)
 {
     memset(&fixture,0,sizeof fixture);g_profile=&fixture;
@@ -110,6 +117,23 @@ int main(void)
         CHECK(!RuntimeConfig_HasPending() && RuntimeConfig_Current()->generation==generation+1);
         CHECK(ModuleRegistry_IsInitialized(RUNTIME_MODULE_DISPLAY_FIX) && ModuleRegistry_IsInitialized(RUNTIME_MODULE_QOL));
     }
+    /* 执行真实创建通知裸桥，验证复制参数、额外ESI和双层清栈不会破坏原调用者。 */
+    reset_case();fixture.history_record=(uintptr_t)native_history_capture;g_intent.layer=LAYER_NATIVE;
+    unsigned char history_object[8]={0};uintptr_t before_stack,after_stack;
+    __asm {
+        mov before_stack,esp
+        push esi
+        mov esi,12345678h
+        push 30
+        push 20
+        push 10
+        lea ecx,history_object
+        call history_hook
+        pop esi
+        mov after_stack,esp
+    }
+    CHECK(before_stack==after_stack && history_owner==history_object);
+    CHECK(history_arguments[0]==10 && history_arguments[1]==20 && history_arguments[2]==30);
     /* 已就绪仍由Guard安全点负责；公共输入帧不能半程提交idle参数。 */
     runtime_state=1;CHECK(RuntimeConfig_SetInt(CONFIG_DODGE_DISTANCE,64));
     unsigned generation=RuntimeConfig_Current()->generation;

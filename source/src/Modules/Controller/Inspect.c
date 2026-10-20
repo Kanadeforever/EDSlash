@@ -263,7 +263,7 @@ bool Inspect_Activate(void)
         void *role=Game_Player();int group=((This1)g_profile->inspect_basic_get)(role, NULL,1);
         WorldPoint point={focus_grid_x*64+32,focus_grid_y*64+32};
         if (group<0) {Log_Write(ControllerText_Inspect_BaseActionUnavailableLog);return false;}
-        Combat_RequestPoint(group,&point);Combat_Update(role,Combat_Target());
+        Combat_RequestPoint(group,&point);Combat_Update(role);
         Log_Write(ControllerText_Inspect_StaticActionRequestedLog,group,point.x,point.y);return true;
     } else if (focus_kind==1 && static_valid(object)) {submit(1,focus);return true;}
     else if ((focus_kind==20 || focus_kind==23 || focus_kind==24) && static_valid(object)) {

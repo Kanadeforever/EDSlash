@@ -12,6 +12,9 @@ typedef struct {
 int SettingsModel_Open(SettingsModel *model,unsigned game,unsigned role);
 unsigned SettingsModel_Count(unsigned page);
 ConfigId SettingsModel_Field(unsigned page,unsigned index);
+/* 可用性读取草稿，父选项改变后立即更新；禁用时保留原值以便再次开启。 */
+int SettingsModel_FieldEnabled(const SettingsModel *model,ConfigId id);
+int SettingsModel_ItemEnabled(const SettingsModel *model,unsigned page,unsigned index);
 unsigned SettingsModel_PageAtTab(unsigned tab);
 void SettingsModel_Page(SettingsModel *model,int delta);
 void SettingsModel_Move(SettingsModel *model,int direction,unsigned visible_rows);
