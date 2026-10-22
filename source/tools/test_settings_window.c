@@ -2,6 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include "../src/Runtime/SettingsModel.h"
@@ -90,8 +91,14 @@ static HRESULT __stdcall fixture_release_dc(void *self,HDC dc)
 static const char *snapshot_path="settings_window_fixture.bmp";
 static int snapshot(const BITMAPINFOHEADER *header,const void *pixels)
 {
-    /* 仅保存本进程离线回放位图，方便检查文字与布局；不是游戏截图。 */
-    FILE *file=fopen(snapshot_path,"wb");if(!file)return 0;
+    /* 默认只做内存像素断言，不生成项目图片；明确导出时也只写系统临时目录。 */
+    const char *export_images=getenv("EDSLASH_EXPORT_UI_IMAGES");
+    if(!export_images || strcmp(export_images,"1"))return 1;
+    char temporary[MAX_PATH],destination[MAX_PATH*2];
+    DWORD length=GetTempPathA(MAX_PATH,temporary);
+    if(!length || length>=MAX_PATH)return 0;
+    snprintf(destination,sizeof destination,"%sEDSlash-%s",temporary,snapshot_path);
+    FILE *file=fopen(destination,"wb");if(!file)return 0;
     BITMAPFILEHEADER head={0};head.bfType=0x4D42;head.bfOffBits=sizeof head+sizeof *header;
     unsigned size=(unsigned)header->biWidth*(unsigned)-header->biHeight*4;head.bfSize=head.bfOffBits+size;
     int result=fwrite(&head,sizeof head,1,file)==1 && fwrite(header,sizeof *header,1,file)==1 && fwrite(pixels,size,1,file)==1;

@@ -141,7 +141,9 @@ static int __fastcall receiver_hook(void *victim,void *unused,void *runtime)
     if (scope==ReadPtr((void *)g_profile->world_global,0)) {
         Target_EndHit(&target_hit,health_before);
         if(player_hit && controlled(victim) && (combat_state!=Read32(victim,0x73) ||
-            combat_active!=ReadPtr(victim,g_profile->active_offset))) Target_Interrupted();
+            combat_active!=ReadPtr(victim,g_profile->active_offset))) {
+            Target_Interrupted();Combat_Interrupted();
+        }
         Guard_RecoverHit(victim,attacker,health_before,was_enemy);
         /* 原受击返回成功也可能是格挡或无敌，必须确认同一玩家生命实际减少。
          * 不因按着LT直接排除：体力不足或穿防时，原版确实造成伤害仍应反馈。
@@ -384,7 +386,9 @@ void Guard_Update(void *role)
     typedef int (__cdecl *Direction)(const WorldPoint *,const WorldPoint *);
     dodge_x=point.x;dodge_y=point.y;dodge_direction=((Direction)g_profile->direction8)(&point,&origin);
     dodge_actor=role;dodge_request=true;
+    Combat_PrepareDodge(role);
     int result=((This0)g_profile->dodge_start)(role, NULL);
+    Combat_FinishDodgeAttempt();
     dodge_request=false;dodge_actor=NULL;
     if (result) {
         dodge_retries=0;

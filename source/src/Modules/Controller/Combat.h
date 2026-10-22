@@ -10,12 +10,21 @@ typedef struct {
     uint32_t start_tick, end_tick;
     int direction;
     bool ended;
+    /* 实际成功动作用于辨认阶段；宽限只延后失效，不暂停闪避结束后的蓄力增长。 */
+    int last_method;
+    bool grace;
 } ActionHistory;
 typedef struct {
     int method;
     int selector;
     bool sequence;
+    bool continuation,from_start,restart;
 } ResolvedSkill;
+
+/* 未匹配与未到窗口必须分开，避免把待确认阶段错误解释成重新起手。 */
+typedef enum { SKILL_MISSING,SKILL_READY,SKILL_WAITING,SKILL_EXPIRED,SKILL_DIRECTION } SkillStatus;
+SkillStatus Skill_Query(void *role,int selection,const WorldPoint *point,const ActionHistory *history,ResolvedSkill *out);
+SkillStatus Skill_Continuation(void *role,const ActionHistory *history,ResolvedSkill *out);
 typedef enum { ACTION_LEFT,ACTION_COMBO,ACTION_SKILL,ACTION_THROW,ACTION_ULTIMATE,ACTION_RIGHT } ActionSource;
 /* 快捷请求直接携带选择和来源，不修改右手装备或伪造 Y/鼠标按键。 */
 void Combat_Request(int selection,ActionSource source,bool left_style);
@@ -30,6 +39,10 @@ bool Combat_PreviewSkill(void *role,int selection,const WorldPoint *point,Resolv
 bool Skill_Resolve(void *role,int selection,const WorldPoint *point,const ActionHistory *history,ResolvedSkill *out);
 /* 只由实际成功建立的玩家闪避通知；失败请求不得保留进度。 */
 void Combat_DodgeStarted(void *role);
+/* 原闪避入口可能同步结束旧动作，先保存逻辑阶段；失败时仅撤销候选快照。 */
+void Combat_PrepareDodge(void *role);
+void Combat_FinishDodgeAttempt(void);
+void Combat_Interrupted(void);
 /* 原版归零分支的资格查询：非闪避保留状态完整调用原查询。 */
 int __fastcall Combat_ComboResetHook(void *hud,void *unused,int selection);
 void Combat_Reset(void);

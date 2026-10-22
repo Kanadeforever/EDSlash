@@ -19,14 +19,17 @@ static struct {
     unsigned combo_slot,combo_epoch,issued_epoch,issued_slot;
     int request_index,issued_index;
     /* 闪避及续招宽限只保护已有进度，不产生动作或命中连击数。 */
-    bool offset_active;
+    bool offset_active,offset_combo,offset_phase;
+    bool dodge_prepared;
+    ActionHistory dodge_history;
     bool offset_dodging;
     uint32_t offset_grace_ms,offset_grace_started;
     uint32_t offset_tick,offset_timer;
     int offset_selection;
     /* 输入请求和已经提交给原版的动作分开保存：新按 Y 不能把尚未执行的旧 X 标成右手。 */
     bool issued,issued_right;
-    int issued_selector,issued_combo,issued_selection;
+    int issued_selector,issued_combo,issued_selection,issued_method;
+    bool issued_restart;
     uint32_t execution_serial;
     int history_extra;
 } combat;
@@ -36,7 +39,7 @@ static void *manager(void) { return ReadPtr(world(),0x30); }
 static uint32_t tick(void) { return Read32((void *)g_profile->game_tick,0); }
 static void submit(int opcode,int a,int b,int c) { ((This4)g_profile->submit)(manager(), NULL,opcode,a,b,c); }
 
-/* 原生游标是唯一的预设位置；插件不再保存第二份可能过期的位置。 */
+/* 预设游标和手动技能阶段共用暂停时钟；只有预设保护才拦截原生HUD归零。 */
 static bool offset_update(void *role)
 {
     if (!combat.offset_active) return false;
@@ -44,43 +47,68 @@ static bool offset_update(void *role)
     void *mouse=ReadPtr((void *)g_profile->mouse_global,0);
     if (!role || combat.actor!=Read32(role,0x14) || combat.world!=world() ||
         !Combat_OwnsHistory() || RuntimeConfig_GetInt(CONFIG_COMBO_OFFSET)!=1 ||
-        (int)Read32(hud,0x12C)!=combat.offset_selection || !Memory_Readable(mouse,0x7C)) {
-        combat.offset_active=false;return false;
+        (combat.offset_combo && (int)Read32(hud,0x12C)!=combat.offset_selection)) {
+        combat.offset_active=false;combat.history.grace=false;return false;
     }
     bool dodging=Guard_IsDodging(role);
-    /* 被击退、死亡或其它状态抢占不视作正常闪避收尾，不把旧进度重新写回。 */
-    if (!dodging && Read32(role,0x73)!=1) {combat.offset_active=false;return false;}
-    uint32_t now=tick(),delta=now-combat.offset_tick;combat.offset_tick=now;
-    if (combat.history.count) {
-        combat.history.start_tick+=delta;
-        if (combat.history.ended) combat.history.end_tick+=delta;
+    if (!dodging && Read32(role,0x73)!=1) {
+        /* 被击退、死亡或其它状态接管不能继续使用闪避保存的前置。 */
+        if(combat.offset_phase)memset(&combat.history,0,sizeof combat.history);
+        combat.offset_active=false;combat.history.grace=false;return false;
     }
-    /* 原生计时只平移闪避耗时。宽限使用真实毫秒，结束后恢复原游戏的超时判定。 */
-    if (combat.offset_dodging && combat.offset_timer) combat.offset_timer+=delta;
-    Write32(mouse,0x78,combat.offset_timer);
-    if (dodging) return true;
-    if (combat.offset_dodging) {
+    uint32_t now=tick(),delta=now-combat.offset_tick;combat.offset_tick=now;
+    if(combat.offset_dodging) {
+        /* 只平移闪避耗时。宽限期不平移起手时刻，否则闪避结束后也无法继续蓄力。 */
+        if(combat.history.count) {
+            combat.history.start_tick+=delta;
+            if(combat.history.ended)combat.history.end_tick+=delta;
+        }
+        if(combat.offset_timer)combat.offset_timer+=delta;
+    }
+    if(combat.offset_combo && Memory_Readable(mouse,0x7C))Write32(mouse,0x78,combat.offset_timer);
+    if(dodging) {combat.history.grace=false;return true;}
+    if(combat.offset_dodging) {
         combat.offset_dodging=false;combat.offset_grace_started=g_input.now;
     }
-    if (g_input.now-combat.offset_grace_started<combat.offset_grace_ms)return true;
+    bool grace=g_input.now-combat.offset_grace_started<combat.offset_grace_ms;
+    combat.history.grace=grace;
+    if(grace)return true;
     combat.offset_active=false;return false;
 }
-
+void Combat_PrepareDodge(void *role)
+{
+    combat.dodge_prepared=false;
+    if(!role || !Combat_OwnsHistory() || !combat.history.count ||
+        RuntimeConfig_GetInt(CONFIG_COMBO_OFFSET)!=1)return;
+    offset_update(role);
+    combat.dodge_history=combat.history;combat.dodge_prepared=true;
+}
+void Combat_FinishDodgeAttempt(void) {combat.dodge_prepared=false;}
 void Combat_DodgeStarted(void *role)
 {
     if (!role || !Combat_OwnsHistory() || !Guard_IsDodging(role) ||
         RuntimeConfig_GetInt(CONFIG_COMBO_OFFSET)!=1) return;
     void *hud=ReadPtr((void *)g_profile->skill_global,0);
     void *mouse=ReadPtr((void *)g_profile->mouse_global,0);
+    ActionHistory history=combat.dodge_prepared ? combat.dodge_history:combat.history;
     int selection=(int)Read32(hud,0x12C);
-    if (!Memory_Readable(hud,0x130) || !Memory_Readable(mouse,0x7C) ||
-        selection>-1 || selection<-4 || (int)Read32(hud,0x120)<0) return;
-    /* 连续闪避先结算上一段，防止重复起算把已经暂停的时间再加一次。 */
-    if (combat.offset_active) offset_update(role);
-    combat.offset_active=true;combat.offset_tick=tick();
-    combat.offset_dodging=true;
+    bool combo=Memory_Readable(hud,0x130) && Memory_Readable(mouse,0x7C) &&
+        selection<=-1 && selection>=-4 && (int)Read32(hud,0x120)>=0;
+    ResolvedSkill next;
+    SkillStatus stage=Skill_Continuation(role,&history,&next);
+    bool phase=stage==SKILL_READY || stage==SKILL_WAITING || stage==SKILL_DIRECTION;
+    if(!combo && !phase)return;
+    if(combat.offset_active && !combat.dodge_prepared) {
+        offset_update(role);history=combat.history;
+    }
+    combat.history=history;combat.history.grace=false;
+    combat.offset_active=true;combat.offset_combo=combo;combat.offset_phase=phase;
+    combat.offset_tick=tick();combat.offset_dodging=true;
     combat.offset_grace_ms=(uint32_t)RuntimeConfig_GetInt(CONFIG_OFFSET_GRACE_MS);
-    combat.offset_timer=Read32(mouse,0x78);combat.offset_selection=selection;
+    combat.offset_timer=combo ? Read32(mouse,0x78):0;combat.offset_selection=selection;
+    combat.pending=false;combat.request_fresh=false;combat.issued=false;
+    if(phase)Log_Write(ControllerText_Combat_OffsetStageSavedLog,combat.history.last_method,
+        tick()-combat.history.start_tick,combat.offset_grace_ms);
 }
 
 int __fastcall Combat_ComboResetHook(void *hud,void *unused,int selection)
@@ -89,7 +117,7 @@ int __fastcall Combat_ComboResetHook(void *hud,void *unused,int selection)
     /* 原分支紧接着写HUD+120=-1。在玩家闪避及续招宽限内拒绝这次归零，
      * 其余输入来源、原版档和其它查询都沿原函数返回值。 */
     if (hud==ReadPtr((void *)g_profile->skill_global,0) && selection==-1 &&
-        offset_update(Game_Player())) return 0;
+        offset_update(Game_Player()) && combat.offset_combo) return 0;
     int result=((This1)g_profile->combo_reset_query)(hud,NULL,selection);
     if (result && Combat_OwnsHistory()) {
         ++combat.combo_epoch;
@@ -100,7 +128,13 @@ int __fastcall Combat_ComboResetHook(void *hud,void *unused,int selection)
 }
 
 void Combat_Reset(void) { Target_Reset();memset(&combat,0,sizeof combat); }
-void Combat_Suspend(void) { combat.pending=false;combat.request_fresh=false;combat.offset_active=false;Target_Suspend(); }
+void Combat_Interrupted(void)
+{
+    combat.pending=false;combat.request_fresh=false;combat.issued=false;
+    combat.offset_active=false;combat.dodge_prepared=false;
+    memset(&combat.history,0,sizeof combat.history);
+}
+void Combat_Suspend(void) {Combat_Interrupted();Target_Suspend();}
 uint32_t Combat_Target(void) { return Target_Rebuilt() ? Target_Handle():combat.target; }
 void Combat_Request(int selection,ActionSource source,bool left_style)
 {
@@ -129,8 +163,14 @@ void Combat_RequestSkillPoint(int selection,bool left_style,const WorldPoint *po
 static bool resolve_request(void *role,int selection,const WorldPoint *point,const ActionHistory *history,
                             bool restart,ResolvedSkill *out)
 {
-    if(Skill_Resolve(role,selection,point,history,out))return true;
-    if(!restart)return false;
+    SkillStatus status=Skill_Query(role,selection,point,history,out);
+    if(status==SKILL_READY)return true;
+    if(status==SKILL_WAITING || status==SKILL_DIRECTION)return false;
+    bool same=history->count && history->selectors[history->count-1]==selection;
+    bool active=Read32(role,g_profile->active_offset)!=0;
+    /* 同一会话的自动后段尚未结束时不重入首段；超时后的正常起手仍遵守原生资格。 */
+    if(same && active)return false;
+    if(!restart && status!=SKILL_EXPIRED)return false;
     /* 快捷施放允许按自己的起手解析；预览和正式请求必须共享这项规则。 */
     ActionHistory first={0};return Skill_Resolve(role,selection,point,&first,out);
 }
@@ -144,11 +184,15 @@ static bool first_usable(void *role,const ResolvedSkill *resolved,void **record)
 bool Combat_PreviewSkill(void *role,int selection,const WorldPoint *point,ResolvedSkill *out)
 {
     if(!role || !point || !out || selection<0)return false;
+    if(combat.offset_active)offset_update(role);
     ActionHistory history={0};
     if(combat.actor==Read32(role,0x14) && combat.world==world())history=combat.history;
-    /* 预览不修改历史；已结束并过期的历史和正式Update一样不参与解析。 */
+    /* 预览只同步暂停时钟，不追加成功动作；清理候选副本与正式Update使用同一阶段资格。 */
     uint32_t timeout=Read32((void *)g_profile->combo_timeout,0);
-    if(history.count && history.ended && tick()-history.end_tick>timeout)memset(&history,0,sizeof history);
+    if(history.count && history.ended && tick()-history.end_tick>timeout) {
+        ResolvedSkill next;SkillStatus stage=Skill_Continuation(role,&history,&next);
+        if(stage==SKILL_MISSING || stage==SKILL_EXPIRED)memset(&history,0,sizeof history);
+    }
     void *record;
     return resolve_request(role,selection,point,&history,true,out) && first_usable(role,out,&record);
 }
@@ -165,6 +209,8 @@ void Combat_SelectCombo(unsigned index)
     /* 空组不改变已装备动作，也不提前改原生连招游标。 */
     if (!Combat_ComboAvailable(index)) return;
     void *hud=ReadPtr((void *)g_profile->skill_global,0);
+    if(combat.offset_active && combat.offset_phase)memset(&combat.history,0,sizeof combat.history);
+    combat.history.grace=false;combat.dodge_prepared=false;
     combat.combo_slot=index;combat.combo_ready=true;combat.offset_active=false;++combat.combo_epoch;
     if (combat.pending && combat.source==ACTION_COMBO) combat.pending=false;
     if (Memory_Readable(hud,0x130)) {
@@ -209,7 +255,9 @@ void Combat_Record(int selector,int direction)
         Log_Write(ControllerText_Combat_UnmatchedNotificationLog,selector);
         return;
     }
-    combat.offset_active=false;combat.issued=false;++combat.execution_serial;
+    combat.offset_active=false;combat.dodge_prepared=false;combat.issued=false;++combat.execution_serial;
+    if(combat.issued_restart)memset(&combat.history,0,sizeof combat.history);
+    combat.history.grace=false;combat.history.last_method=combat.issued_method;
     Feedback_Start(combat.issued_selection,combat.issued_source);
     /* 只由原生 Runtime 成功建立通知追加。原版自动续段关闭历史门时不会进入此调用点。 */
     if (combat.history.count==64) {
@@ -232,7 +280,8 @@ void Combat_Record(int selector,int direction)
 void Combat_End(void)
 {
     Feedback_RuntimeEnded();
-    if (!Combat_OwnsHistory() || !combat.history.count) return;
+    if (!Combat_OwnsHistory() || !combat.history.count || combat.dodge_prepared ||
+        (combat.offset_active && combat.offset_dodging)) return;
     /* 原生结束回调可能和下一段创建发生在同一更新周期，不能只靠下一帧看空指针判断结束。 */
     combat.history.ended=true;combat.history.end_tick=tick();
 }
@@ -266,7 +315,7 @@ void Combat_ExportHistory(void)
     if (Memory_Readable(hud,0x124)) Write32(hud,0x120,cursor);
     /* 旧鼠标阶段尚未完成的重试不能在交接后重新冒出来；成功历史与重试请求分开处理。 */
     if (Memory_Readable(mouse,0x78)) Write32(mouse,0x74,0);
-    combat.pending=false;combat.owned=false;
+    combat.pending=false;combat.owned=false;combat.offset_active=false;combat.dodge_prepared=false;combat.history.grace=false;
     Log_Write(ControllerText_Combat_HandoffToMouseLog,combat.history.count);
 }
 
@@ -324,13 +373,17 @@ void Combat_Update(void *role)
         combat.target=Target_Rebuilt() ? 0:Read32(role,0x143);
     }
     offset_update(role);
+    /* 闪避中不提交确认、不增长蓄力；保留的阶段将在实际收尾后继续检查。 */
+    if(Guard_IsDodging(role))return;
     bool active=Read32(role,g_profile->active_offset)!=0;
     if (combat.history.count && !active && !combat.history.ended) {
         combat.history.ended=true;combat.history.end_tick=now;
     }
     uint32_t timeout=Read32((void *)g_profile->combo_timeout,0);
-    if (combat.history.count && combat.history.ended && now-combat.history.end_tick>timeout)
-        memset(&combat.history,0,sizeof combat.history);
+    if (combat.history.count && combat.history.ended && now-combat.history.end_tick>timeout) {
+        ResolvedSkill next;SkillStatus stage=Skill_Continuation(role,&combat.history,&next);
+        if(stage==SKILL_MISSING || stage==SKILL_EXPIRED)memset(&combat.history,0,sizeof combat.history);
+    }
 
     Target_Update(role);
     bool held=g_intent.layer==LAYER_GAME && (g_intent.held&(KEY(PAD_X)|KEY(PAD_Y)));
@@ -353,7 +406,13 @@ void Combat_Update(void *role)
         (g_intent.pressed&KEY(PAD_X)) ? false:both ? combat.preferred_right:(g_intent.held&KEY(PAD_Y))!=0;
     /* 两键仍都按着时延续最后一次明确边沿的来源，不在下一帧又固定跳回 Y。 */
     if (held) combat.preferred_right=right;
-    if (edge || (held && !combat.pending && !active && !fresh)) {
+    bool repeat=held && !combat.pending && !active && !fresh;
+    if(!edge && repeat) {
+        ResolvedSkill next;SkillStatus stage=Skill_Continuation(role,&combat.history,&next);
+        /* 长按普通攻击可以循环；蓄力确认只能来自一次新的输入，不能由收招自动补出。 */
+        if((stage==SKILL_READY || stage==SKILL_WAITING || stage==SKILL_DIRECTION) && next.from_start)return;
+    }
+    if (edge || repeat) {
         void *hud=ReadPtr((void *)g_profile->skill_global,0);
         if (!Memory_Readable(hud,0xC20)) return;
         combat.point_request=false;
@@ -375,19 +434,21 @@ void Combat_Update(void *role)
     if (!fresh) {
         if (!combat.retries) {combat.pending=false;return;}
         --combat.retries;
-        /* 原版新按下可直接解析时间窗口，只有缓冲重试受忙碌门控制。
+        /* 新按下和缓冲重试都解析时间窗口；只有合法起手计时续段可交原版处理在途实例。
            不手工取消活动 Runtime，能否衔接或中断仍由原版动作协议决定。 */
-        if (active) {
-            if (!combat.retries) {combat.pending=false;Log_Write(ControllerText_Combat_BufferExpiredWhileBusyLog,combat.selection);}
-            return;
-        }
+
     }
     WorldPoint point=aim_point(role);
     ResolvedSkill resolved;
     bool parsed=resolve_request(role,combat.selection,&point,&combat.history,
         combat.source==ACTION_SKILL || combat.source==ACTION_THROW || combat.source==ACTION_ULTIMATE,&resolved);
     if (!parsed) {
-        if (combat.history.count && combat.history.ended) {
+        ResolvedSkill waiting;
+        SkillStatus state=Skill_Query(role,combat.selection,&point,&combat.history,&waiting);
+        if(fresh && (state==SKILL_WAITING || state==SKILL_DIRECTION))
+            Log_Write(ControllerText_Combat_StageWaitLog,combat.selection,(int)state,combat.history.last_method,
+                tick()-combat.history.start_tick);
+        if (combat.history.count && combat.history.ended && state!=SKILL_WAITING && state!=SKILL_DIRECTION) {
             /* 原解析失败且历史已有结束标记时清历史，再让缓冲按起手解析；
              * 不能让旧序列持续阻止其它快捷技能。 */
             Log_Write(ControllerText_Combat_ClearEndedHistoryAndRetryLog,combat.selection,combat.history.count);
@@ -408,6 +469,10 @@ void Combat_Update(void *role)
             if (Game_Enemy(role,native)) combat.target=Read32(native,0x14);
         }
     }
+    if(!fresh && active && !(resolved.continuation && resolved.from_start)) {
+        if(!combat.retries)combat.pending=false;
+        return;
+    }
     combat.pending=false;
     /* 首动作和原版一致保留执行资格预检，后续 Runtime 仍会执行自己的完整校验。 */
     void *record;
@@ -423,12 +488,14 @@ void Combat_Update(void *role)
     int saved_selector=combat.issued_selector,saved_combo=combat.issued_combo,saved_selection=combat.issued_selection;
     ActionSource saved_source=combat.issued_source;
     unsigned saved_slot=combat.issued_slot,saved_epoch=combat.issued_epoch;
-    int saved_index=combat.issued_index;
+    int saved_index=combat.issued_index,saved_method=combat.issued_method;
+    bool saved_restart=combat.issued_restart;
     uint32_t before_serial=combat.execution_serial;
     combat.issued=true;combat.issued_right=combat.right;combat.issued_selector=resolved.selector;
     combat.issued_combo=(int)Read32(ReadPtr((void *)g_profile->skill_global,0),0x12C);
     combat.issued_selection=combat.selection;combat.issued_source=combat.source;combat.issued_slot=combat.combo_slot;
     combat.issued_epoch=combat.combo_epoch;combat.issued_index=combat.request_index;
+    combat.issued_method=resolved.method;combat.issued_restart=resolved.restart;
     void *target_role=Game_Resolve(combat.target);
     int opcode,a2,a3;
     if (!Target_Rebuilt() && !combat.point_request && Game_Enemy(role,target_role)) {
@@ -454,6 +521,7 @@ void Combat_Update(void *role)
         combat.issued_selection=saved_selection;combat.issued_selector=saved_selector;combat.issued_combo=saved_combo;
         combat.issued_source=saved_source;combat.issued_slot=saved_slot;
         combat.issued_epoch=saved_epoch;combat.issued_index=saved_index;
+        combat.issued_method=saved_method;combat.issued_restart=saved_restart;
         combat.pending=combat.retries!=0;
     }
 }

@@ -144,3 +144,6 @@ const char ControllerText_Profile_WaiZhuanSteamName[] = "外传Steam 2.01";
 const char ControllerText_Profile_DaoJianSteamName[] = "本体Steam 1.05";
 const char ControllerText_Profile_WaiZhuanNonSteamName[] = "外传非 Steam 2.01";
 const char ControllerText_Profile_DaoJianNonSteamName[] = "本体非 Steam 1.05";
+
+const char ControllerText_Combat_StageWaitLog[] = "[技能阶段] 输入暂缓：选择=%d 原因=%d 前段动作=%d 起手经过=%u逻辑单位";
+const char ControllerText_Combat_OffsetStageSavedLog[] = "[技能阶段] 闪避保留：前段动作=%d 已有进度=%u逻辑单位 续招宽限=%ums";

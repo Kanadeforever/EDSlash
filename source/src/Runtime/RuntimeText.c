@@ -404,7 +404,7 @@ const char RuntimeText_KeymapDualHint[]="未开菜单：必杀先准备、再按
 
 /* 两档名称与保存枚举分别维护，玩家只看到中文规则。 */
 const char RuntimeText_Config_OffsetLabel[] = "Offset设置";
-const char RuntimeText_Config_OffsetDescription[] = "原版遵循游戏原有的预设连招顺序与归零规则。闪避保留在实际闪避期间暂停当前预设进度和招式衔接计时，正常结束后给予下方设置的闪避续招宽限，到期恢复原游戏归零判断；普通停手仍按原规则归零，不保留命中连击数，也不跳过招式资格。默认闪避保留。";
+const char RuntimeText_Config_OffsetDescription[] = "原版遵循游戏原有的预设连招顺序与归零规则。闪避保留在成功闪避期间冻结预设进度及已建立的蓄力、手动续接阶段计时，闪避本身不增加蓄力。正常结束后继续原阶段与剩余窗口，并应用下方的闪避续招宽限；预设普通停手仍按原规则归零，不保留命中连击数，也不跳过招式资格。默认闪避保留。";
 const char *const RuntimeText_OffsetValues[2] = {"原版","闪避保留"};
 const char RuntimeText_Config_TargetModeLabel[] = "锁定模式";
 const char RuntimeText_Config_TargetModeDescription[] = "原版使用游戏原生目标与鼠标落点规则。重编不主动搜敌，命中并造成实际伤害后保持目标，停止攻击或被打断立即脱锁；完全格挡和零伤害不建锁。近战越过敌人时转身，定向与落点技能保持玩家方向，明确输入新方向时可改向，移动不自动追身。默认重编。";
@@ -414,7 +414,7 @@ const char RuntimeText_Config_RunModeLabel[] = "跑步触发方式";
 const char RuntimeText_Config_RunModeDescription[] = "简约：左摇杆有效推杆量超过90%时跑步，90%及以下走路，无需按奔跑键。现代：移动中按奔跑键（默认L3）开始跑步，停下后恢复走路。切换：原地或移动中按奔跑键切换走路/跑步，停止移动后保留选择。默认现代；改模式后从走路开始。不改变速度和体力规则。";
 const char *const RuntimeText_RunModeValues[3] = {"简约","现代","切换"};
 const char RuntimeText_Config_OffsetGraceLabel[] = "闪避续招宽限";
-const char RuntimeText_Config_OffsetGraceDescription[] = "只用于Offset闪避保留档。成功闪避正常结束后，宽限内不归零并允许继续预设；接上新动作就结束宽限，到期后恢复原游戏归零判断。单位毫秒，范围0～500，默认250；0只暂停闪避期间的计时。修改影响下一次闪避。";
+const char RuntimeText_Config_OffsetGraceDescription[] = "只用于Offset闪避保留档。成功闪避正常结束后，宽限内保留连招或可续接技能阶段；蓄力下界继续正常计时，不会自动蓄满释放。接上新动作结束宽限，到期恢复原时间窗口判断。单位毫秒，范围0～500，默认250；0只暂停闪避期间的计时。修改影响下一次闪避。";
 const char RuntimeText_KeymapRunToggle[] = "切换走路／跑步";
 const char RuntimeText_KeymapSimpleMove[] = "推杆走／跑";
 const char RuntimeText_KeymapSimpleHint[] = "预览键按住选点、松开发动；左摇杆超过90%跑步，其余走路。\nLB/RB＋A/B/X/Y/←/→；BACK＋START救援。左右翻页，LB/RB切主页面。";

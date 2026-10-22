@@ -129,4 +129,6 @@ extern const char ControllerText_Profile_WaiZhuanSteamName[];
 extern const char ControllerText_Profile_DaoJianSteamName[];
 extern const char ControllerText_Profile_WaiZhuanNonSteamName[];
 extern const char ControllerText_Profile_DaoJianNonSteamName[];
+extern const char ControllerText_Combat_StageWaitLog[];
+extern const char ControllerText_Combat_OffsetStageSavedLog[];
 #endif

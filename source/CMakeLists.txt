@@ -89,6 +89,11 @@ edslash_test(test_target src/Modules/Controller/Control.c src/Modules/Controller
     src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
     src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Inspect.c src/Runtime/HookManager.c tools/controller/test_target.c)
 target_link_libraries(test_target PRIVATE user32)
+edslash_test(test_skill_session src/Modules/Controller/Control.c src/Modules/Controller/Game.c
+    src/Modules/Controller/Target.c src/Modules/Controller/SkillResolver.c
+    src/Modules/Controller/Guard.c src/Modules/Controller/Feedback.c
+    src/Modules/Controller/ActionMenu.c src/Modules/Controller/Menu.c src/Modules/Controller/Inspect.c src/Runtime/HookManager.c tools/controller/test_skill_session.c)
+target_link_libraries(test_skill_session PRIVATE user32)
 # 菜单回放同时调用真实Control/Menu/Game，验证虚表清栈和关闭后不泄漏战斗输入。
 edslash_test(test_menu src/Modules/Controller/Control.c src/Modules/Controller/Game.c
     src/Modules/Controller/Combat.c src/Modules/Controller/Target.c src/Modules/Controller/SkillResolver.c
