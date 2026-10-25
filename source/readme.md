@@ -25,17 +25,18 @@ python source/tools/build.py --checks-only
 python source/tools/build.py --upx
 ~~~
 
-默认使用MSVC /O2、/MT、C17和/utf-8，一次优化链接同时生成ASI与EDSlash.pdb；发行副本默认执行upx --best --lzma，调试目录保留未压缩ASI及匹配PDB。先做配置同步、四样本字体安全输出及档案反例回归，再运行33组CTest、四官方EXE复核、两件PE／入口／重定位／依赖、TOML解析、运行段一致及实际加载检查，通过后同步配置并发布。checks-only不更新发布目录。UPX使用PATH或UPX_BIN中的本机工具，正式发行默认压缩，--upx仅保留为兼容参数。执行upx -t、非游戏加载／重定位及解压运行段一致性检查；未找到UPX时停止发布，不自动安装。CI环境也须显式安装UPX并加入PATH。
+默认使用MSVC /O2、/MT、C17和/utf-8，正式版和完整调试版分别优化链接，并各自生成匹配的EDSlash.pdb；发行副本默认执行upx --best --lzma，调试目录保留未压缩ASI及匹配PDB。先做配置同步、四样本字体安全输出及档案反例回归，再分别运行CMake登记的全部CTest、四官方EXE复核、两件PE／入口／重定位／依赖、TOML解析、各自PDB匹配及实际加载检查，通过后同步配置并发布。checks-only不更新发布目录。UPX使用PATH或UPX_BIN中的本机工具，正式发行默认压缩，--upx仅保留为兼容参数。执行upx -t、非游戏加载／重定位及解压运行段一致性检查；未找到UPX时停止发布，不自动安装。CI环境也须显式安装UPX并加入PATH。
 
-两件运行代码和优化级别相同；Debug不等于-O0，完整源码符号存放在debug/EDSlash.pdb。运行时配置／日志仍叫EDSlash.toml／EDSlash.log，不能同时安装两件。
+两件都使用/O2；正式版关闭SDL动态API以剔除未使用实现，完整Debug保留上游动态API，二者独立链接、符号不能互用。完整调试件的源码符号存放在debug/EDSlash.pdb，正式版对应的未压缩ASI和PDB存放在debug/正式版符号。运行时配置／日志仍叫EDSlash.toml／EDSlash.log，不能同时安装两件。
 
-中间目录固定.build/msvc；SDL在该目录的SDL子目录构建，上游源码保持原样。失败保留诊断。无需读取参考资料中的旧SDL ZIP；未携带完整四份游戏EXE时明确跳过样本复核，源码仍可构建，不能称本次四样本验证通过。
+完整调试缓存为.build/msvc，正式版缓存为.build/msvc-release。正式版将完整SDL复制到其SDL-source子目录，只在派生副本的src/dynapi/SDL_dynapi.h中关闭动态API；补丁位置不符合固定源码预期时停止。仓库thirdparty保持原字节，手柄后端、映射、震动和传感器开关保持原配置。正式版失去SDL3_DYNAMIC_API运行时替换能力。失败保留诊断。无需读取参考资料中的旧SDL ZIP；未携带完整四份游戏EXE时明确跳过样本复核，源码仍可构建，不能称本次四样本验证通过。
 
 ## 产物与配置
 
 - release/EDSlash.asi：发行版，源码符号独立于ASI存放在PDB中，使用UPX --best --lzma压缩。
 - release/debug/EDSlash_debug.asi：完整版，保留项目和SDL源码调试信息，不UPX；同目录有匹配EDSlash.pdb及独立配置／许可。
-- release/debug/EDSlash.pdb：与调试ASI的GUID/age匹配，便于源码断点和崩溃定位。
+- release/debug/EDSlash.pdb：与完整调试ASI的GUID/age匹配。
+- release/debug/正式版符号/：EDSlash_release.asi与EDSlash.pdb对应精简正式版，用于正式版源码定位；不能互换完整调试件PDB。
 - release/EDSlash.toml：缺失时复制默认值，已有配置只补模板新增段／键，保留原数值、绑定和注释。
 - release/统一构建验证.json：实际散列、体积、导入、SDL选项及验收边界。
 - release/第三方声明.txt与release/licenses：独立中文声明和原样许可证副本。
@@ -61,7 +62,7 @@ python source/tools/build.py --upx
 
 仓库的`.github/workflows/build.yml`在main推送或手动触发时运行。Windows runner安装Python 3.13、使用runner自带的MSVC/Windows SDK、原生CMake/Ninja及UPX 5.2.1，再调用同一个`source/tools/build.py`；SDL直接使用thirdparty完整源码，不额外下载SDL。只有main成功构建更新dev-auto标签与开发版，其它分支手动构建仅保存Actions附件。构建任务只读仓库，发布任务单独取得contents: write。
 
-自动构建内部仍验证同次优化链接的正式/debug双产物，但不发布debug版。tools/package_release.py输出的EDSlash-dev-auto.zip将正式ASI与默认TOML放入plugins，根目录附带cnc-ddraw 7.1及Ultimate ASI Loader 9.0的官方32位发行件，Shaders包含展开的内嵌着色器，全部许可和声明集中于Third_Party_Licenses。各组件许可证直接复制仓库原件；SunPro单独原样提取源码注释声明。说明不插入许可证，原件编码、换行、空格均保留。
+自动构建内部分别构建并验证精简正式版与完整debug版，但不发布debug版。tools/package_release.py输出的EDSlash-dev-auto.zip将正式ASI与默认TOML放入plugins，根目录附带cnc-ddraw 7.1及Ultimate ASI Loader 9.0的官方32位发行件，Shaders包含展开的内嵌着色器，全部许可和声明集中于Third_Party_Licenses。各组件许可证直接复制仓库原件；SunPro单独原样提取源码注释声明。说明不插入许可证，原件编码、换行、空格均保留。
 
 在项目根运行`python source/tools/package_release.py --output release/EDSlash-dev-auto.zip`可生成本地包。须先完成正式构建，再运行`python source/tools/release_dependencies.py --directory .build/release-dependencies`下载并验证固定依赖；ASI、默认配置、源码摘要和许可副本均须匹配。工具逐字节核对许可证，并回读ZIP检查清单、CRC和输入字节；不上传文件。内嵌Shaders/shader-package.zip合并到包根，同名覆盖并保留原ZIP；着色器许可头保持原样，GPLv2与CC BY-NC-SA 3.0全文随包，完整包包含限非商业使用的着色器。test_release_dependencies.py覆盖嵌套覆盖、危险路径和损坏缓存拒绝。test_package_release.py覆盖缺失许可、仅空白改动、错误产物、个人配置、旧源码、SunPro片段与旧汇总清理。
 
@@ -76,7 +77,7 @@ Guard设置应用测试使用真实TOML与双版本运动回放；test_menu链�
 
 默认并行数6，可用`python tools/build.py --jobs 1`诊断环境问题；任何失败都停止交付，不自动重试或复用旧产物。
 
-全项目只保留原生MSVC构建；GCC专用IPA/位置视图参数已经移除。使用.build/msvc隔离编译缓存；源码与SDL共用静态运行库/MT，发行/debug来自同一优化链接，PDB身份必须匹配。
+全项目只保留原生MSVC构建；GCC专用IPA/位置视图参数已经移除。使用.build/msvc及.build/msvc-release隔离两种配置；源码与SDL共用静态运行库/MT，发行/debug独立链接，各自PDB身份必须匹配。
 
 正式构建成功后默认清理根.build；--checks-only或失败保留诊断，--keep-build保留增量缓存。随机核心195611项脚本回归和新名称窗口适配纳入构建，原始证据/正式产物不放缓存。
 

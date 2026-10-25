@@ -19,8 +19,9 @@ add_compile_definitions(EDSLASH_BUILD_DATE=\"${EDSLASH_BUILD_DATE}\")
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-# 一次编译保留完整源码调试信息，优化级别和NDEBUG保持Release原设置。
-# 发行与调试ASI复制同一链接件，符号放在外置PDB，避免重复编译造成逻辑差异。
+# 两种配置都保留外置PDB；正式版精简SDL，调试版保留上游动态API。
+# 两者独立链接，PDB只能用于与自己身份匹配的ASI。
+option(EDSLASH_SLIM_RELEASE "仅正式发行关闭SDL动态API以删除未使用实现" OFF)
 string(APPEND CMAKE_C_FLAGS_RELEASE " /Zi")
 string(APPEND CMAKE_CXX_FLAGS_RELEASE " /Zi")
 
@@ -44,7 +45,28 @@ set(SDL_DIRECTX ON CACHE BOOL "" FORCE)
 set(SDL_OPENGL OFF CACHE BOOL "" FORCE)
 set(SDL_OPENGLES OFF CACHE BOOL "" FORCE)
 set(SDL_VULKAN OFF CACHE BOOL "" FORCE)
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/SDL-release-3.4.16"
+set(EDSLASH_SDL_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/SDL-release-3.4.16")
+if(EDSLASH_SLIM_RELEASE)
+    # 上游禁止用命令行宏关闭动态API，因此只修改构建目录中的完整派生副本。
+    # 每次配置先同步完整原件，避免补丁累积；仓库thirdparty保持原字节。
+    set(EDSLASH_SDL_DERIVED "${CMAKE_CURRENT_BINARY_DIR}/SDL-source")
+    file(COPY "${EDSLASH_SDL_SOURCE}/" DESTINATION "${EDSLASH_SDL_DERIVED}")
+    set(EDSLASH_DYNAPI_HEADER "${EDSLASH_SDL_DERIVED}/src/dynapi/SDL_dynapi.h")
+    file(READ "${EDSLASH_DYNAPI_HEADER}" EDSLASH_DYNAPI_TEXT)
+    string(REGEX MATCHALL "#define SDL_DYNAMIC_API 1" EDSLASH_DYNAPI_MATCHES "${EDSLASH_DYNAPI_TEXT}")
+    list(LENGTH EDSLASH_DYNAPI_MATCHES EDSLASH_DYNAPI_COUNT)
+    if(NOT EDSLASH_DYNAPI_COUNT EQUAL 1)
+        message(FATAL_ERROR "SDL动态API开关不符合固定源码预期，拒绝套用补丁。")
+    endif()
+    string(REPLACE "#define SDL_DYNAMIC_API 1"
+        "/* EDSlash派生构建：关闭动态API，使未使用实现可由链接器删除。 */\n#define SDL_DYNAMIC_API 0"
+        EDSLASH_DYNAPI_TEXT "${EDSLASH_DYNAPI_TEXT}")
+    string(REPLACE "\r\n" "\n" EDSLASH_DYNAPI_TEXT "${EDSLASH_DYNAPI_TEXT}")
+    file(CONFIGURE OUTPUT "${EDSLASH_DYNAPI_HEADER}" CONTENT "${EDSLASH_DYNAPI_TEXT}"
+        @ONLY NEWLINE_STYLE CRLF)
+    set(EDSLASH_SDL_SOURCE "${EDSLASH_SDL_DERIVED}")
+endif()
+add_subdirectory("${EDSLASH_SDL_SOURCE}"
                  "${CMAKE_CURRENT_BINARY_DIR}/SDL" EXCLUDE_FROM_ALL)
 file(GLOB_RECURSE EDSLASH_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 add_library(EDSlash SHARED ${EDSLASH_SOURCES} src/EDSlash.def)

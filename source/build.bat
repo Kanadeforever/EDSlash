@@ -2,7 +2,7 @@
 "%SystemRoot%\System32\chcp.com" 65001 >nul
 setlocal
 cd /d "%~dp0"
-REM 一次编译生成发行件与_debug完整版；两者优化相同。  
+REM 分别构建精简发行件与完整调试件；两者均使用优化编译。  
 REM 源码符号单独写入PDB；只压缩发行副本，调试ASI和PDB不压缩。  
 set "BUILD_ARGS="
 set "NO_PAUSE="

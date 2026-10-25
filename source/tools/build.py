@@ -1,4 +1,4 @@
-"""一次构建同时验证发行件与完整调试件，静态SDL不需要外置运行库。"""
+"""分别构建精简发行件与完整调试件，静态SDL不需要外置运行库。"""
 from pathlib import Path
 import argparse
 from datetime import datetime, timedelta, timezone
@@ -14,13 +14,14 @@ sys.dont_write_bytecode = True
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 from toolchain import compiler, program
 from controller.verify_profiles import verify_baselines
-from verify_build import verify_upx_roundtrip, test_upx_roundtrip_rejections, verify, verify_variants, verify_debug_info, test_pdb_rejections, test_upx_debug_record_compatibility
+from verify_build import verify_upx_roundtrip, test_upx_roundtrip_rejections, verify, verify_debug_info, test_pdb_rejections, test_upx_debug_record_compatibility
 from sync_config import plan as config_plan, apply as config_apply
 from package_release import license_contents, write_license_files
 
 SOURCE = Path(__file__).resolve().parents[1]
 ROOT = SOURCE.parent
 BUILD = ROOT / ".build" / "msvc"
+SLIM_BUILD = ROOT / ".build" / "msvc-release"
 RELEASE = ROOT / "release"
 
 
@@ -33,6 +34,30 @@ def prepare_package(directory):
     """目录配置已经在发布前同步，此处只补随包许可。"""
     directory.mkdir(parents=True, exist_ok=True)
     write_license_files(ROOT, directory)
+
+
+def build_variant(directory, slim, cc, cmake, ninja, environment, build_id, build_date, jobs):
+    """两种配置分别缓存和测试，防止复用另一配置的SDL库或PDB。"""
+    fresh = []
+    cache = directory / "CMakeCache.txt"
+    if cache.is_file():
+        match = re.search(r"^CMAKE_C_COMPILER:[^=]+=(.+)$", cache.read_text(encoding="utf-8"), re.M)
+        if match and Path(match.group(1).strip()).resolve() != cc.resolve():
+            fresh = ["--fresh"]
+    run([cmake, *fresh, "--log-level=WARNING", "-S", SOURCE, "-B", directory, "-G", "Ninja",
+         f"-DCMAKE_MAKE_PROGRAM={ninja}", f"-DCMAKE_C_COMPILER={cc}",
+         f"-DCMAKE_CXX_COMPILER={cc}", "-DCMAKE_BUILD_TYPE=Release",
+         f"-DEDSLASH_SLIM_RELEASE={'ON' if slim else 'OFF'}",
+         f"-DEDSLASH_BUILD_ID={build_id}", f"-DEDSLASH_BUILD_DATE={build_date}"], environment)
+    run([cmake, "--build", directory, "--parallel", str(jobs), "--", "--quiet"], environment)
+    # 直接核对已编译静态库的真实符号，防止只改配置文字却仍链接动态API实现。
+    library = (directory / "SDL/SDL3-static.lib").read_bytes()
+    if (b"SDL_GetGamepadButton_REAL" in library) == slim or b"SDL_GetGamepadButton" not in library:
+        raise RuntimeError("SDL静态库的动态API符号不符合当前构建配置")
+    ctest = str(Path(cmake).with_name("ctest.exe"))
+    if not Path(ctest).is_file():
+        ctest = program("ctest", environment)
+    run([ctest, "--test-dir", directory, "--output-on-failure"], environment)
 
 
 def cleanup_legacy_cache():
@@ -68,8 +93,8 @@ def cleanup_build_cache():
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
-    parser = argparse.ArgumentParser(description="一次构建EDSlash发行件和_debug完整版，并验证全部回归。")
-    parser.add_argument("--checks-only", action="store_true", help="完整构建验证，但不更新release或源码模板")
+    parser = argparse.ArgumentParser(description="独立构建EDSlash精简发行件和_debug完整版，并验证全部回归。")
+    parser.add_argument("--checks-only", action="store_true", help="完整构建两种配置并验证，但不更新release或源码模板")
     parser.add_argument("--keep-build", action="store_true", help="发布后保留构建缓存用于增量编译；默认完成后清理")
     parser.add_argument("--upx", action="store_true", default=True, help="兼容参数；正式发行默认UPX --best --lzma，调试件不压缩")
     parser.add_argument("--jobs",type=int,default=6,help="MSVC并行编译数，默认6")
@@ -101,7 +126,6 @@ def main():
     cmake = program("cmake", environment)
     ninja = program("ninja", environment)
     # MSVC同一个cl.exe编译C与SDL的C++单元；x86开发环境由探测器准备。
-    cxx = cc
     upstream = ROOT / "thirdparty/SDL-release-3.4.16"
     if not (upstream / "CMakeLists.txt").is_file():
         raise RuntimeError("缺少固定SDL 3.4.16完整源码，请从完整项目包恢复thirdparty。")
@@ -113,47 +137,45 @@ def main():
     run([sys.executable, SOURCE / "tools/controller/generate_profiles.py"], environment)
     metadata = json.loads((SOURCE / "tools/controller/profiles.json").read_text(encoding="utf-8"))
     samples = verify_baselines(metadata)
-    # 更换编译器时主动重建CMake配置；自动重配会丢弃Release与构建身份参数。
-    # 同版本保留增量缓存；--fresh只清理配置缓存，不删除其他临时或发行文件。
-    fresh = []
-    cache = BUILD / "CMakeCache.txt"
-    if cache.is_file():
-        match = re.search(r"^CMAKE_C_COMPILER:[^=]+=(.+)$", cache.read_text(encoding="utf-8"), re.M)
-        if match and Path(match.group(1).strip()).resolve() != cc.resolve():
-            fresh = ["--fresh"]
-            print("编译器已切换，重新生成Release配置及构建身份。", flush=True)
-    run([cmake, *fresh, "--log-level=WARNING", "-S", SOURCE, "-B", BUILD, "-G", "Ninja",
-         f"-DCMAKE_MAKE_PROGRAM={ninja}", f"-DCMAKE_C_COMPILER={cc}",
-         f"-DCMAKE_CXX_COMPILER={cxx}", "-DCMAKE_BUILD_TYPE=Release", f"-DEDSLASH_BUILD_ID={build_id}", f"-DEDSLASH_BUILD_DATE={build_date}"], environment)
-    run([cmake, "--build", BUILD, "--parallel", str(args.jobs), "--", "--quiet"], environment)
-    ctest = str(Path(cmake).with_name("ctest.exe"))
-    if not Path(ctest).is_file():
-        ctest = program("ctest", environment)
-    run([ctest, "--test-dir", BUILD, "--output-on-failure"], environment)
+    # 完整调试件保留上游动态API；正式件独立编译，双方均运行完整CTest。
+    build_variant(BUILD, False, cc, cmake, ninja, environment, build_id, build_date, args.jobs)
+    build_variant(SLIM_BUILD, True, cc, cmake, ninja, environment, build_id, build_date, args.jobs)
 
-    # PDB独立于ASI；发行和调试复制同一个优化链接件，不再依赖GNU strip。
+    # 每个链接件单独核对PDB，不能把完整调试件的符号用于精简发行件。
     linked, config = BUILD / "EDSlash.asi", BUILD / "EDSlash.toml"
     debug_asi = BUILD / "EDSlash_debug.asi"
     dist = BUILD / "publish"
     dist.mkdir(exist_ok=True)
     release_asi = dist / "EDSlash.asi"
     shutil.copyfile(linked, debug_asi)
-    shutil.copyfile(linked, release_asi)
+    shutil.copyfile(SLIM_BUILD / "EDSlash.asi", release_asi)
     pdb = BUILD / "EDSlash.pdb"
-    if build_date.encode("ascii") not in debug_asi.read_bytes():
+    if any(build_date.encode("ascii") not in binary.read_bytes() for binary in (debug_asi, release_asi)):
         raise RuntimeError("ASI未嵌入本次北京时间构建日期")
     debug_evidence = verify(debug_asi, config)
     evidence = verify(release_asi, config)
-    evidence["压缩前发行与调试运行段一致"] = verify_variants(debug_asi, release_asi)
-    evidence["源码调试资料与发行隔离"] = verify_debug_info(debug_asi, release_asi, pdb)
-    evidence["PDB错误拒绝回放"] = test_pdb_rejections(debug_asi, release_asi, pdb)
+    evidence["发行与调试构建方式"] = "独立链接：正式版关闭SDL动态API，完整调试版保留上游配置；PDB不通用"
+    evidence["完整调试件PDB匹配"] = verify_debug_info(debug_asi, debug_asi, pdb)
+    release_pdb = SLIM_BUILD / "EDSlash.pdb"
+    evidence["正式版PDB匹配"] = verify_debug_info(release_asi, release_asi, release_pdb)
+    evidence["PDB错误拒绝回放"] = {
+        "完整调试件": test_pdb_rejections(debug_asi, debug_asi, pdb),
+        "正式版": test_pdb_rejections(release_asi, release_asi, release_pdb)}
+    # 两个独立产物必须拒绝互用符号，防止体积精简后错误定位崩溃地址。
+    for binary, wrong_pdb in ((debug_asi, release_pdb), (release_asi, pdb)):
+        try:
+            verify_debug_info(binary, binary, wrong_pdb)
+        except RuntimeError:
+            continue
+        raise RuntimeError("发行与完整调试件错误地接受了另一配置的PDB")
+    evidence["跨配置PDB拒绝"] = True
     # CTest已加载链接件；这里再验证发行和重命名调试件都能独立加载。
     run([BUILD / "test_load.exe", debug_asi], environment)
     run([BUILD / "test_load.exe", release_asi], environment)
     evidence["完整版"] = {"文件": "debug/EDSlash_debug.asi",
                           "SHA256": debug_evidence["ASI_SHA256"],
                           "字节数": debug_evidence["ASI字节数"],
-                          "源码调试信息": True, "优化": "与发行件相同"}
+                          "源码调试信息": True, "优化": "/O2；保留SDL动态API，独立于精简发行件"}
     evidence["完整版"]["PDB"] = {"文件": "debug/EDSlash.pdb", "SHA256": hashlib.sha256(pdb.read_bytes()).hexdigest()}
     evidence["构建日期（北京时间）"] = build_date
     evidence["编译器"] = "原生MSVC，Win32/x86，静态运行库/MT"
@@ -163,12 +185,17 @@ def main():
     evidence["本轮验证"] = {"宿主回归": "CTest全部通过", "双产物加载": "非游戏进程通过",
                             "实机": "待用户测试；历史分项反馈见docs/文档/版本与更新记录.md"}
     selected = {}
-    for line in (BUILD / "CMakeCache.txt").read_text(encoding="utf-8").splitlines():
+    for line in (SLIM_BUILD / "CMakeCache.txt").read_text(encoding="utf-8").splitlines():
         if line.startswith(("SDL_VIDEO:", "SDL_DIRECTX:", "SDL_AUDIO:", "SDL_JOYSTICK:",
                             "SDL_HIDAPI:", "SDL_HAPTIC:", "SDL_SENSOR:", "SDL_STATIC:", "SDL_SHARED:")):
             key, value = line.split("=", 1)
             selected[key.split(":", 1)[0]] = value
     evidence["SDL构建选项"] = selected
+    evidence["SDL动态API"] = {"正式版": False, "完整调试版": True,
+        "上游源码": "保持原字节；正式版仅修改.build/msvc-release/SDL-source中的完整派生副本"}
+    evidence["正式版符号"] = {"PDB": "debug/正式版符号/EDSlash.pdb",
+        "未压缩ASI": "debug/正式版符号/EDSlash_release.asi",
+        "PDB_SHA256": hashlib.sha256(release_pdb.read_bytes()).hexdigest()}
     packed = None
     if args.upx:
         upx = os.environ.get("UPX_BIN") or shutil.which("upx", path=environment["PATH"])
@@ -220,6 +247,10 @@ def main():
     prepare_package(debug_directory)
     shutil.copyfile(debug_asi, debug_directory / debug_asi.name)
     shutil.copyfile(pdb, debug_directory / pdb.name)
+    release_symbols = debug_directory / "正式版符号"
+    release_symbols.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(release_pdb, release_symbols / "EDSlash.pdb")
+    shutil.copyfile(release_asi, release_symbols / "EDSlash_release.asi")
     if packed:
         prepare_package(packed_directory)
         shutil.copyfile(packed, packed_directory / "EDSlash.asi")
@@ -231,7 +262,7 @@ def main():
     shutil.copyfile(config, SOURCE / "config/EDSlash.toml")
     cleanup_legacy_cache()
     print(f"双产物完成：{RELEASE / 'EDSlash.asi'} 与 {debug_directory / debug_asi.name}")
-    print("两者优化代码相同；发行副本UPX --best --lzma，调试ASI配套EDSlash.pdb且不压缩；无需SDL3.dll。")
+    print("正式版关闭SDL动态API并经UPX压缩；完整调试版保留动态API；两者独立PDB，正式版符号另存debug/正式版符号。")
     if not args.keep_build:cleanup_build_cache()
 
 
